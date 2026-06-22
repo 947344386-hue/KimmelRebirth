@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "ClaudeCore",
+	"Description": "Core plugin providing reusable Components, Subsystems, and Actors for rapid UE5 prototyping.",
+	"Category": "Gameplay",
+	"CreatedBy": "Claude",
+	"CanContainContent": false,
+	"Installed": false,
+	"Modules": [{"Name": "ClaudeCore","Type": "Runtime","LoadingPhase": "Default"}]
+}

@@ -1,0 +1,14 @@
+# UE5 Generated
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# IDE
+.vs/
+.vscode/
+*.sln.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db

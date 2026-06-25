@@ -10,6 +10,7 @@ class CLAUDECORE_API AClcStoneStall : public AActor
 	GENERATED_BODY()
 public:
 	AClcStoneStall();
+	virtual void OnConstruction(const FTransform& Transform) override;
 	UFUNCTION(BlueprintCallable) void SpawnStones();
 	UFUNCTION(BlueprintCallable) FTransform GetBallSpawnLocation() const;
 	UFUNCTION(BlueprintCallable) const TArray<AClcStone*>& GetDisplayedStones() const { return SpawnedStones; }
@@ -19,7 +20,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UStaticMeshComponent* StallMesh;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) USceneComponent* BallSpawnPoint;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) USceneComponent* StoneSpawnCenter;
+	UPROPERTY(Transient, DuplicateTransient) class UInstancedStaticMeshComponent* PreviewGrid;
 private:
 	UPROPERTY() TArray<AClcStone*> SpawnedStones;
 	UPROPERTY() UClcStoneMarketSubsystem* MarketSubsystem;
+	bool CalcGridLayout(int32 Count, int32& OutCols, int32& OutRows) const;
+	void RefreshEditorPreview();
+	void BuildGridPreview(int32 Cols, int32 Rows, float CellSize);
 };

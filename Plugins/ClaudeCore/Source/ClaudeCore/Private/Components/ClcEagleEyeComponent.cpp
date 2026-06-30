@@ -1,44 +1,192 @@
 // Copyright ClaudeCore. All Rights Reserved.
+
 #include "Components/ClcEagleEyeComponent.h"
 #include "Data/ClcEagleEyeConfig.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcEnergyBall.h"
 #include "Engine/World.h"
-UClcEagleEyeComponent::UClcEagleEyeComponent() { PrimaryComponentTick.bCanEverTick = true; }
-void UClcEagleEyeComponent::BeginPlay() { Super::BeginPlay(); InitializeConfig(); MarketSubsystem = GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>(); EnergyBallClass = LoadClass<AClcEnergyBall>(nullptr, TEXT("/Game/JadeBetting/Blueprints/BP_EnergyBall.BP_EnergyBall_C")); }
-void UClcEagleEyeComponent::InitializeConfig() { Config = LoadObject<UClcEagleEyeConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_EagleEyeConfig")); }
-void UClcEagleEyeComponent::ActivateEagleEye() { if (bCoolingDown||!Config) return; bActive=true; ActiveTimer=Config->ActiveDuration; bCoolingDown=false; ScanTimer=0; UpdateBalls(); }
-void UClcEagleEyeComponent::TickComponent(float DT, ELevelTick, FActorComponentTickFunction*) {
-	Super::TickComponent(DT, ELevelTick(), nullptr);
+#include "Kismet/GameplayStatics.h"
+
+UClcEagleEyeComponent::UClcEagleEyeComponent()
+{
+	PrimaryComponentTick.bCanEverTick = true;
+}
+
+void UClcEagleEyeComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	InitializeConfig();
+
+	MarketSubsystem = GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>();
+
+	EnergyBallClass = LoadClass<AClcEnergyBall>(nullptr, TEXT("/Game/JadeBetting/Blueprints/BP_EnergyBall.BP_EnergyBall_C"));
+}
+
+void UClcEagleEyeComponent::InitializeConfig()
+{
+	Config = LoadObject<UClcEagleEyeConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_EagleEyeConfig"));
+	if (!Config)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[ClcEagleEye] Failed to load DA_EagleEyeConfig! Create it at /Game/JadeBetting/Data/"));
+	}
+}
+
+void UClcEagleEyeComponent::ActivateEagleEye()
+{
+	if (bCoolingDown)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("[ClcEagleEye] On cooldown, can't activate."));
+		return;
+	}
+
 	if (!Config) return;
-	if (bActive) {
-		ActiveTimer-=DT; ScanTimer-=DT;
-		if (ScanTimer<=0) { ScanTimer=SCAN_INTERVAL; UpdateBalls(); }
-		if (ActiveTimer<=0) { bActive=false; bCoolingDown=true; CooldownTimer=Config->CooldownDuration; DestroyAllBalls(); }
-	}
-	if (bCoolingDown&&(CooldownTimer-=DT)<=0) bCoolingDown=false;
+
+	bActive = true;
+	ActiveTimer = Config->ActiveDuration;
+	bCoolingDown = false;
+	ScanTimer = 0.0f;
+
+	UpdateBalls();
+
+	UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Activated! Duration: %.1fs"), ActiveTimer);
 }
-void UClcEagleEyeComponent::UpdateBalls() {
-	if (!MarketSubsystem||!EnergyBallClass) return;
-	for (auto& SP : MarketSubsystem->GetStalls()) {
-		AClcStoneStall* S = SP.Get(); if (!S) continue;
-		float V = CalculateStallValue(S);
-		if (AClcEnergyBall** E = EnergyBalls.Find(S)) { if (*E) (*E)->SetScaleValue(MapScaleToValue(V)); }
-		else SpawnBall(S);
+
+void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!Config) return;
+
+	if (bActive)
+	{
+		ActiveTimer -= DeltaTime;
+		ScanTimer -= DeltaTime;
+
+		if (ScanTimer <= 0.0f)
+		{
+			ScanTimer = SCAN_INTERVAL;
+			UpdateBalls();
+		}
+
+		if (ActiveTimer <= 0.0f)
+		{
+			// 激活结束 → 进入冷却
+			bActive = false;
+			bCoolingDown = true;
+			CooldownTimer = Config->CooldownDuration;
+			DestroyAllBalls();
+			UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Deactivated. Cooldown: %.1fs"), CooldownTimer);
+		}
+	}
+
+	if (bCoolingDown)
+	{
+		CooldownTimer -= DeltaTime;
+		if (CooldownTimer <= 0.0f)
+		{
+			bCoolingDown = false;
+			UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Cooldown finished."));
+		}
 	}
 }
-void UClcEagleEyeComponent::SpawnBall(AClcStoneStall* S) {
-	if (!S||!EnergyBallClass) return;
-	FActorSpawnParameters P; P.SpawnCollisionHandlingOverride=ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	FTransform T = S->GetBallSpawnLocation();
-	if (AClcEnergyBall* B = GetWorld()->SpawnActor<AClcEnergyBall>(EnergyBallClass,T.GetLocation(),FRotator::ZeroRotator,P)) {
-		B->SetScaleValue(MapScaleToValue(CalculateStallValue(S))); EnergyBalls.Add(S,B);
+
+void UClcEagleEyeComponent::UpdateBalls()
+{
+	if (!MarketSubsystem || !EnergyBallClass) return;
+
+	for (const auto& StallPtr : MarketSubsystem->GetStalls())
+	{
+		AClcStoneStall* Stall = StallPtr.Get();
+		if (!Stall) continue;
+
+		const float Value = CalculateStallValue(Stall);
+
+		if (AClcEnergyBall** Existing = EnergyBalls.Find(Stall))
+		{
+			if (*Existing)
+			{
+				(*Existing)->SetScaleValue(MapScaleToValue(Value));
+			}
+		}
+		else
+		{
+			SpawnBall(Stall);
+		}
 	}
 }
-void UClcEagleEyeComponent::DestroyBall(AClcStoneStall* S) { if (AClcEnergyBall** B=EnergyBalls.Find(S)) { if (*B) (*B)->Destroy(); EnergyBalls.Remove(S); } }
-void UClcEagleEyeComponent::DestroyAllBalls() { for (auto& P : EnergyBalls) if (P.Value) P.Value->Destroy(); EnergyBalls.Empty(); }
-float UClcEagleEyeComponent::CalculateStallValue(AClcStoneStall* S) const { if (!S) return 0; float T=0; for (AClcStone* St : S->GetDisplayedStones()) if (St) T+=St->GetStoneData().Internal.TheoreticalValue; return T; }
-float UClcEagleEyeComponent::MapScaleToValue(float V) const { if (!Config||Config->BallReferenceValue<=0) return 1; return FMath::Clamp(FMath::Lerp(Config->BallMinScale,Config->BallMaxScale,V/Config->BallReferenceValue),Config->BallMinScale,Config->BallMaxScale); }
-void UClcEagleEyeComponent::OnStallRegistered(AClcStoneStall* S) { if (bActive) SpawnBall(S); }
-void UClcEagleEyeComponent::OnStallUnregistered(AClcStoneStall* S) { DestroyBall(S); }
+
+void UClcEagleEyeComponent::SpawnBall(AClcStoneStall* Stall)
+{
+	if (!Stall || !EnergyBallClass) return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FTransform BallTransform = Stall->GetBallSpawnLocation();
+	AClcEnergyBall* Ball = GetWorld()->SpawnActor<AClcEnergyBall>(
+		EnergyBallClass, BallTransform.GetLocation(), FRotator::ZeroRotator, SpawnParams);
+
+	if (Ball)
+	{
+		const float Value = CalculateStallValue(Stall);
+		Ball->SetScaleValue(MapScaleToValue(Value));
+		EnergyBalls.Add(Stall, Ball);
+	}
+}
+
+void UClcEagleEyeComponent::DestroyBall(AClcStoneStall* Stall)
+{
+	if (AClcEnergyBall** Ball = EnergyBalls.Find(Stall))
+	{
+		if (*Ball) (*Ball)->Destroy();
+		EnergyBalls.Remove(Stall);
+	}
+}
+
+void UClcEagleEyeComponent::DestroyAllBalls()
+{
+	for (auto& Pair : EnergyBalls)
+	{
+		if (Pair.Value) Pair.Value->Destroy();
+	}
+	EnergyBalls.Empty();
+}
+
+float UClcEagleEyeComponent::CalculateStallValue(AClcStoneStall* Stall) const
+{
+	if (!Stall) return 0.0f;
+
+	// Σ(S_green × C_sw) per stone on the stall
+	float TotalValue = 0.0f;
+	for (AClcStone* Stone : Stall->GetDisplayedStones())
+	{
+		if (!Stone) continue;
+		TotalValue += Stone->GetStoneData().Internal.TheoreticalValue;
+	}
+	return TotalValue;
+}
+
+float UClcEagleEyeComponent::MapScaleToValue(float Value) const
+{
+	if (!Config || Config->BallReferenceValue <= 0.0f) return 1.0f;
+
+	const float Ratio = Value / Config->BallReferenceValue;
+	return FMath::Clamp(FMath::Lerp(Config->BallMinScale, Config->BallMaxScale, Ratio),
+		Config->BallMinScale, Config->BallMaxScale);
+}
+
+// 摊位注册/注销回调
+void UClcEagleEyeComponent::OnStallRegistered(AClcStoneStall* Stall)
+{
+	if (bActive)
+	{
+		SpawnBall(Stall);
+	}
+}
+
+void UClcEagleEyeComponent::OnStallUnregistered(AClcStoneStall* Stall)
+{
+	DestroyBall(Stall);
+}

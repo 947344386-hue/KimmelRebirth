@@ -115,7 +115,7 @@ void AClcFlashlightTool::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	// 平滑后的 SpotLight 位姿 → 同步材质光锥位置/方向，让 X-ray 光圈跟灯走，
-	// 消除“灯慢慢移、光圈瞬间跳”的时间轴错位
+	// 消除"灯慢慢移、光圈瞬间跳"的时间轴错位
 	if (!bLightOn || !TargetStone || !SpotLight) return;
 
 	UMaterialInstanceDynamic* MID = TargetStone->GetStoneMID();

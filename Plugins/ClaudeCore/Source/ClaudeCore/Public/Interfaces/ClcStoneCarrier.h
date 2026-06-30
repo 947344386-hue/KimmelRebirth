@@ -13,9 +13,13 @@ class CLAUDECORE_API UClcStoneCarrier : public UInterface
 	GENERATED_BODY()
 };
 
+/**
+ * 背包数据访问——C++层接口，工作台通过此接口读写背包
+ */
 class CLAUDECORE_API IClcStoneCarrier
 {
 	GENERATED_BODY()
+
 public:
 	virtual TArray<FClcStoneRuntimeData> GetStones() const { return TArray<FClcStoneRuntimeData>(); }
 	virtual int32 AddStone(const FClcStoneRuntimeData& StoneData) { return -1; }

@@ -55,7 +55,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	void ShowInfoCard();
 
-	/** 隐藏信息卡片 */
+	/** 隐��信息卡片 */
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	void HideInfoCard();
 

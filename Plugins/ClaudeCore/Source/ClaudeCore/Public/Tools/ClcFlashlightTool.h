@@ -61,7 +61,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlashlightTool|Config", meta = (ClampMin = "1.0", ClampMax = "100.0"))
 	float FlashlightHoverHeight = 15.0f;
 
-	/** 光照有效范围（cm）—— 超出此距离光衰减为 0；需与 ConeAngle 配出的光圈半径匹配，否则会出现“光圈和透视圆对不齐” */
+	/** 光照有效范围（cm）—— 超出此距离光衰减为 0；需与 ConeAngle 配出的光圈半径匹配，否则会出现"光圈和透视圆对不齐" */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FlashlightTool|Config", meta = (ClampMin = "10.0", ClampMax = "500.0"))
 	float FlashlightRange = 80.0f;
 

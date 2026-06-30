@@ -1,19 +1,44 @@
 // Copyright ClaudeCore. All Rights Reserved.
+
 #include "Actors/ClcEnergyBall.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "Engine/StaticMesh.h"
-AClcEnergyBall::AClcEnergyBall() {
-	PrimaryActorTick.bCanEverTick=false;
-	BallMesh=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BallMesh"));
-	RootComponent=BallMesh;
+
+AClcEnergyBall::AClcEnergyBall()
+{
+	PrimaryActorTick.bCanEverTick = false;
+
+	BallMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BallMesh"));
+	RootComponent = BallMesh;
+
 	BallMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BallMesh->SetCastShadow(false); BallMesh->SetVisibility(false);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> M(TEXT("/Engine/BasicShapes/Sphere"));
-	if (M.Succeeded()) BallMesh->SetStaticMesh(M.Object);
+	BallMesh->SetCastShadow(false);
+	BallMesh->SetVisibility(false); // 默认不可见，鹰眼激活时才显示
+
+	// 默认球体
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultBall(
+		TEXT("/Engine/BasicShapes/Sphere"));
+	if (DefaultBall.Succeeded())
+	{
+		BallMesh->SetStaticMesh(DefaultBall.Object);
+	}
 }
-void AClcEnergyBall::BeginPlay() {
+
+void AClcEnergyBall::BeginPlay()
+{
 	Super::BeginPlay();
-	if (UMaterialInterface* Mat=LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/JadeBetting/Materials/M_EnergyBall")))
-		BallMesh->SetMaterial(0, Mat);
+
+	UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/JadeBetting/Materials/M_EnergyBall"));
+	if (DefaultMat)
+	{
+		BallMesh->SetMaterial(0, DefaultMat);
+	}
 }
-void AClcEnergyBall::SetScaleValue(float V) { CurrentScale=V; SetActorScale3D(FVector(V)); BallMesh->SetVisibility(true); }
+
+void AClcEnergyBall::SetScaleValue(float Scale)
+{
+	CurrentScale = Scale;
+	SetActorScale3D(FVector(Scale));
+	BallMesh->SetVisibility(true);
+}

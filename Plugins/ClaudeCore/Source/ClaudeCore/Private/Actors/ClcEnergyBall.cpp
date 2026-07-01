@@ -29,11 +29,14 @@ void AClcEnergyBall::BeginPlay()
 {
 	Super::BeginPlay();
 
-	UMaterialInterface* DefaultMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/JadeBetting/Materials/M_EnergyBall"));
-	if (DefaultMat)
-	{
-		BallMesh->SetMaterial(0, DefaultMat);
-	}
+		if (!BallMaterial)
+		{
+			BallMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/JadeBetting/Materials/M_EnergyBall"));
+		}
+		if (BallMaterial)
+		{
+			BallMesh->SetMaterial(0, BallMaterial);
+		}
 }
 
 void AClcEnergyBall::SetScaleValue(float Scale)

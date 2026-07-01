@@ -128,10 +128,15 @@ public:
         if (UTexture2D* Tex = Entry->ORM.LoadSynchronous())
         {
             MID->SetTextureParameterValue(TEXT("ShellORM"), Tex);
+            MID->SetScalarParameterValue(TEXT("ShellORMStrength"), 1.0f);
             ++Transferred;
         }
+        else
+        {
+            MID->SetScalarParameterValue(TEXT("ShellORMStrength"), 0.0f);
+        }
 
-        // 兜底标量——无论有无 ORM 都设，材质按需选用
+        // 兜底标量——无论有无 ORM 都设，材质按 ShellORMStrength lerp 选用
         MID->SetScalarParameterValue(TEXT("ShellRoughness"), Entry->DefaultRoughness);
         MID->SetScalarParameterValue(TEXT("ShellMetallic"), Entry->DefaultMetallic);
 

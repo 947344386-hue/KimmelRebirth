@@ -6,6 +6,7 @@
 #include "Components/ClcOpeningMaskComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInterface.h"
 #include "Rendering/PositionVertexBuffer.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
 
@@ -17,18 +18,42 @@ AClcOpeningTool::AClcOpeningTool()
 	// 开窗器位姿平滑提速——命中点是即时的，工具跟太慢会不匹配，调快让工具更跟手
 	SmoothSpeedLocation = 0.3f;
 	SmoothSpeedRotation = 0.35f;
+
+	// ---- 预览环（扁圆柱体，半径=笔刷半径） ----
+	PreviewCylinder = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PreviewCylinder"));
+	PreviewCylinder->SetupAttachment(ToolRoot);
+	PreviewCylinder->SetRelativeLocation(FVector(0, 0, 0));
+	PreviewCylinder->SetVisibility(false);
+	PreviewCylinder->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PreviewCylinder->SetCastShadow(false);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylMesh(
+		TEXT("/Engine/BasicShapes/Cylinder"));
+	if (CylMesh.Succeeded())
+	{
+		PreviewCylinder->SetStaticMesh(CylMesh.Object);
+		// 默认圆柱半径 50 高 100，扁平化：XY=笔刷半径*倍率/50，Z 极薄
+		PreviewCylinder->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.02f));
+	}
 }
 
 void AClcOpeningTool::OnLeftClick(bool bPressed)
 {
+	const bool bPrev = bIsGrinding;
 	bIsGrinding = bPressed && !IsBroken();
+
+	if (bIsGrinding != bPrev)
+	{
+		PreviewCylinder->SetVisibility(!bIsGrinding); // 打磨时隐藏，非打磨时显示
+		OnGrindingStateChanged.Broadcast(bIsGrinding);
+	}
 }
 
 void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 {
 	if (!TargetStone) return;
 
-	// ─── 工具定位：贴在命中点，Z 轴对齐法线 ───
+	// 工具定位：贴在命中点，Z 轴对齐法线
 	if (TraceInfo.bHasHit)
 	{
 		const FVector SafeNormal = TraceInfo.SurfaceNormal.GetSafeNormal();
@@ -41,12 +66,37 @@ void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 		bHasTarget = false;
 	}
 
-	// ─── 打磨中 → 执行逻辑 ───
+	// 打磨中→执行逻辑
 	if (bIsGrinding && !IsBroken() && TraceInfo.bHasHit)
 	{
 		ExecuteGrind(TraceInfo.RayOrigin, TraceInfo.RayDirection);
 		ConsumeDurability(DurabilityPerSecond * GetWorld()->GetDeltaSeconds());
 	}
+}
+
+void AClcOpeningTool::AdjustBrushRadius(float Delta)
+{
+	if (!TargetStone) return;
+	UClcOpeningMaskComponent* MaskComp = TargetStone->GetOpeningMask();
+	if (!MaskComp) return;
+	float NewRadius = MaskComp->BrushRadius + Delta;
+	NewRadius = FMath::Clamp(NewRadius, BrushRadiusMin, BrushRadiusMax);
+	MaskComp->BrushRadius = NewRadius;
+	UpdatePreviewCylinder();
+}
+
+void AClcOpeningTool::UpdatePreviewCylinder()
+{
+	if (!TargetStone) return;
+	UClcOpeningMaskComponent* MaskComp = TargetStone->GetOpeningMask();
+	if (!MaskComp) return;
+	if (PreviewMaterial && PreviewCylinder && PreviewCylinder->GetMaterial(0) != PreviewMaterial)
+	{
+		PreviewCylinder->SetMaterial(0, PreviewMaterial);
+	}
+	const float WorldRadius = MaskComp->BrushRadius * BrushScaleMultiplier;
+	const float XYScale = WorldRadius / 50.0f;
+	PreviewCylinder->SetRelativeScale3D(FVector(XYScale, XYScale, 0.02f));
 }
 
 bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayDirection)
@@ -56,7 +106,7 @@ bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayD
 	UStaticMeshComponent* StoneMeshComp = TargetStone->GetStoneMesh();
 	if (!StoneMeshComp) return false;
 
-	// ─── 手动射线-三角形求交（Chaos 不返回 FaceIndex，遍历 LOD0 全部三角形）───
+	// 手动射线-三角形求交（Chaos 不返回 FaceIndex，遍历 LOD0 全部三角形）
 	const FTransform& MeshTM = StoneMeshComp->GetComponentToWorld();
 	const FVector LocalRayOrigin = MeshTM.InverseTransformPosition(RayOrigin);
 	const FVector LocalRayDir    = MeshTM.InverseTransformVectorNoScale(RayDirection);
@@ -70,7 +120,7 @@ bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayD
 	const FStaticMeshVertexBuffer& SMVB  = LOD.VertexBuffers.StaticMeshVertexBuffer;
 	const uint32 NumTriangles = LOD.IndexBuffer.GetNumIndices() / 3;
 
-	// Möller–Trumbore 逐三角形求交，取最近命中
+	// Moller-Trumbore 逐三角形求交，取最近命中
 	constexpr float EPS = 1e-6f;
 	float   BestT = 1e30f;
 	int32   BestTri = -1;
@@ -107,7 +157,7 @@ bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayD
 
 	if (BestTri < 0) return false;
 
-	// 命中三角形 → UV 插值
+	// 命中三角形→UV 插值
 	const uint32 BI0 = LOD.IndexBuffer.GetIndex(BestTri * 3);
 	const uint32 BI1 = LOD.IndexBuffer.GetIndex(BestTri * 3 + 1);
 	const uint32 BI2 = LOD.IndexBuffer.GetIndex(BestTri * 3 + 2);

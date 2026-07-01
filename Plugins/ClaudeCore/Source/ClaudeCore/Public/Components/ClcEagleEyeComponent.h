@@ -81,7 +81,7 @@ private:
 	UClcStoneMarketSubsystem* MarketSubsystem;
 
 	/** 能量球Actor类 */
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "EagleEye")
 	TSubclassOf<AClcEnergyBall> EnergyBallClass;
 
 	/** 扫描摊位Timer */

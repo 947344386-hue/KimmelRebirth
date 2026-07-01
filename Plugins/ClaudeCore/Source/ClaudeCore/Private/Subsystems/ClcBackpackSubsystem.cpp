@@ -10,7 +10,7 @@
 void UClcBackpackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	BackpackWidgetClass = LoadClass<UClcBackpackWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_Backpack.WBP_Backpack_C"));
+	if (!BackpackWidgetClass) { BackpackWidgetClass = LoadClass<UClcBackpackWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_Backpack.WBP_Backpack_C")); }
 
 	// 从 DataAsset 读取初始金币
 	if (UClcStoneConfig* Config = LoadObject<UClcStoneConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StoneConfig")))

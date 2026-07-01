@@ -52,6 +52,6 @@ private:
 	int32 CurrentState = 0;
 
 	/** Widget类 */
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Interaction")
 	TSubclassOf<UClcInteractionWidget> WidgetClass;
 };

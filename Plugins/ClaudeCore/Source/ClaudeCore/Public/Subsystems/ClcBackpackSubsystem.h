@@ -66,7 +66,7 @@ private:
 	UPROPERTY()
 	UClcBackpackWidget* BackpackWidget;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "Backpack")
 	TSubclassOf<UClcBackpackWidget> BackpackWidgetClass;
 
 	bool bIsOpen = false;

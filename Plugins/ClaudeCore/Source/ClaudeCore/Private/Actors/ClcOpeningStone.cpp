@@ -5,6 +5,7 @@
 #include "Components/ClcOpeningMaskComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Data/ClcShellTextureConfig.h"
+#include "Data/ClcJadeTextureConfig.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -84,6 +85,13 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 		nullptr, TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig")))
 	{
 		ShellCfg->InjectTexturesIntoMID(StoneMID, CachedStoneData.Internal.ShellTypeIndex);
+	}
+
+	// ---- 3c. 从玉石纹理配置表取高保真 PBR 纹理，注入开窗 MID 的玉/杂分支 ----
+	if (UClcJadeTextureConfig* JadeCfg = LoadObject<UClcJadeTextureConfig>(
+		nullptr, TEXT("/Game/JadeBetting/Data/DA_JadeTextureConfig")))
+	{
+		JadeCfg->InjectIntoMID(StoneMID);
 	}
 
 	// ---- 4. 初始化遮罩——有存档恢复存档，无存档从头开始 ----

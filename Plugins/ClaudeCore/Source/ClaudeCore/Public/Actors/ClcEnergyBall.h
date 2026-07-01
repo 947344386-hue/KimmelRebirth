@@ -29,6 +29,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcEnergyBall")
 	UStaticMeshComponent* BallMesh;
 
+	/** 能量球材质（编辑器可选，空则走默认路径） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcEnergyBall")
+	UMaterialInterface* BallMaterial = nullptr;
+
 private:
 	float CurrentScale = 1.0f;
 };

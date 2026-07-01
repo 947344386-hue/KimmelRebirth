@@ -18,7 +18,7 @@ void UClcInteractionIndicator::BeginPlay()
 {
 	Super::BeginPlay();
 
-	WidgetClass = LoadClass<UClcInteractionWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_InteractionIndicator.WBP_InteractionIndicator_C"));
+	if (!WidgetClass) { WidgetClass = LoadClass<UClcInteractionWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_InteractionIndicator.WBP_InteractionIndicator_C")); }
 
 	if (!WidgetClass)
 	{

@@ -18,6 +18,7 @@ void UClcOpeningMaskComponent::InitializeFromStoneData(const FClcStoneInternalDa
 {
 	EnsureMaskRT();
 	EnsureRevealTexFromDistribution(StoneData.DistributionMap, StoneData.Seed, StoneData.Grade);
+	EnsureTypeTexFromDistribution(StoneData.DistributionMap);
 	ResetMask();
 
 	CachedDistribution = StoneData.DistributionMap;
@@ -263,6 +264,117 @@ void UClcOpeningMaskComponent::EnsureRevealTexFromDistribution(const FClcStoneDi
 	RevealTex->AddToRoot();
 }
 
+void UClcOpeningMaskComponent::EnsureTypeTexFromDistribution(const FClcStoneDistributionMap& Distribution)
+{
+	if (TypeTex)
+	{
+		TypeTex->RemoveFromRoot();
+		TypeTex = nullptr;
+	}
+
+	const int32 Res = Distribution.Resolution;
+	const int32 TotalPixels = Res * Res;
+
+	// R 通道 = 玉mask(255=玉), G 通道 = 杂mask(255=杂)
+	TArray<FColor> Pixels;
+	Pixels.SetNum(TotalPixels);
+
+	for (int32 Y = 0; Y < Res; ++Y)
+	{
+		for (int32 X = 0; X < Res; ++X)
+		{
+			const uint8 Val = Distribution.GetPixel(X, Y);
+			FColor& Pixel = Pixels[Y * Res + X];
+
+			if (Val == 1)       // 绿玉
+			{
+				Pixel = FColor(255, 0, 0, 255);   // R=255
+			}
+			else if (Val == 2)  // 杂裂
+			{
+				Pixel = FColor(0, 255, 0, 255);   // G=255
+			}
+			else                // 皮壳(0)，理论上 Generate 后不存在，保险填黑
+			{
+				Pixel = FColor(0, 0, 0, 255);
+			}
+		}
+	}
+
+	// ---- 3×3 box blur 羽化绿/杂边界 ----
+	{
+		TArray<FColor> Blurred = Pixels;
+		for (int32 Y = 1; Y < Res - 1; ++Y)
+		{
+			for (int32 X = 1; X < Res - 1; ++X)
+			{
+				int32 SumR = 0, SumG = 0;
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DX = -1; DX <= 1; ++DX)
+					{
+						// 高斯加权 /22：中心6，十字3，对角1 ——边界羽化更集中
+						const int32 Weight = (DX == 0 && DY == 0) ? 6
+										   : (DX == 0 || DY == 0) ? 3 : 1;
+						const FColor& N = Pixels[(Y + DY) * Res + (X + DX)];
+						SumR += N.R * Weight;
+						SumG += N.G * Weight;
+					}
+				}
+				FColor& Dst = Blurred[Y * Res + X];
+				Dst.R = static_cast<uint8>(SumR / 22);
+				Dst.G = static_cast<uint8>(SumG / 22);
+				Dst.B = 0;
+				Dst.A = 255;
+			}
+		}
+		Pixels = MoveTemp(Blurred);
+	}
+
+	TypeTex = UTexture2D::CreateTransient(Res, Res, PF_B8G8R8A8);
+	if (!TypeTex) return;
+
+	void* RawData = TypeTex->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+	FMemory::Memcpy(RawData, Pixels.GetData(), TotalPixels * sizeof(FColor));
+	TypeTex->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+	// mask 数据用线性空间 + Masks 压缩（4 通道独立）
+	TypeTex->SRGB = false;
+	TypeTex->CompressionSettings = TC_Masks;
+	TypeTex->MipGenSettings = TMGS_NoMipmaps;
+	TypeTex->UpdateResource();
+	TypeTex->AddToRoot();
+}
+
+void UClcOpeningMaskComponent::ApplyModulationParams(UMaterialInstanceDynamic* MID)
+{
+	if (!MID) return;
+
+	FRandomStream Rng(CachedSeed * 654321);
+
+	// ---- UV 变换：随机旋转 + 偏移（同一张纹理在不同石头上朝向不同） ----
+	const float RotationDeg = Rng.FRandRange(-20.0f, 20.0f);
+	const float Rad = FMath::DegreesToRadians(RotationDeg);
+	MID->SetScalarParameterValue(TEXT("ModUV_Cos"), FMath::Cos(Rad));
+	MID->SetScalarParameterValue(TEXT("ModUV_Sin"), FMath::Sin(Rad));
+	MID->SetScalarParameterValue(TEXT("ModUV_OffU"), Rng.FRandRange(-0.15f, 0.15f));
+	MID->SetScalarParameterValue(TEXT("ModUV_OffV"), Rng.FRandRange(-0.15f, 0.15f));
+
+	// ---- 种水调制（Grade → roughness 偏移） ----
+	float GradeRoughBias = 0.0f;
+	switch (CachedGrade)
+	{
+	case EClcJadeGrade::Bean:      GradeRoughBias =  0.15f; break;
+	case EClcJadeGrade::Glutinous: GradeRoughBias =  0.05f; break;
+	case EClcJadeGrade::Ice:       GradeRoughBias = -0.10f; break;
+	case EClcJadeGrade::Glass:     GradeRoughBias = -0.20f; break;
+	}
+	MID->SetScalarParameterValue(TEXT("ModGradeRoughBias"), GradeRoughBias);
+
+	UE_LOG(LogTemp, Verbose, TEXT("[ClcMask] Modulation: Rot=%.1f° GradeBias=%.2f"),
+		RotationDeg, GradeRoughBias);
+}
+
 // ============================================================
 // 材质对接
 // ============================================================
@@ -279,6 +391,13 @@ void UClcOpeningMaskComponent::ApplyToMaterial(UMaterialInstanceDynamic* DynMate
 	{
 		DynMaterial->SetTextureParameterValue(TEXT("RevealTex"), RevealTex);
 	}
+	if (TypeTex)
+	{
+		DynMaterial->SetTextureParameterValue(TEXT("TypeTex"), TypeTex);
+	}
+
+	// ---- 调制参数（每块石头独一无二，Seed 驱动） ----
+	ApplyModulationParams(DynMaterial);
 }
 
 // ============================================================
@@ -390,7 +509,7 @@ void UClcOpeningMaskComponent::UploadMaskToGPU()
 				static_cast<FTextureRenderTarget2DResource*>(RT->GetRenderTargetResource());
 			if (!RTResource) return;
 
-			FRHITexture2D* TextureRHI = RTResource->GetTextureRHI();
+			FRHITexture* TextureRHI = RTResource->GetTextureRHI();
 			if (!TextureRHI) return;
 
 			const uint32 DestStride = Res;

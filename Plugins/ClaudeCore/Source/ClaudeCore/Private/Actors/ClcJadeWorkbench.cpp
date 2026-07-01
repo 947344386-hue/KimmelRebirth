@@ -14,6 +14,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcWorkbenchHUD.h"
 #include "Interfaces/ClcStoneCarrier.h"
@@ -144,6 +145,9 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 {
 	if (!CachedPC.IsValid() || !OpeningStone) return;
 
+	// ---- 右键长按 FOV 放大（独立于工具，纯视觉拉近，不碰开窗/手电筒） ----
+	UpdateAimZoom(DeltaTime);
+
 	// ---- WASD 旋转 ----
 	const float RotAmount = OpeningStone->GetRotationSpeed() * DeltaTime * RotationInputScale;
 
@@ -172,6 +176,26 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 		{
 			bTKeyPrev = false;
 		}
+	}
+
+	// ---- -/= 键调整开窗笔刷半径 ----
+	if (AClcOpeningTool* OpeningTool = Cast<AClcOpeningTool>(CurrentTool))
+	{
+		const bool bMinusDown = CachedPC->IsInputKeyDown(EKeys::Hyphen);
+		const bool bEqualsDown = CachedPC->IsInputKeyDown(EKeys::Equals);
+		if (bMinusDown && !bMinusKeyPrev)
+		{
+			bMinusKeyPrev = true;
+			OpeningTool->AdjustBrushRadius(-OpeningTool->BrushIncrementPerPress);
+		}
+		else if (!bMinusDown) { bMinusKeyPrev = false; }
+
+		if (bEqualsDown && !bEqualsKeyPrev)
+		{
+			bEqualsKeyPrev = true;
+			OpeningTool->AdjustBrushRadius(OpeningTool->BrushIncrementPerPress);
+		}
+		else if (!bEqualsDown) { bEqualsKeyPrev = false; }
 	}
 
 	// ---- 背包打开时跳过工具操作 ----
@@ -256,6 +280,23 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 			}
 		}
 	}
+}
+
+// ============================================================
+// 右键 FOV 放大
+// ============================================================
+
+void AClcJadeWorkbench::UpdateAimZoom(float DeltaTime)
+{
+	if (!WorkCamera) return;
+
+	const bool bAimDown = CachedPC.IsValid() && CachedPC->IsInputKeyDown(EKeys::RightMouseButton);
+	bIsAiming = bAimDown;
+
+	const float TargetFOV = bAimDown ? (BaseFOV / AimZoomFactor) : BaseFOV;
+	const float CurrentFOV = WorkCamera->FieldOfView;
+	const float NewFOV = FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimZoomSpeed);
+	WorkCamera->SetFieldOfView(NewFOV);
 }
 
 // ============================================================
@@ -415,6 +456,9 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	}
 	BindToBackpackWidget();
 
+	// 缓存基础 FOV，右键放大基于此值缩放
+	if (WorkCamera) BaseFOV = WorkCamera->FieldOfView;
+
 	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Entered opening mode."));
 }
 
@@ -443,6 +487,10 @@ void AClcJadeWorkbench::ExitOpeningMode()
 	{
 		RemoveStoneFromBench();
 	}
+
+	// 恢复 FOV（右键放大可能改过）
+	if (WorkCamera) WorkCamera->SetFieldOfView(BaseFOV);
+	bIsAiming = false;
 
 	// 恢复摄像机
 	if (CachedPC.IsValid())

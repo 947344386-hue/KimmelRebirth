@@ -31,7 +31,7 @@ void AClcStone::BeginPlay()
 {
 	Super::BeginPlay();
 
-	InfoCardClass = LoadClass<UClcStoneInfoWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_StoneInfo.WBP_StoneInfo_C"));
+	if (!InfoCardClass) { InfoCardClass = LoadClass<UClcStoneInfoWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_StoneInfo.WBP_StoneInfo_C")); }
 }
 
 void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InMesh, float InScale, const FString& InDisplayName)

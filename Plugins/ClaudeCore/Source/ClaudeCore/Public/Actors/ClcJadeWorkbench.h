@@ -115,6 +115,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	float CameraDistance = 200.0f;
 
+	/** 长按右键放大倍率（2.0=放大2倍，只改 FOV，不碰开窗/工具/手电筒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "8.0"))
+	float AimZoomFactor = 2.0f;
+
+	/** 放大过渡速度（越大越快，10≈0.1秒到位） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "30.0"))
+	float AimZoomSpeed = 10.0f;
+
 	/** 开窗材质路径（AClcOpeningStone 初始化时加载） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FString OpeningMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneOpening.M_StoneOpening");
@@ -199,10 +207,22 @@ private:
 
 	bool bLeftMousePrev = false;
 
+	/** 右键是否处于长按放大状态 */
+	bool bIsAiming = false;
+
+	/** 进入开窗时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
+	float BaseFOV = 90.0f;
+
 	// ---- 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
 	bool bExitKeyPrev = false;
 	bool bBKeyPrev = false;
 	bool bTKeyPrev = false;
+
+	/** - 键边沿检测（调整开窗笔刷半径） */
+	bool bMinusKeyPrev = false;
+
+	/** = 键边沿检测（调整开窗笔刷半径） */
+	bool bEqualsKeyPrev = false;
 
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;
@@ -236,6 +256,8 @@ private:
 	void DestroyOpeningStone();
 	void BindToBackpackWidget();
 	void ProcessStoneOnBenchInput(float DeltaTime);
+	/** 长按右键 FOV 放大（独立于工具，纯视觉拉近） */
+	void UpdateAimZoom(float DeltaTime);
 	void SetWorkbenchCursor(bool bVisible);
 
 	// ---- 工具管理 ----

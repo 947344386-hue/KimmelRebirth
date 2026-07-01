@@ -4,6 +4,7 @@
 #include "Data/ClcEagleEyeConfig.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Actors/ClcStoneStall.h"
+#include "Actors/ClcStone.h"
 #include "Actors/ClcEnergyBall.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -20,7 +21,7 @@ void UClcEagleEyeComponent::BeginPlay()
 
 	MarketSubsystem = GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>();
 
-	EnergyBallClass = LoadClass<AClcEnergyBall>(nullptr, TEXT("/Game/JadeBetting/Blueprints/BP_EnergyBall.BP_EnergyBall_C"));
+	if (!EnergyBallClass) { EnergyBallClass = LoadClass<AClcEnergyBall>(nullptr, TEXT("/Game/JadeBetting/Blueprints/BP_EnergyBall.BP_EnergyBall_C")); }
 }
 
 void UClcEagleEyeComponent::InitializeConfig()

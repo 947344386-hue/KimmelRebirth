@@ -101,6 +101,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	UTexture2D* GetRevealTexture() const { return RevealTex; }
 
+	/** 获取类型纹理（R=玉mask, G=杂mask，供材质按类型混合玉/杂 PBR 纹理） */
+	UFUNCTION(BlueprintCallable, Category = "Opening")
+	UTexture2D* GetTypeTexture() const { return TypeTex; }
+
 	/** 获取累计开窗比例（0~1） */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetOpenedRatio() const;
@@ -108,6 +112,12 @@ public:
 private:
 	void EnsureMaskRT();
 	void EnsureRevealTexFromDistribution(const FClcStoneDistributionMap& Distribution, int32 Seed, EClcJadeGrade Grade);
+
+	/** 把分布图编码成 TypeTex（R=玉mask, G=杂mask），供材质按类型混合玉/杂纹理 */
+	void EnsureTypeTexFromDistribution(const FClcStoneDistributionMap& Distribution);
+
+	/** 按石头 Seed 注入调制参数（UV旋转/色调/种水）到 MID */
+	void ApplyModulationParams(UMaterialInstanceDynamic* MID);
 
 	/** 在 CPU 遮罩缓冲区中画一个圆形笔刷 */
 	void PaintBrushCPU(int32 CX, int32 CY, float RadiusPixels);
@@ -126,6 +136,10 @@ private:
 
 	UPROPERTY()
 	UTexture2D* RevealTex;
+
+	/** 类型纹理：R=玉mask(1=玉), G=杂mask(1=杂)。纹理主导混合用 */
+	UPROPERTY()
+	UTexture2D* TypeTex;
 
 	UPROPERTY()
 	FClcStoneDistributionMap CachedDistribution;

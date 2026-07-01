@@ -87,6 +87,6 @@ private:
 	UPROPERTY()
 	class UClcStoneInfoWidget* InfoCardWidget;
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, Category = "ClcStone")
 	TSubclassOf<UClcStoneInfoWidget> InfoCardClass;
 };

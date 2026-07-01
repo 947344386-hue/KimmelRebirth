@@ -72,7 +72,7 @@ struct CLAUDECORE_API FClcWorkbenchHUDData
 	// ── 提示 ──
 
 	UPROPERTY(BlueprintReadOnly, Category = "HUD|Hints")
-	FString OperationHints = TEXT("WASD 旋转 | T 切工具 | 左键 使用\nB 背包 | Esc 退出");
+	FString OperationHints = TEXT("WASD 旋转 | T 切工具\n左键 使用 | 右键 放大\nB 背包 | Esc 退出");
 };
 
 /**

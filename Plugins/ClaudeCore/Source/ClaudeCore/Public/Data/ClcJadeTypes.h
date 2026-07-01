@@ -104,6 +104,7 @@ struct CLAUDECORE_API FClcStoneInternalData
 	int32 PurchasePrice = 0;
 
 	/** 理论全开价值（用于鹰眼和定价计算，内部使用） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float TheoreticalValue = 0.0f;
 
 	/** Phase 2：UV 空间材质分布图（皮壳/绿玉/杂裂），确定性生成 */
@@ -155,7 +156,7 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY()
 	int32 BackpackIndex = -1;
 
-	/** 遮罩 RT 像素缓冲区（128×128 字节），退出工作台时保存，再进入时恢复 */
+	/** 遮罩 RT 像素缓冲区（256×256 字节），退出工作台时保存，再进入时恢复 */
 	UPROPERTY()
 	TArray<uint8> SavedMaskBuffer;
 };

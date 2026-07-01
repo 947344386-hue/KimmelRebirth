@@ -183,19 +183,16 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 	{
 		const bool bMinusDown = CachedPC->IsInputKeyDown(EKeys::Hyphen);
 		const bool bEqualsDown = CachedPC->IsInputKeyDown(EKeys::Equals);
-		if (bMinusDown && !bMinusKeyPrev)
+		// 连续按住式调整：每帧按比例叠加，短按也能触发，长按持续变化
+		const float BrushSpeed = 5.0f; // 每秒约 5 次 BrushIncrementPerPress 的量
+		if (bMinusDown)
 		{
-			bMinusKeyPrev = true;
-			OpeningTool->AdjustBrushRadius(-OpeningTool->BrushIncrementPerPress);
+			OpeningTool->AdjustBrushRadius(-OpeningTool->BrushIncrementPerPress * BrushSpeed * DeltaTime);
 		}
-		else if (!bMinusDown) { bMinusKeyPrev = false; }
-
-		if (bEqualsDown && !bEqualsKeyPrev)
+		if (bEqualsDown)
 		{
-			bEqualsKeyPrev = true;
-			OpeningTool->AdjustBrushRadius(OpeningTool->BrushIncrementPerPress);
+			OpeningTool->AdjustBrushRadius(OpeningTool->BrushIncrementPerPress * BrushSpeed * DeltaTime);
 		}
-		else if (!bEqualsDown) { bEqualsKeyPrev = false; }
 	}
 
 	// ---- 背包打开时跳过工具操作 ----

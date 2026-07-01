@@ -49,6 +49,8 @@ class CLAUDECORE_API UClcOpeningMaskComponent : public UActorComponent
 public:
 	UClcOpeningMaskComponent();
 
+	virtual void BeginDestroy() override;
+
 	// ---- 配置 ----
 
 	/** 遮罩 RT 的分辨率（与 DistributionMap 一致） */
@@ -119,15 +121,15 @@ private:
 	/** 按石头 Seed 注入调制参数（UV旋转/色调/种水）到 MID */
 	void ApplyModulationParams(UMaterialInstanceDynamic* MID);
 
-	/** 在 CPU 遮罩缓冲区中画一个圆形笔刷 */
-	void PaintBrushCPU(int32 CX, int32 CY, float RadiusPixels);
-
 	/** 将 CPU 缓冲区上传到 GPU RT */
 	void UploadMaskToGPU();
 
 	// ---- CPU 缓冲区 ----
 
 	TArray<uint8> MaskBuffer; // 0~255，MaskResolution*MaskResolution
+
+	/** 已开窗像素数（>=128 阈值），增量维护避免每次 GetOpenedRatio 全量遍历 */
+	int32 OpenedPixelCount = 0;
 
 	// ---- GPU 资源 ----
 

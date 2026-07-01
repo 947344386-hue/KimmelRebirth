@@ -82,14 +82,14 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 
 	// ---- 3b. 从皮壳配置表取贴图，注入开窗 MID 的皮壳分支 ----
 	if (UClcShellTextureConfig* ShellCfg = LoadObject<UClcShellTextureConfig>(
-		nullptr, TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig")))
+		nullptr, *ShellTextureConfigPath))
 	{
 		ShellCfg->InjectTexturesIntoMID(StoneMID, CachedStoneData.Internal.ShellTypeIndex);
 	}
 
 	// ---- 3c. 从玉石纹理配置表取高保真 PBR 纹理，注入开窗 MID 的玉/杂分支 ----
 	if (UClcJadeTextureConfig* JadeCfg = LoadObject<UClcJadeTextureConfig>(
-		nullptr, TEXT("/Game/JadeBetting/Data/DA_JadeTextureConfig")))
+		nullptr, *JadeTextureConfigPath))
 	{
 		JadeCfg->InjectIntoMID(StoneMID);
 	}

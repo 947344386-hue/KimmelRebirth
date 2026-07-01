@@ -10,6 +10,23 @@ UClcOpeningMaskComponent::UClcOpeningMaskComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UClcOpeningMaskComponent::BeginDestroy()
+{
+	// 清理 GC Root——AddToRoot 的纹理必须显式 RemoveFromRoot，否则永不回收
+	if (RevealTex)
+	{
+		RevealTex->RemoveFromRoot();
+		RevealTex = nullptr;
+	}
+	if (TypeTex)
+	{
+		TypeTex->RemoveFromRoot();
+		TypeTex = nullptr;
+	}
+	// MaskRT 是 UPROPERTY，GC 会自动回收，不需要 RemoveFromRoot
+	Super::BeginDestroy();
+}
+
 // ============================================================
 // 初始化
 // ============================================================
@@ -30,6 +47,7 @@ void UClcOpeningMaskComponent::ResetMask()
 {
 	const int32 TotalPixels = MaskResolution * MaskResolution;
 	MaskBuffer.Init(0, TotalPixels);
+	OpenedPixelCount = 0;
 	UploadMaskToGPU();
 }
 
@@ -43,6 +61,12 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 	if (InData.SavedMaskBuffer.Num() == MaskResolution * MaskResolution)
 	{
 		MaskBuffer = InData.SavedMaskBuffer;
+		// 从存档重算已开窗像素数
+		OpenedPixelCount = 0;
+		for (const uint8 Val : MaskBuffer)
+		{
+			if (Val >= 128) ++OpenedPixelCount;
+		}
 		EnsureMaskRT();
 		UploadMaskToGPU();
 		ensure(RevealTex || CachedDistribution.Data.Num() > 0);
@@ -464,6 +488,7 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 			if (NewVal > OldVal && OldVal < 128 && NewVal >= 128)
 			{
 				// 跨过阈值（128=半透明），露出底层
+				++OpenedPixelCount;
 				const uint8 MatType = CachedDistribution.GetPixel(X, Y);
 				if (MatType == 1) ++NewGreenPixels;
 				else if (MatType == 2) ++NewBlackPixels;
@@ -484,11 +509,6 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 	Result.NewBlackFraction = NewBlackPixels * PixelToFraction;
 
 	return Result;
-}
-
-void UClcOpeningMaskComponent::PaintBrushCPU(int32 CX, int32 CY, float RadiusPixels)
-{
-	// 已内联到 GrindAtUV 中避免重复遍历，保留此接口供未来扩展
 }
 
 // ============================================================
@@ -526,11 +546,5 @@ float UClcOpeningMaskComponent::GetOpenedRatio() const
 {
 	const int32 TotalPixels = MaskResolution * MaskResolution;
 	if (TotalPixels == 0) return 0.0f;
-
-	int32 OpenedPixels = 0;
-	for (const uint8 Val : MaskBuffer)
-	{
-		if (Val >= 128) ++OpenedPixels; // 半透明以上算已开窗
-	}
-	return static_cast<float>(OpenedPixels) / static_cast<float>(TotalPixels);
+	return static_cast<float>(OpenedPixelCount) / static_cast<float>(TotalPixels);
 }

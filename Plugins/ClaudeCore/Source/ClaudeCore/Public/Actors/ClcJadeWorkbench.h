@@ -218,12 +218,6 @@ private:
 	bool bBKeyPrev = false;
 	bool bTKeyPrev = false;
 
-	/** - 键边沿检测（调整开窗笔刷半径） */
-	bool bMinusKeyPrev = false;
-
-	/** = 键边沿检测（调整开窗笔刷半径） */
-	bool bEqualsKeyPrev = false;
-
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;
 

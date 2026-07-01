@@ -6,6 +6,8 @@
 #include "Tools/ClcStoneTool.h"
 #include "ClcOpeningTool.generated.h"
 
+class UDecalComponent;
+
 /**
  * 开窗器工具——打磨去除皮壳，暴露下方玉/裂纹。
  *
@@ -53,11 +55,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush", meta = (ClampMin = "0.001", ClampMax = "0.1"))
 	float BrushIncrementPerPress = 0.01f;
 
-	/** 预览环的世界缩放倍率（UV半径×此值=世界单位半径） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush")
+	/** 预览环尺寸修正百分比（100=自动匹配石头大小，偏大调小如 85） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush", meta = (ClampMin = "10.0", ClampMax = "300.0"))
 	float BrushScaleMultiplier = 100.0f;
 
-	/** 预览环材质——白/雪白发光环，半透明 */
+	/** 预览环材质——Decal 材质，白/雪白发光环，半透明 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush")
 	UMaterialInterface* PreviewMaterial = nullptr;
 
@@ -65,14 +67,14 @@ protected:
 	/** 打磨核心——Möller-Trumbore 射线-三角形求交 + GrindAtUV */
 	bool ExecuteGrind(const FVector& RayOrigin, const FVector& RayDirection);
 
-	/** 更新预览环的缩放和可见性 */
-	void UpdatePreviewCylinder();
+	/** 更新预览贴画的尺寸和可见性 */
+	void UpdatePreviewDecal();
 
 	// ---- 组件 ----
 
-	/** 预览环——扁圆柱体，半径=开窗笔刷半径，附着在 ToolRoot 上。左键按下时显示 */
+	/** 预览贴画——Decal 投影到石头表面，半径=开窗笔刷半径。左键打磨时隐藏 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UStaticMeshComponent* PreviewCylinder;
+	UDecalComponent* PreviewDecal;
 
 	// ---- 配置 ----
 

@@ -4,6 +4,7 @@
 #include "Actors/ClcOpeningStone.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ClcOpeningMaskComponent.h"
+#include "Components/DecalComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
@@ -19,22 +20,15 @@ AClcOpeningTool::AClcOpeningTool()
 	SmoothSpeedLocation = 0.3f;
 	SmoothSpeedRotation = 0.35f;
 
-	// ---- 预览环（扁圆柱体，半径=笔刷半径） ----
-	PreviewCylinder = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PreviewCylinder"));
-	PreviewCylinder->SetupAttachment(ToolRoot);
-	PreviewCylinder->SetRelativeLocation(FVector(0, 0, 0));
-	PreviewCylinder->SetVisibility(false);
-	PreviewCylinder->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PreviewCylinder->SetCastShadow(false);
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylMesh(
-		TEXT("/Engine/BasicShapes/Cylinder"));
-	if (CylMesh.Succeeded())
-	{
-		PreviewCylinder->SetStaticMesh(CylMesh.Object);
-		// 默认圆柱半径 50 高 100，扁平化：XY=笔刷半径*倍率/50，Z 极薄
-		PreviewCylinder->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.02f));
-	}
+	// ---- 预览贴画（Decal 投影到石头表面，半径=笔刷半径） ----
+	PreviewDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("PreviewDecal"));
+	PreviewDecal->SetupAttachment(ToolRoot);
+	PreviewDecal->SetRelativeLocation(FVector(0, 0, 0));
+	// Decal 默认沿 +X 投影，ToolRoot 的 Z 对齐表面法线，旋转 90° pitch 让投影轴对准 Z
+	PreviewDecal->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+	PreviewDecal->SetVisibility(true);
+	// DecalSize = (投影深度, 宽, 高)，初始给个默认值，UpdatePreviewDecal 会每帧修正
+	PreviewDecal->DecalSize = FVector(20.0f, 20.0f, 20.0f);
 }
 
 void AClcOpeningTool::OnLeftClick(bool bPressed)
@@ -44,7 +38,7 @@ void AClcOpeningTool::OnLeftClick(bool bPressed)
 
 	if (bIsGrinding != bPrev)
 	{
-		PreviewCylinder->SetVisibility(!bIsGrinding); // 打磨时隐藏，非打磨时显示
+		PreviewDecal->SetVisibility(!bIsGrinding); // 打磨时隐藏，非打磨时显示
 		OnGrindingStateChanged.Broadcast(bIsGrinding);
 	}
 }
@@ -52,6 +46,8 @@ void AClcOpeningTool::OnLeftClick(bool bPressed)
 void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 {
 	if (!TargetStone) return;
+
+	const bool bWasTarget = bHasTarget;
 
 	// 工具定位：贴在命中点，Z 轴对齐法线
 	if (TraceInfo.bHasHit)
@@ -64,6 +60,12 @@ void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 	else
 	{
 		bHasTarget = false;
+	}
+
+	// 首次贴上石头时初始化预览尺寸（后续只在 AdjustBrushRadius 时更新）
+	if (bHasTarget && !bWasTarget)
+	{
+		UpdatePreviewDecal();
 	}
 
 	// 打磨中→执行逻辑
@@ -82,21 +84,41 @@ void AClcOpeningTool::AdjustBrushRadius(float Delta)
 	float NewRadius = MaskComp->BrushRadius + Delta;
 	NewRadius = FMath::Clamp(NewRadius, BrushRadiusMin, BrushRadiusMax);
 	MaskComp->BrushRadius = NewRadius;
-	UpdatePreviewCylinder();
+	UpdatePreviewDecal();
 }
 
-void AClcOpeningTool::UpdatePreviewCylinder()
+void AClcOpeningTool::UpdatePreviewDecal()
 {
 	if (!TargetStone) return;
 	UClcOpeningMaskComponent* MaskComp = TargetStone->GetOpeningMask();
 	if (!MaskComp) return;
-	if (PreviewMaterial && PreviewCylinder && PreviewCylinder->GetMaterial(0) != PreviewMaterial)
+	if (PreviewMaterial && PreviewDecal && PreviewDecal->GetDecalMaterial() != PreviewMaterial)
 	{
-		PreviewCylinder->SetMaterial(0, PreviewMaterial);
+		PreviewDecal->SetDecalMaterial(PreviewMaterial);
 	}
-	const float WorldRadius = MaskComp->BrushRadius * BrushScaleMultiplier;
-	const float XYScale = WorldRadius / 50.0f;
-	PreviewCylinder->SetRelativeScale3D(FVector(XYScale, XYScale, 0.02f));
+
+	// 从石头 Mesh 的世界包围盒推算 UV→世界比例（UV 0-1 通常映射整个 Mesh）
+	// BrushScaleMultiplier 作为百分比修正（100=100%，偏大可调到 85 等）
+	UStaticMeshComponent* StoneMeshComp = TargetStone->GetStoneMesh();
+	float UvToWorld = BrushScaleMultiplier; // fallback：直接当倍率用
+	if (StoneMeshComp)
+	{
+		const FVector BoxExtent = StoneMeshComp->Bounds.BoxExtent; // 世界半尺寸（含 Scale）
+		const float MeshDim = BoxExtent.GetMax() * 2.0f;           // 世界全尺寸
+		if (MeshDim > KINDA_SMALL_NUMBER)
+		{
+			UvToWorld = MeshDim * (BrushScaleMultiplier / 100.0f);
+		}
+	}
+
+	const float WorldRadius = MaskComp->BrushRadius * UvToWorld;
+	// DecalSize = (投影深度, 宽, 高)——XY 平面=直径，Z=投影深度
+	const FVector NewSize(20.0f, WorldRadius * 2.0f, WorldRadius * 2.0f);
+	if (!PreviewDecal->DecalSize.Equals(NewSize, 0.1f))
+	{
+		PreviewDecal->DecalSize = NewSize;
+		PreviewDecal->MarkRenderStateDirty(); // 触发场景代理重建
+	}
 }
 
 bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayDirection)

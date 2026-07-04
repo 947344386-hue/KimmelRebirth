@@ -111,6 +111,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetOpenedRatio() const;
 
+	/** 获取已暴露绿色面积比例（0~1，相对总像素）——重载恢复后也有效 */
+	UFUNCTION(BlueprintCallable, Category = "Opening")
+	float GetExposedGreenRatio() const;
+
+	/** 获取已暴露杂裂面积比例（0~1，相对总像素）——重载恢复后也有效 */
+	UFUNCTION(BlueprintCallable, Category = "Opening")
+	float GetExposedBlackRatio() const;
+
 private:
 	void EnsureMaskRT();
 	void EnsureRevealTexFromDistribution(const FClcStoneDistributionMap& Distribution, int32 Seed, EClcJadeGrade Grade);
@@ -130,6 +138,12 @@ private:
 
 	/** 已开窗像素数（>=128 阈值），增量维护避免每次 GetOpenedRatio 全量遍历 */
 	int32 OpenedPixelCount = 0;
+
+	/** 已开窗像素中绿色像素数——与 OpenedPixelCount 对称，GrindAtUV 增量、RestoreMaskFromData 全量重算 */
+	int32 OpenedGreenPixelCount = 0;
+
+	/** 已开窗像素中杂裂像素数——同上 */
+	int32 OpenedBlackPixelCount = 0;
 
 	// ---- GPU 资源 ----
 

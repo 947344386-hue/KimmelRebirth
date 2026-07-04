@@ -48,6 +48,8 @@ void UClcOpeningMaskComponent::ResetMask()
 	const int32 TotalPixels = MaskResolution * MaskResolution;
 	MaskBuffer.Init(0, TotalPixels);
 	OpenedPixelCount = 0;
+	OpenedGreenPixelCount = 0;
+	OpenedBlackPixelCount = 0;
 	UploadMaskToGPU();
 }
 
@@ -61,11 +63,21 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 	if (InData.SavedMaskBuffer.Num() == MaskResolution * MaskResolution)
 	{
 		MaskBuffer = InData.SavedMaskBuffer;
-		// 从存档重算已开窗像素数
+		// 从存档重算已开窗像素数 + 绿/杂暴露量
 		OpenedPixelCount = 0;
-		for (const uint8 Val : MaskBuffer)
+		OpenedGreenPixelCount = 0;
+		OpenedBlackPixelCount = 0;
+		for (int32 Idx = 0; Idx < MaskBuffer.Num(); ++Idx)
 		{
-			if (Val >= 128) ++OpenedPixelCount;
+			if (MaskBuffer[Idx] >= 128)
+			{
+				++OpenedPixelCount;
+				const int32 X = Idx % MaskResolution;
+				const int32 Y = Idx / MaskResolution;
+				const uint8 MatType = CachedDistribution.GetPixel(X, Y);
+				if (MatType == 1) ++OpenedGreenPixelCount;
+				else if (MatType == 2) ++OpenedBlackPixelCount;
+			}
 		}
 		EnsureMaskRT();
 		UploadMaskToGPU();
@@ -490,8 +502,8 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 				// 跨过阈值（128=半透明），露出底层
 				++OpenedPixelCount;
 				const uint8 MatType = CachedDistribution.GetPixel(X, Y);
-				if (MatType == 1) ++NewGreenPixels;
-				else if (MatType == 2) ++NewBlackPixels;
+				if (MatType == 1) { ++NewGreenPixels; ++OpenedGreenPixelCount; }
+				else if (MatType == 2) { ++NewBlackPixels; ++OpenedBlackPixelCount; }
 			}
 
 			MaskBuffer[Idx] = static_cast<uint8>(NewVal);
@@ -547,4 +559,18 @@ float UClcOpeningMaskComponent::GetOpenedRatio() const
 	const int32 TotalPixels = MaskResolution * MaskResolution;
 	if (TotalPixels == 0) return 0.0f;
 	return static_cast<float>(OpenedPixelCount) / static_cast<float>(TotalPixels);
+}
+
+float UClcOpeningMaskComponent::GetExposedGreenRatio() const
+{
+	const int32 TotalPixels = MaskResolution * MaskResolution;
+	if (TotalPixels == 0) return 0.0f;
+	return static_cast<float>(OpenedGreenPixelCount) / static_cast<float>(TotalPixels);
+}
+
+float UClcOpeningMaskComponent::GetExposedBlackRatio() const
+{
+	const int32 TotalPixels = MaskResolution * MaskResolution;
+	if (TotalPixels == 0) return 0.0f;
+	return static_cast<float>(OpenedBlackPixelCount) / static_cast<float>(TotalPixels);
 }

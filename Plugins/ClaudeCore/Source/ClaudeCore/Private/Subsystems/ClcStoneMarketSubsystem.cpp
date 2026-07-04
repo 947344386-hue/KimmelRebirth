@@ -9,6 +9,39 @@
 #include "Actors/ClcStone.h"
 #include "Engine/AssetManager.h"
 
+namespace
+{
+	// DA_StoneConfig 未配置 GradeRollWeights 时的内置默认——豆40/糯30/冰20/玻10
+	// 避免 RollGrade 在空 Map 时静默 fallback 全豆种
+	const TMap<EClcJadeGrade, float>& GetDefaultGradeRollWeights()
+	{
+		static const TMap<EClcJadeGrade, float> M = []{
+			TMap<EClcJadeGrade, float> T;
+			T.Add(EClcJadeGrade::Bean, 40.0f);
+			T.Add(EClcJadeGrade::Glutinous, 30.0f);
+			T.Add(EClcJadeGrade::Ice, 20.0f);
+			T.Add(EClcJadeGrade::Glass, 10.0f);
+			return T;
+		}();
+		return M;
+	}
+
+	// DA_StoneConfig 未配置 GradeValueMultiplier 时的内置默认——豆1/糯2/冰4/玻8
+	// 避免定价函数在空 Map 时所有种水都用 1.0 系数，种水不分档
+	const TMap<EClcJadeGrade, float>& GetDefaultGradeValueMultipliers()
+	{
+		static const TMap<EClcJadeGrade, float> M = []{
+			TMap<EClcJadeGrade, float> T;
+			T.Add(EClcJadeGrade::Bean, 1.0f);
+			T.Add(EClcJadeGrade::Glutinous, 2.0f);
+			T.Add(EClcJadeGrade::Ice, 4.0f);
+			T.Add(EClcJadeGrade::Glass, 8.0f);
+			return T;
+		}();
+		return M;
+	}
+}
+
 void UClcStoneMarketSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -123,27 +156,34 @@ FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOut
 
 EClcJadeGrade UClcStoneMarketSubsystem::RollGrade(FRandomStream& Random, const FString& Origin) const
 {
-	if (!StoneConfig || StoneConfig->GradeRollWeights.Num() == 0)
+	const bool bUsingDefault = !StoneConfig || StoneConfig->GradeRollWeights.Num() == 0;
+	const TMap<EClcJadeGrade, float>& Weights = bUsingDefault
+		? GetDefaultGradeRollWeights()
+		: StoneConfig->GradeRollWeights;
+	if (bUsingDefault)
 	{
-		return EClcJadeGrade::Bean;
+		UE_LOG(LogTemp, Warning, TEXT("[ClcMarket] GradeRollWeights 未配置，使用内置默认(豆40/糯30/冰20/玻10)。请在 DA_StoneConfig 填表以自定义。"));
 	}
 
 	// 构建加权表（基础权重 + 产地加成）
 	TArray<TPair<EClcJadeGrade, float>> WeightedTable;
 
-	for (const auto& Pair : StoneConfig->GradeRollWeights)
+	for (const auto& Pair : Weights)
 	{
 		float Weight = Pair.Value;
 		// 产地软关联：遍历 OriginGradeBonuses 数组查找匹配的产地和对应的种水加成
-		for (const auto& BonusEntry : StoneConfig->OriginGradeBonuses)
+		if (StoneConfig)
 		{
-			if (BonusEntry.Origin == Origin)
+			for (const auto& BonusEntry : StoneConfig->OriginGradeBonuses)
 			{
-				if (const float* Bonus = BonusEntry.GradeBonuses.Find(Pair.Key))
+				if (BonusEntry.Origin == Origin)
 				{
-					Weight += *Bonus;
+					if (const float* Bonus = BonusEntry.GradeBonuses.Find(Pair.Key))
+					{
+						Weight += *Bonus;
+					}
+					break;
 				}
-				break;
 			}
 		}
 		WeightedTable.Add(TPair<EClcJadeGrade, float>(Pair.Key, FMath::Max(0.0f, Weight)));
@@ -218,7 +258,10 @@ float UClcStoneMarketSubsystem::CalculateTheoreticalValue(const FClcStoneInterna
 	}
 
 	// 种水
-	const float* GradeMult = StoneConfig->GradeValueMultiplier.Find(Data.Grade);
+	const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+		? StoneConfig->GradeValueMultiplier
+		: GetDefaultGradeValueMultipliers();
+	const float* GradeMult = ValueMults.Find(Data.Grade);
 	const float C_sw = GradeMult ? *GradeMult : 1.0f;
 	const float V_weighted = V_exposed * C_sw;
 
@@ -261,7 +304,10 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 	}
 
 	// 种水
-	const float* GradeMult = StoneConfig->GradeValueMultiplier.Find(I.Grade);
+	const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+		? StoneConfig->GradeValueMultiplier
+		: GetDefaultGradeValueMultipliers();
+	const float* GradeMult = ValueMults.Find(I.Grade);
 	const float C_sw = GradeMult ? *GradeMult : 1.0f;
 	const float V_weighted = V_exposed * C_sw;
 

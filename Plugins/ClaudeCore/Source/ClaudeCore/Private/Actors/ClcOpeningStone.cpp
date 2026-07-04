@@ -103,9 +103,21 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	OpeningMaskComp->ApplyToMaterial(StoneMID);
 
 	// ---- 5. 初始化累计统计 ----
+	// 有存档时从恢复的遮罩重建绿/黑暴露比例，无存档时为 0
 	AccumulatedOpenedRatio = 0.0f;
 	AccumulatedGreenRatio = 0.0f;
 	AccumulatedBlackRatio = 0.0f;
+	if (StoneData.SavedMaskBuffer.Num() > 0 && OpeningMaskComp)
+	{
+		AccumulatedGreenRatio = OpeningMaskComp->GetExposedGreenRatio();
+		AccumulatedBlackRatio = OpeningMaskComp->GetExposedBlackRatio();
+		// 已开到过绿 → 种水已暴露，HUD 直接显示种水信息（避免重载后回退显示皮壳）
+		if (AccumulatedGreenRatio > 0.0f)
+		{
+			bGradeRevealed = true;
+			bHUDDirty = true;
+		}
+	}
 
 	bInitialized = true;
 

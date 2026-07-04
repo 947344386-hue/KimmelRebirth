@@ -574,3 +574,81 @@ float UClcOpeningMaskComponent::GetExposedBlackRatio() const
 	if (TotalPixels == 0) return 0.0f;
 	return static_cast<float>(OpenedBlackPixelCount) / static_cast<float>(TotalPixels);
 }
+
+// ============================================================
+// 连通域分析——4 连通 BFS 找最大绿色连通域
+// 每 0.3s 由 GetStoneData 调一次（Workbench HUD 刷新节奏），O(N) 微秒级
+// ============================================================
+
+int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
+{
+	const int32 Res = MaskResolution;
+	const int32 Total = Res * Res;
+	if (Total == 0 || MaskBuffer.Num() < Total) return 0;
+
+	TArray<bool> Visited;
+	Visited.Init(false, Total);
+
+	int32 LargestSize = 0;
+
+	for (int32 StartIdx = 0; StartIdx < Total; ++StartIdx)
+	{
+		if (Visited[StartIdx]) continue;
+
+		const int32 SX = StartIdx % Res;
+		const int32 SY = StartIdx / Res;
+
+		// 必须是已开窗(>=128)且绿色(Distribution==1)
+		if (MaskBuffer[StartIdx] < 128 || CachedDistribution.GetPixel(SX, SY) != 1)
+		{
+			Visited[StartIdx] = true;
+			continue;
+		}
+
+		// BFS——用头索引避免 TArray 头部删除的 O(N) 开销
+		int32 ComponentSize = 0;
+		TArray<int32> Queue;
+		Queue.Reserve(256);
+		Queue.Add(StartIdx);
+		Visited[StartIdx] = true;
+		int32 Head = 0;
+
+		while (Head < Queue.Num())
+		{
+			const int32 CurIdx = Queue[Head++];
+			++ComponentSize;
+
+			const int32 CX = CurIdx % Res;
+			const int32 CY = CurIdx / Res;
+
+			// 4 邻居（边界安全）
+			const int32 Left  = (CX > 0)       ? CurIdx - 1   : INDEX_NONE;
+			const int32 Right = (CX < Res - 1) ? CurIdx + 1   : INDEX_NONE;
+			const int32 Up    = (CY > 0)       ? CurIdx - Res : INDEX_NONE;
+			const int32 Down  = (CY < Res - 1) ? CurIdx + Res : INDEX_NONE;
+
+			const int32 Neighbors[4] = { Left, Right, Up, Down };
+			for (int32 n = 0; n < 4; ++n)
+			{
+				const int32 NIdx = Neighbors[n];
+				if (NIdx == INDEX_NONE || Visited[NIdx]) continue;
+
+				const int32 NX = NIdx % Res;
+				const int32 NY = NIdx / Res;
+
+				if (MaskBuffer[NIdx] < 128 || CachedDistribution.GetPixel(NX, NY) != 1)
+				{
+					Visited[NIdx] = true;
+					continue;
+				}
+
+				Visited[NIdx] = true;
+				Queue.Add(NIdx);
+			}
+		}
+
+		LargestSize = FMath::Max(LargestSize, ComponentSize);
+	}
+
+	return LargestSize;
+}

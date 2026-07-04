@@ -119,6 +119,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetExposedBlackRatio() const;
 
+	/** 计算当前已开窗绿色像素的最大连通域像素数（4连通 BFS，每 0.3s 调一次性能无忧） */
+	UFUNCTION(BlueprintCallable, Category = "Opening")
+	int32 ComputeLargestGreenConnectedComponent() const;
+
 private:
 	void EnsureMaskRT();
 	void EnsureRevealTexFromDistribution(const FClcStoneDistributionMap& Distribution, int32 Seed, EClcJadeGrade Grade);

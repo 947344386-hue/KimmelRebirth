@@ -12,6 +12,8 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "Subsystems/ClcStoneMarketSubsystem.h"
 
 AClcStone::AClcStone()
 {
@@ -53,6 +55,18 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 
 	RecalculateSurfaceArea();
 
+	// 表面积已基于真实 Mesh 重算——覆盖 GenerateStoneInternal 用占位 SA=1000 算的初值
+	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	if (UClcStoneMarketSubsystem* Market = GI ? GI->GetSubsystem<UClcStoneMarketSubsystem>() : nullptr)
+	{
+		RuntimeData.Internal.TheoreticalValue = Market->CalculateTheoreticalValue(RuntimeData.Internal);
+		RuntimeData.Internal.PurchasePrice = Market->CalculatePurchasePrice(RuntimeData.Internal);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ClcStone] MarketSubsystem unavailable, prices based on placeholder SA=1000!"));
+	}
+
 	// 应用皮壳材质 + 从配置表注入贴图
 	if (UMaterialInterface* ShellMat = LoadObject<UMaterialInterface>(nullptr, *ShellMaterialPath))
 	{
@@ -71,8 +85,9 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 		UE_LOG(LogTemp, Warning, TEXT("[ClcStone] Shell material not found: %s"), *ShellMaterialPath);
 	}
 
-	UE_LOG(LogTemp, Verbose, TEXT("[ClcStone] Initialized: %s, Grade=%d, SA=%.1f, Price=%d"),
-		*RuntimeData.DisplayName, (int32)InData.Grade, InData.SurfaceArea, InData.PurchasePrice);
+	UE_LOG(LogTemp, Log, TEXT("[ClcStone] Initialized: %s, Grade=%d, SA=%.1f, Price=%d (Theoretical=%.0f)"),
+		*RuntimeData.DisplayName, (int32)RuntimeData.Internal.Grade, RuntimeData.Internal.SurfaceArea,
+		RuntimeData.Internal.PurchasePrice, RuntimeData.Internal.TheoreticalValue);
 }
 
 FName AClcStone::GetShellName() const

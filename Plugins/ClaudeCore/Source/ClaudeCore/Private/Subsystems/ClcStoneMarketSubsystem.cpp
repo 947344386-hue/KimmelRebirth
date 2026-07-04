@@ -281,10 +281,11 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 	const float S_opened = StoneData.AccumulatedOpenedArea;
 	const float S_unopened = S_total - S_opened;
 
-	// 边界A：未开窗 → 保底价
+	// 边界A：未开窗 → 保底价 = 理论全开价值 × 折扣系数
+	// （杂裂多的石头 TheoreticalValue 低，保底自然低，避免杂裂多的石头保底和纯皮壳一样）
 	if (S_opened <= 0.0f)
 	{
-		return FMath::RoundToInt(S_total * StoneConfig->PriceFloorPerArea);
+		return FMath::RoundToInt(I.TheoreticalValue * StoneConfig->UnopenedFloorDiscountFactor);
 	}
 
 	// ---- 已暴露基础价值 ----

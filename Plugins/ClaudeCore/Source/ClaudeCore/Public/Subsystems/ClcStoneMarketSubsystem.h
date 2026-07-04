@@ -71,15 +71,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	float CalculateTheoreticalValue(const FClcStoneInternalData& Data) const;
 
+	/** 计算购买标价（含隐藏溢价）——public 供 AClcStone 在 RecalculateSurfaceArea 后重算 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
+	int32 CalculatePurchasePrice(const FClcStoneInternalData& Data) const;
+
 private:
 	/** 掷种水档位——带产地软关联 */
 	EClcJadeGrade RollGrade(FRandomStream& Random, const FString& Origin) const;
 
 	/** 生成绿/黑比例和最大连续块比例 */
 	void RollRatios(FRandomStream& Random, float& OutGreen, float& OutBlack, float& OutLargestPatch) const;
-
-	/** 计算购买标价（含隐藏溢价） */
-	int32 CalculatePurchasePrice(const FClcStoneInternalData& Data) const;
 
 	// ---- 配置引用 ----
 	UPROPERTY()

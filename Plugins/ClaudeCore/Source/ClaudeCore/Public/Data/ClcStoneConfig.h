@@ -62,18 +62,23 @@ public:
 	FVector2D LargestPatchRatioRange = FVector2D(0.3f, 0.95f);
 
 	// ---- 定价参数 ----
+	// 系数按 SA≈16000（半径 40cm 球 ×0.8）标定。若改 Mesh 尺寸需同步重标定。
 
 	/** 单位面积玉肉基础单价 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float PricePerUnitArea = 100.0f;
+	float PricePerUnitArea = 2.0f;
 
-	/** 未开窗原石的单位面积保底价（远低于 PricePerUnitArea） */
+	/** 未开窗原石的保底折扣系数（保底价 = TheoreticalValue × 此系数，杂裂多的石头自然低） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
+	float UnopenedFloorDiscountFactor = 0.1f;
+
+	/** [已弃用] 未开窗原石的单位面积保底价——保留向后兼容，CalculateSalePrice 已改用 UnopenedFloorDiscountFactor */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float PriceFloorPerArea = 5.0f;
 
 	/** 单位面积杂裂惩罚扣分 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float PenaltyPerUnitBlack = 20.0f;
+	float PenaltyPerUnitBlack = 2.0f;
 
 	/** 大块绿暴击系数 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
@@ -81,7 +86,7 @@ public:
 
 	/** 大块连续绿面积阈值（超过该面积才触发暴击） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float ContinuityAreaThreshold = 50.0f;
+	float ContinuityAreaThreshold = 800.0f;
 
 	/** 赌价激活的最小开窗比例（>= 该值才计算剩余赌价） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
@@ -97,7 +102,7 @@ public:
 
 	/** 石头标价的基础系数（乘以表面积，再叠加隐藏溢价） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float BasePricePerArea = 50.0f;
+	float BasePricePerArea = 0.1f;
 
 	// ---- GM / 调试 ----
 

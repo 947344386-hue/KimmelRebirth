@@ -201,7 +201,19 @@ bool AClcOpeningStone::GetStoneData(FClcStoneRuntimeData& OutData) const
 	OutData.OpenedGreenArea = GreenRatio * SurfaceArea;
 	OutData.OpenedBlackArea = BlackRatio * SurfaceArea;
 
-	OutData.LargestExposedGreenPatch = GreenRatio * SurfaceArea;
+	// 最大绿色连通域——BFS 算真实连通面积（GreenRatio×SA = OpenedGreenArea，无连通性信息）
+	if (OpeningMaskComp)
+	{
+		const int32 LargestGreenPixels = OpeningMaskComp->ComputeLargestGreenConnectedComponent();
+		const float TotalPixels = static_cast<float>(UClcOpeningMaskComponent::MaskResolution * UClcOpeningMaskComponent::MaskResolution);
+		OutData.LargestExposedGreenPatch = TotalPixels > 0.0f
+			? (static_cast<float>(LargestGreenPixels) / TotalPixels) * SurfaceArea
+			: 0.0f;
+	}
+	else
+	{
+		OutData.LargestExposedGreenPatch = 0.0f;
+	}
 
 	// 保存遮罩像素数据
 	OpeningMaskComp->SaveMaskToData(OutData);

@@ -8,11 +8,13 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/ClcInteractionIndicator.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
@@ -21,7 +23,21 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+
+namespace
+{
+	UClcLogToastSubsystem* GetLogToast(const TWeakObjectPtr<APlayerController>& PC)
+	{
+		if (!PC.IsValid()) return nullptr;
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			return LP->GetSubsystem<UClcLogToastSubsystem>();
+		}
+		return nullptr;
+	}
+}
 
 AClcJadeWorkbench::AClcJadeWorkbench()
 {
@@ -65,6 +81,9 @@ AClcJadeWorkbench::AClcJadeWorkbench()
 	WorkCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("WorkCamera"));
 	WorkCamera->SetupAttachment(CameraArm);
 
+	// ---- 交互指示器（小白点：范围内+背包有石头→选中） ----
+	InteractionIndicator = CreateDefaultSubobject<UClcInteractionIndicator>(TEXT("InteractionIndicator"));
+
 	// ---- 工具类默认值（用户可在 Workbench Details 中改为 BP 子类） ----
 	OpeningToolClass = AClcOpeningTool::StaticClass();
 	FlashlightToolClass = AClcFlashlightTool::StaticClass();
@@ -78,6 +97,14 @@ void AClcJadeWorkbench::BeginPlay()
 	TriggerSphere->OnComponentEndOverlap.AddDynamic(this, &AClcJadeWorkbench::OnTriggerEndOverlap);
 
 	TriggerSphere->SetSphereRadius(TriggerRadius);
+
+	// 配置交互指示器：范围选中模式 + 委托(背包有石头→选中)
+	if (InteractionIndicator)
+	{
+		InteractionIndicator->InteractionRadius = TriggerRadius;
+		InteractionIndicator->bSelectByProximity = true;
+		InteractionIndicator->OnQueryCanSelect.BindDynamic(this, &AClcJadeWorkbench::QueryCanSelect);
+	}
 }
 
 void AClcJadeWorkbench::Tick(float DeltaTime)
@@ -319,9 +346,6 @@ void AClcJadeWorkbench::SwitchToolMode(EClcToolMode NewMode)
 	SpawnCurrentTool();
 
 	OnToolModeChanged(NewMode);
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Tool mode → %s"),
-		NewMode == EClcToolMode::Opener ? TEXT("Opener") : TEXT("Flashlight"));
 }
 
 void AClcJadeWorkbench::SpawnCurrentTool()
@@ -387,7 +411,7 @@ void AClcJadeWorkbench::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedCom
 		{
 			PlayerInRange = Pawn;
 			CachePlayerRefs();
-			ShowPrompt(InteractionPrompt);
+			// 小白点由 InteractionIndicator 自动显示（范围+背包有石头→选中）
 		}
 	}
 }
@@ -398,7 +422,7 @@ void AClcJadeWorkbench::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp,
 	if (PlayerInRange.Get() == Other)
 	{
 		PlayerInRange.Reset();
-		HidePrompt();
+		// 小白点由 InteractionIndicator 自动隐藏（离开范围）
 
 		if (CurrentState != EClcWorkbenchState::Inactive)
 		{
@@ -438,11 +462,16 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	if (CachedCarrier->GetStones().Num() == 0)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[ClcWorkbench] Player has no stones."));
+		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		{
+			LT->AddLog(TEXT("背包空，无可开窗的石头"), 2.0f, FLinearColor::Yellow);
+		}
 		return;
 	}
 
 	CurrentState = EClcWorkbenchState::AwaitingStone;
-	HidePrompt();
+	HidePrompt();  // 向后兼容：BP 端如有文字提示则隐藏
+	if (InteractionIndicator) InteractionIndicator->bHidden = true;  // 开窗模式隐藏小白点（切相机避免碍事）
 	OnEnterOpeningMode();
 
 	// 打开背包
@@ -456,7 +485,10 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	// 缓存基础 FOV，右键放大基于此值缩放
 	if (WorkCamera) BaseFOV = WorkCamera->FieldOfView;
 
-	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Entered opening mode."));
+	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	{
+		LT->AddLog(TEXT("进入开窗模式——选择一块石头"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+	}
 }
 
 void AClcJadeWorkbench::ExitOpeningMode()
@@ -498,6 +530,9 @@ void AClcJadeWorkbench::ExitOpeningMode()
 	CurrentState = EClcWorkbenchState::Inactive;
 	ActiveStoneBackpackIndex = -1;
 
+	// 恢复小白点（玩家还在范围内会自动显示）
+	if (InteractionIndicator) InteractionIndicator->bHidden = false;
+
 	OnExitOpeningMode();
 
 	// 恢复光标和输入模式
@@ -507,8 +542,6 @@ void AClcJadeWorkbench::ExitOpeningMode()
 	{
 		ShowPrompt(InteractionPrompt);
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Exited opening mode."));
 }
 
 // ============================================================
@@ -551,6 +584,25 @@ void AClcJadeWorkbench::BindToBackpackWidget()
 	Widget->OnStoneSelected.AddDynamic(this, &AClcJadeWorkbench::OnBackpackStoneSelected);
 }
 
+// ============================================================
+// InteractionIndicator 委托
+// ============================================================
+
+bool AClcJadeWorkbench::QueryCanSelect()
+{
+	// 背包有石头 → 选中态；空背包 → 仅范围内态
+	APlayerController* PC = CachedPC.IsValid()
+		? CachedPC.Get()
+		: UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!PC || !PC->GetLocalPlayer()) return false;
+
+	if (UClcBackpackSubsystem* BP = PC->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>())
+	{
+		return BP->GetStones().Num() > 0;
+	}
+	return false;
+}
+
 void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 {
 	// AwaitingStone 状态：首次选石
@@ -583,8 +635,6 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 		PlaceStoneOnBench(StoneIndex);
 
 		SetWorkbenchCursor(true);
-
-		UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Switched stone on bench."));
 	}
 }
 
@@ -671,9 +721,14 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	// 蓝图通知
 	OnStonePlaced(ActiveStoneData.Internal);
 
-	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Stone '%s' placed. Green:%.2f Black:%.2f Grade:%d"),
-		*ActiveStoneData.DisplayName, ActiveStoneData.Internal.GreenRatio,
-		ActiveStoneData.Internal.BlackRatio, (int32)ActiveStoneData.Internal.Grade);
+	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	{
+		LT->AddLog(FString::Printf(TEXT("上台：%s（绿%.0f%% 黑%.0f%%）"),
+			*ActiveStoneData.DisplayName,
+			ActiveStoneData.Internal.GreenRatio * 100.0f,
+			ActiveStoneData.Internal.BlackRatio * 100.0f),
+			2.0f, FLinearColor::White);
+	}
 }
 
 void AClcJadeWorkbench::RemoveStoneFromBench()
@@ -704,8 +759,6 @@ void AClcJadeWorkbench::RemoveStoneFromBench()
 	ActiveStoneData = FClcStoneRuntimeData();
 
 	OnStoneRemoved();
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcWorkbench] Stone recycled to backpack."));
 }
 
 void AClcJadeWorkbench::DestroyOpeningStone()

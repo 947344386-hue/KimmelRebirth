@@ -87,8 +87,6 @@ void UClcStoneMarketSubsystem::RefreshMarket()
 			Stall->SpawnStones();
 		}
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcMarket] Market refreshed. %d stalls."), RegisteredStalls.Num());
 }
 
 void UClcStoneMarketSubsystem::RegisterStall(AClcStoneStall* Stall)

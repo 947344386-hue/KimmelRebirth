@@ -19,6 +19,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class USpringArmComponent;
+class UClcInteractionIndicator;
 class AClcOpeningStone;
 class AClcStoneTool;
 class UClcWorkbenchHUD;
@@ -90,6 +91,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USpringArmComponent* CameraArm;
+
+	/** 交互指示器——范围内+背包有石头→选中态（与出售台一致） */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UClcInteractionIndicator* InteractionIndicator;
 
 	// ---- 配置 ----
 
@@ -263,6 +268,10 @@ private:
 
 	UFUNCTION()
 	void OnBackpackStoneSelected(int32 StoneIndex);
+
+	/** InteractionIndicator 委托——背包有石头返回 true（选中态），否则 false（范围内态） */
+	UFUNCTION()
+	bool QueryCanSelect();
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,

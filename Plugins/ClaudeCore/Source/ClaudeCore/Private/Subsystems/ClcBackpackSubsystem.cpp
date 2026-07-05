@@ -86,8 +86,6 @@ int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[ClcBackpack] Added stone '%s' at slot %d. Total: %d"),
-		*StoneData.DisplayName, NewIndex, Stones.Num());
 	return NewIndex;
 }
 

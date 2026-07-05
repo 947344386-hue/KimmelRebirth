@@ -5,12 +5,14 @@
 #include "Components/ClcInteractionIndicator.h"
 #include "UI/ClcStoneInfoWidget.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Materials/MaterialInterface.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Engine.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
@@ -84,10 +86,6 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[ClcStone] Shell material not found: %s"), *ShellMaterialPath);
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcStone] Initialized: %s, Grade=%d, SA=%.1f, Price=%d (Theoretical=%.0f)"),
-		*RuntimeData.DisplayName, (int32)RuntimeData.Internal.Grade, RuntimeData.Internal.SurfaceArea,
-		RuntimeData.Internal.PurchasePrice, RuntimeData.Internal.TheoreticalValue);
 }
 
 FName AClcStone::GetShellName() const
@@ -160,15 +158,18 @@ bool AClcStone::OnInteract(AActor* Interactor)
 
 	if (!Backpack->SpendGold(RuntimeData.Internal.PurchasePrice))
 	{
+		if (UClcLogToastSubsystem* LT = PC->GetLocalPlayer()->GetSubsystem<UClcLogToastSubsystem>())
+		{
+			LT->AddLog(TEXT("金币不足"), 2.0f, FLinearColor::Red);
+		}
 		return false;
 	}
 
 	Backpack->AddStone(RuntimeData);
 
-	if (GEngine)
+	if (UClcLogToastSubsystem* LT = PC->GetLocalPlayer()->GetSubsystem<UClcLogToastSubsystem>())
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green,
-			FString::Printf(TEXT("购买成功！%s 已加入背包"), *RuntimeData.DisplayName));
+		LT->AddLog(FString::Printf(TEXT("购买成功！%s 已加入背包"), *RuntimeData.DisplayName), 2.0f, FLinearColor::Green);
 	}
 
 	HideInfoCard();

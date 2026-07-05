@@ -213,8 +213,6 @@ void AClcStoneStall::SpawnStones()
 	const FVector Center = StoneSpawnCenter->GetComponentLocation();
 	const float Jitter = CellSize * StallCfg->CellJitterRatio;
 
-	UE_LOG(LogTemp, Log, TEXT("[ClcStall] Grid: %d×%d (CellSize=%.0f)"), Cols, Rows, CellSize);
-
 	for (int32 i = 0; i < Count; ++i)
 	{
 		const int32 Col = i % Cols;
@@ -266,8 +264,6 @@ void AClcStoneStall::SpawnStones()
 			SpawnedStones.Add(Stone);
 		}
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcStall] Spawned %d stones"), SpawnedStones.Num());
 }
 
 FTransform AClcStoneStall::GetBallSpawnLocation() const

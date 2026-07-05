@@ -49,8 +49,6 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 	ScanTimer = 0.0f;
 
 	UpdateBalls();
-
-	UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Activated! Duration: %.1fs"), ActiveTimer);
 }
 
 void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -78,7 +76,6 @@ void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			bCoolingDown = true;
 			CooldownTimer = Config->CooldownDuration;
 			DestroyAllBalls();
-			UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Deactivated. Cooldown: %.1fs"), CooldownTimer);
 		}
 	}
 
@@ -88,7 +85,6 @@ void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (CooldownTimer <= 0.0f)
 		{
 			bCoolingDown = false;
-			UE_LOG(LogTemp, Log, TEXT("[ClcEagleEye] Cooldown finished."));
 		}
 	}
 }

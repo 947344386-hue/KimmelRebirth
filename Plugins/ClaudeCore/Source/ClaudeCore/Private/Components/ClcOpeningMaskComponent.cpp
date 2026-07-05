@@ -82,12 +82,9 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 		EnsureMaskRT();
 		UploadMaskToGPU();
 		ensure(RevealTex || CachedDistribution.Data.Num() > 0);
-		UE_LOG(LogTemp, Log, TEXT("[ClcMask] Restored mask from saved data (%d pixels)"),
-			InData.SavedMaskBuffer.Num());
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("[ClcMask] No saved mask data, starting fresh."));
 		ResetMask();
 	}
 }

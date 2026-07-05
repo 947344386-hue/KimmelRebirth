@@ -121,10 +121,6 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 
 	bInitialized = true;
 
-	UE_LOG(LogTemp, Log, TEXT("[ClcOpeningStone] Initialized stone '%s'. Green:%.2f Black:%.2f Grade:%d"),
-		*StoneData.DisplayName, StoneData.Internal.GreenRatio,
-		StoneData.Internal.BlackRatio, (int32)StoneData.Internal.Grade);
-
 	return true;
 }
 

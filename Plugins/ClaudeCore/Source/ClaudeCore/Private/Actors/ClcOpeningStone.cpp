@@ -6,6 +6,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "Data/ClcJadeTextureConfig.h"
+#include "ClcDeveloperSettings.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -81,15 +82,22 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	}
 
 	// ---- 3b. 从皮壳配置表取贴图，注入开窗 MID 的皮壳分支 ----
+	// 路径：实例 UPROPERTY 优先，空则走 DeveloperSettings 全局配置
+	const FString& ShellPath = ShellTextureConfigPath.IsEmpty()
+		? GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath
+		: ShellTextureConfigPath;
 	if (UClcShellTextureConfig* ShellCfg = LoadObject<UClcShellTextureConfig>(
-		nullptr, *ShellTextureConfigPath))
+		nullptr, *ShellPath))
 	{
 		ShellCfg->InjectTexturesIntoMID(StoneMID, CachedStoneData.Internal.ShellTypeIndex);
 	}
 
 	// ---- 3c. 从玉石纹理配置表取高保真 PBR 纹理，注入开窗 MID 的玉/杂分支 ----
+	const FString& JadePath = JadeTextureConfigPath.IsEmpty()
+		? GetDefault<UClcDeveloperSettings>()->JadeTextureConfigPath
+		: JadeTextureConfigPath;
 	if (UClcJadeTextureConfig* JadeCfg = LoadObject<UClcJadeTextureConfig>(
-		nullptr, *JadeTextureConfigPath))
+		nullptr, *JadePath))
 	{
 		JadeCfg->InjectIntoMID(StoneMID);
 	}

@@ -6,6 +6,7 @@
 #include "Engine/DataAsset.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "ClcDeveloperSettings.h"
 #include "ClcShellTextureConfig.generated.h"
 
 /**
@@ -74,8 +75,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Shell")
     static FName GetShellName(int32 ShellTypeIndex)
     {
-        const UClcShellTextureConfig* Cfg = LoadObject<UClcShellTextureConfig>(
-            nullptr, TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig"));
+        const FString Path = GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath;
+        const UClcShellTextureConfig* Cfg = LoadObject<UClcShellTextureConfig>(nullptr, *Path);
         if (Cfg)
         {
             if (const FClcShellTextureEntry* Entry = Cfg->GetEntryByIndex(ShellTypeIndex))

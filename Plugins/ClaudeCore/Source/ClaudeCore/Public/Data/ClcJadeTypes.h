@@ -160,3 +160,41 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY()
 	TArray<uint8> SavedMaskBuffer;
 };
+
+/**
+ * 背包悬浮 tips 聚合数据——C++ 侧 BuildTooltipInfo 一次性算好，BP 只管渲染。
+ * 皮壳/种水互斥：bOpenedToJade=true 时填 GradeText，false 时填 ShellName。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcStoneTooltipInfo
+{
+	GENERATED_BODY()
+
+	/** 展示名，如"老坑沙皮 #42" */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	FString DisplayName;
+
+	/** 产地，如"木那" */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	FString Origin;
+
+	/** 是否已开到玉（OpenedGreenArea > 0）——决定显示皮壳还是种水 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	bool bOpenedToJade = false;
+
+	/** 未开到玉时填皮壳名（如"黄沙皮"），已开到玉时留空 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	FString ShellName;
+
+	/** 已开到玉时填种水档位（如"冰种"），未开到玉时留空 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	FString GradeText;
+
+	/** 当前回收价（CalculateSalePrice 实时算） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	int32 CurrentValue = 0;
+
+	/** 购入价 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcTooltip")
+	int32 PurchasePrice = 0;
+};

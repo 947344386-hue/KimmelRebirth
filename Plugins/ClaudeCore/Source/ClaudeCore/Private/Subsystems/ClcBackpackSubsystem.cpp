@@ -3,6 +3,7 @@
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "UI/ClcBackpackWidget.h"
 #include "Data/ClcStoneConfig.h"
+#include "ClcDeveloperSettings.h"
 #include "Engine/World.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -12,8 +13,9 @@ void UClcBackpackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 	if (!BackpackWidgetClass) { BackpackWidgetClass = LoadClass<UClcBackpackWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_Backpack.WBP_Backpack_C")); }
 
-	// 从 DataAsset 读取初始金币
-	if (UClcStoneConfig* Config = LoadObject<UClcStoneConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StoneConfig")))
+	// 从 DataAsset 读取初始金币——路径走 DeveloperSettings
+	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	if (UClcStoneConfig* Config = LoadObject<UClcStoneConfig>(nullptr, *DS->StoneConfigPath))
 	{
 		Gold = Config->InitialGold;
 	}

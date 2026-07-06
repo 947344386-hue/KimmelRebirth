@@ -102,13 +102,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningStone|Config")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
 
-	/** 皮壳纹理配置 DataAsset 路径 */
+	/** 皮壳纹理配置 DataAsset 路径——空则走 DeveloperSettings 全局配置 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningStone|Config", meta = (MetaClass = "ClcShellTextureConfig"))
-	FString ShellTextureConfigPath = TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig");
+	FString ShellTextureConfigPath;
 
-	/** 玉石纹理配置 DataAsset 路径 */
+	/** 玉石纹理配置 DataAsset 路径——空则走 DeveloperSettings 全局配置 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningStone|Config", meta = (MetaClass = "ClcJadeTextureConfig"))
-	FString JadeTextureConfigPath = TEXT("/Game/JadeBetting/Data/DA_JadeTextureConfig");
+	FString JadeTextureConfigPath;
 
 private:
 	/** 当前石头数据（运行时持续更新开窗进度） */

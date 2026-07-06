@@ -6,6 +6,7 @@
 #include "UI/ClcStoneInfoWidget.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "ClcDeveloperSettings.h"
 #include "Materials/MaterialInterface.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "Kismet/GameplayStatics.h"
@@ -76,7 +77,7 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 		if (UMaterialInstanceDynamic* ShellMID = StoneMesh->CreateDynamicMaterialInstance(0, ShellMat, TEXT("ShellMID")))
 		{
 			if (UClcShellTextureConfig* ShellCfg = LoadObject<UClcShellTextureConfig>(
-				nullptr, TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig")))
+				nullptr, *GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath))
 			{
 				ShellCfg->InjectTexturesIntoMID(ShellMID, InData.ShellTypeIndex);
 			}
@@ -93,7 +94,7 @@ FName AClcStone::GetShellName() const
 	const int32 Idx = RuntimeData.Internal.ShellTypeIndex;
 	if (UClcShellTextureConfig* ShellCfg = Cast<UClcShellTextureConfig>(
 		StaticLoadObject(UClcShellTextureConfig::StaticClass(), nullptr,
-			TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig"))))
+			*GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath)))
 	{
 		if (const FClcShellTextureEntry* Entry = ShellCfg->GetEntryByIndex(Idx))
 		{
@@ -194,6 +195,8 @@ void AClcStone::ShowInfoCard()
 	if (InfoCardWidget)
 	{
 		InfoCardWidget->AddToViewport(50);
+		// 锚点 = 本石头 actor，世界偏移 = 小白点的 WidgetOffset（Actor 上方 50 单位）
+		InfoCardWidget->SetAnchor(this, InteractionIndicator->WidgetOffset);
 		InfoCardWidget->ShowInfo(RuntimeData);
 		bInfoCardVisible = true;
 	}

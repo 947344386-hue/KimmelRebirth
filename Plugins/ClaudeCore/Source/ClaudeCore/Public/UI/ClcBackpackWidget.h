@@ -28,4 +28,8 @@ public:
 	/** StoneEntry蓝图调用此函数来触发选石——内部广播 OnStoneSelected 委托 */
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
 	void SelectStone(int32 StoneIndex);
+
+	/** 关闭前遍历所有 StoneEntry 清理 tooltip——tooltip 是 AddToViewport 的，
+	 *  不会跟着 BackpackWidget 一起销毁，不清理会残留在屏幕上 */
+	virtual void RemoveFromParent() override;
 };

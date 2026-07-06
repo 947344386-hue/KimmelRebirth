@@ -75,6 +75,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	int32 CalculatePurchasePrice(const FClcStoneInternalData& Data) const;
 
+	/**
+	 * 聚合背包悬浮 tips 数据——一次性算好名称/产地/皮壳或种水/当前价/购入价。
+	 * BP 侧 StoneEntry 的 OnMouseEnter 调此函数，拿 FClcStoneTooltipInfo 直接渲染。
+	 * 皮壳/种水互斥：OpenedGreenArea>0 → 显示种水；否则显示皮壳。
+	 */
+	UFUNCTION(BlueprintPure, Category = "ClcMarket")
+	FClcStoneTooltipInfo BuildTooltipInfo(const FClcStoneRuntimeData& StoneData) const;
+
 private:
 	/** 掷种水档位——带产地软关联 */
 	EClcJadeGrade RollGrade(FRandomStream& Random, const FString& Origin) const;

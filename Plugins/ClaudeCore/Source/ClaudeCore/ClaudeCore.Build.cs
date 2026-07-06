@@ -23,6 +23,7 @@ public class ClaudeCore : ModuleRules
 			"ProceduralMeshComponent",
 			"RenderCore",
 			"RHI",
+			"DeveloperSettings",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

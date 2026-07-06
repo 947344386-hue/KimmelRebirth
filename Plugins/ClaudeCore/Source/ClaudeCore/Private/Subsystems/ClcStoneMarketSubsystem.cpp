@@ -5,6 +5,7 @@
 #include "Data/ClcStoneMeshConfig.h"
 #include "Data/ClcStallConfig.h"
 #include "Data/ClcShellTextureConfig.h"
+#include "ClcDeveloperSettings.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcStone.h"
 #include "Engine/AssetManager.h"
@@ -46,27 +47,28 @@ void UClcStoneMarketSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	// 加载配置DataAsset——路径固定，设计师在编辑器里修改
-	StoneConfig = LoadObject<UClcStoneConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StoneConfig"));
-	MeshConfig = LoadObject<UClcStoneMeshConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StoneMeshConfig"));
-	StallConfig = LoadObject<UClcStallConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StallConfig"));
-	ShellTextureConfig = LoadObject<UClcShellTextureConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig"));
+	// 加载配置DataAsset——路径从 DeveloperSettings 读，挪资产只改 Project Settings
+	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	StoneConfig = LoadObject<UClcStoneConfig>(nullptr, *DS->StoneConfigPath);
+	MeshConfig = LoadObject<UClcStoneMeshConfig>(nullptr, *DS->StoneMeshConfigPath);
+	StallConfig = LoadObject<UClcStallConfig>(nullptr, *DS->StallConfigPath);
+	ShellTextureConfig = LoadObject<UClcShellTextureConfig>(nullptr, *DS->ShellTextureConfigPath);
 
 	if (!StoneConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load DA_StoneConfig! Create it at /Game/JadeBetting/Data/"));
+		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StoneConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneConfigPath);
 	}
 	if (!MeshConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load DA_StoneMeshConfig! Create it at /Game/JadeBetting/Data/"));
+		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StoneMeshConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneMeshConfigPath);
 	}
 	if (!StallConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load DA_StallConfig! Create it at /Game/JadeBetting/Data/"));
+		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StallConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StallConfigPath);
 	}
 	if (!ShellTextureConfig)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcMarket] DA_ShellTextureConfig not found at /Game/JadeBetting/Data/. Stones will use fallback shell (index 0)."));
+		UE_LOG(LogTemp, Warning, TEXT("[ClcMarket] ShellTextureConfig not found. Path: %s (check Project Settings → ClaudeCore)"), *DS->ShellTextureConfigPath);
 	}
 }
 
@@ -339,4 +341,36 @@ int32 UClcStoneMarketSubsystem::CalculatePurchasePrice(const FClcStoneInternalDa
 	const float Premium = Data.TheoreticalValue * StoneConfig->HiddenPremiumFactor;
 
 	return FMath::RoundToInt(BasePrice + Premium);
+}
+
+FClcStoneTooltipInfo UClcStoneMarketSubsystem::BuildTooltipInfo(const FClcStoneRuntimeData& StoneData) const
+{
+	FClcStoneTooltipInfo Info;
+
+	// 直接拷贝的基本字段
+	Info.DisplayName = StoneData.DisplayName;
+	Info.Origin = StoneData.Internal.Origin;
+	Info.PurchasePrice = StoneData.Internal.PurchasePrice;
+
+	// 当前回收价（随开窗进度实时算）
+	Info.CurrentValue = CalculateSalePrice(StoneData);
+
+	// 开到玉判定：已暴露绿色面积 > 0
+	Info.bOpenedToJade = (StoneData.OpenedGreenArea > 0.0f);
+
+	if (Info.bOpenedToJade)
+	{
+		// 已开到玉 → 显示种水档位（豆种/糯种/冰种/玻种）
+		if (const UEnum* Enum = StaticEnum<EClcJadeGrade>())
+		{
+			Info.GradeText = Enum->GetDisplayNameTextByValue(static_cast<int32>(StoneData.Internal.Grade)).ToString();
+		}
+	}
+	else
+	{
+		// 未开到玉 → 显示皮壳名
+		Info.ShellName = UClcShellTextureConfig::GetShellName(StoneData.Internal.ShellTypeIndex).ToString();
+	}
+
+	return Info;
 }

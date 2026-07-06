@@ -3,6 +3,7 @@
 #include "Components/ClcEagleEyeComponent.h"
 #include "Data/ClcEagleEyeConfig.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "ClcDeveloperSettings.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcStone.h"
 #include "Actors/ClcEnergyBall.h"
@@ -26,10 +27,11 @@ void UClcEagleEyeComponent::BeginPlay()
 
 void UClcEagleEyeComponent::InitializeConfig()
 {
-	Config = LoadObject<UClcEagleEyeConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_EagleEyeConfig"));
+	Config = LoadObject<UClcEagleEyeConfig>(nullptr, *GetDefault<UClcDeveloperSettings>()->EagleEyeConfigPath);
 	if (!Config)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcEagleEye] Failed to load DA_EagleEyeConfig! Create it at /Game/JadeBetting/Data/"));
+		UE_LOG(LogTemp, Error, TEXT("[ClcEagleEye] Failed to load EagleEyeConfig! Path: %s (check Project Settings → ClaudeCore)"),
+			*GetDefault<UClcDeveloperSettings>()->EagleEyeConfigPath);
 	}
 }
 

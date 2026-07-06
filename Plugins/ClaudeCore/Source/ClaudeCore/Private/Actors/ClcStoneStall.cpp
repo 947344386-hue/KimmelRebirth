@@ -5,6 +5,7 @@
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Data/ClcStallConfig.h"
 #include "Data/ClcStoneMeshConfig.h"
+#include "ClcDeveloperSettings.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -93,8 +94,9 @@ bool AClcStoneStall::CalcGridLayout(int32 Count, int32& OutCols, int32& OutRows)
 void AClcStoneStall::RefreshEditorPreview()
 {
 #if WITH_EDITOR
-	// 直接从 DataAsset 读取配置（编辑器里子系统可能未就绪）
-	UClcStallConfig* Cfg = LoadObject<UClcStallConfig>(nullptr, TEXT("/Game/JadeBetting/Data/DA_StallConfig"));
+	// 直接从 DataAsset 读取配置（编辑器里子系统可能未就绪）——路径走 DeveloperSettings
+	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	UClcStallConfig* Cfg = LoadObject<UClcStallConfig>(nullptr, *DS->StallConfigPath);
 	if (!Cfg) return;
 
 	int32 Cols, Rows;

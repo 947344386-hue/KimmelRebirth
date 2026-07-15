@@ -44,4 +44,18 @@ public:
 	/** 鹰眼技能配置（持续时间/冷却/扫描间隔等） */
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets")
 	FString EagleEyeConfigPath = TEXT("/Game/JadeBetting/Data/DA_EagleEyeConfig");
+
+	// ---- 商人系统 ----
+
+	/** 商人主配置（摆位/视觉/时序/档位阈值） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Merchant", meta=(ToolTip="商人主配置 DataAsset 路径"))
+	FString MerchantConfigPath = TEXT("/Game/JadeBetting/Data/DA_MerchantConfig");
+
+	/** 商人动画池配置（动画引用按状态分池） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Merchant")
+	FString MerchantAnimConfigPath = TEXT("/Game/JadeBetting/Data/DA_MerchantAnimConfig");
+
+	/** 商人气泡文字池配置（9 状态文字池） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Merchant")
+	FString MerchantBubbleConfigPath = TEXT("/Game/JadeBetting/Data/DA_MerchantBubbleConfig");
 };

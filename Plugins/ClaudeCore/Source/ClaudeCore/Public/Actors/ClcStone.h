@@ -10,6 +10,7 @@
 
 class UStaticMeshComponent;
 class UClcInteractionIndicator;
+class AClcStoneStall;
 
 /**
  * 单块原石——摊位展示用，可被购买
@@ -62,6 +63,9 @@ public:
 	/** 从摊位场景中移除（被购买或市场刷新） */
 	void RemoveFromStall();
 
+	/** 设置所属摊位——购买时通知摊位用 */
+	void SetOwningStall(AClcStoneStall* Stall) { OwningStall = Stall; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -82,6 +86,10 @@ private:
 	bool bCameraAiming = false;
 	bool bInfoCardVisible = false;
 	float RangeCheckTimer = 0.0f;
+
+	/** 所属摊位——购买时通知摊位移除 + 广播给商人 */
+	UPROPERTY()
+	TWeakObjectPtr<AClcStoneStall> OwningStall;
 
 	/** 信息卡片Widget（创建后缓存） */
 	UPROPERTY()

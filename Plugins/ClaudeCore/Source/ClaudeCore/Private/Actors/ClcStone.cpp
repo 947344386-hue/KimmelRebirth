@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcStone.h"
+#include "Actors/ClcStoneStall.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "UI/ClcStoneInfoWidget.h"
@@ -216,5 +217,10 @@ void AClcStone::HideInfoCard()
 void AClcStone::RemoveFromStall()
 {
 	HideInfoCard();
+	// 通知摊位移除 + 广播给商人（必须在 Destroy 前调，摊位要读石头数据算购买结果）
+	if (OwningStall.IsValid())
+	{
+		OwningStall->NotifyStoneRemoved(this);
+	}
 	Destroy();
 }

@@ -1,0 +1,161 @@
+// Copyright ClaudeCore. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "Data/ClcMerchantTypes.h"
+#include "ClcMerchant.generated.h"
+
+class AClcStoneStall;
+class AClcStone;
+class UClcMerchantConfig;
+class UClcMerchantAnimConfig;
+class UClcMerchantBubbleConfig;
+class UClcMerchantTalkConfig;
+class UClcMerchantPersonality;
+class UClcMerchantBubbleWidget;
+class USkeletalMeshComponent;
+class USphereComponent;
+class UAnimSequence;
+class APawn;
+
+/**
+ * 商人 NPC——绑定摊位，四通道反馈供玩家交叉博弈：
+ *   1. 身体动作：整摊 mood（可演）+ 单块微反应（诚实泄漏，受演技 gate 调节泄漏强度）
+ *   2. 嘴上话术：走近显示，随瞄准/购入/离开更新，可骗（按撒谎倾向决定声称档位）
+ *   3. 性格 tag：鹰眼可见固有标签，驱动该商人的撒谎倾向 + 演技
+ *   4. 心理话：鹰眼限时，诚实（原气泡重新定位）
+ *
+ * 气泡单实例切模式（两者不共存）：
+ *   走近 + 非鹰眼 → 主行=嘴上话术，次行空
+ *   鹰眼 → 主行=心理话，次行=性格 tag
+ * 嘴上话术配合整摊人设（烂摊演好摊，瞄准单块也按整摊声称评价）；单块真坏靠微反应诚实泄漏——交叉点在此。
+ *
+ * 生命周期：由 AClcStoneStall spawn + Initialize。鹰眼通过 ShowBubble/HideBubble 切鹰眼模式。
+ */
+UCLASS()
+class CLAUDECORE_API AClcMerchant : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	AClcMerchant();
+
+	// ---- 外部接口 ----
+
+	/** 由摊位调用：绑定摊位 + 加载配置 + roll 性格 + 初始动画 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	void Initialize(AClcStoneStall* Stall);
+
+	/** 鹰眼激活时调——气泡切两行模式（性格 tag + 心理话） */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	void ShowBubble();
+
+	/** 鹰眼结束时调——若仍 InRange 回嘴上模式，否则隐藏 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	void HideBubble();
+
+	/** 当前是否显示气泡 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	bool IsBubbleVisible() const { return BubbleWidget != nullptr; }
+
+	/** 获取当前性格（可能为空） */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	UClcMerchantPersonality* GetPersonality() const { return Personality; }
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// ---- 组件 ----
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcMerchant")
+	USkeletalMeshComponent* Mesh;
+
+	/** 嘴上话术范围触发器——玩家进入显示嘴上气泡，只响应本地 Pawn */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcMerchant")
+	USphereComponent* TalkTrigger;
+
+private:
+	// ---- 配置 ----
+	UPROPERTY()
+	UClcMerchantConfig* Config = nullptr;
+
+	UPROPERTY()
+	UClcMerchantAnimConfig* AnimConfig = nullptr;
+
+	UPROPERTY()
+	UClcMerchantBubbleConfig* BubbleConfig = nullptr;
+
+	UPROPERTY()
+	UClcMerchantTalkConfig* TalkConfig = nullptr;
+
+	UPROPERTY()
+	UClcMerchantPersonality* Personality = nullptr;
+
+	// ---- 关联 ----
+	UPROPERTY()
+	TWeakObjectPtr<AClcStoneStall> BoundStall;
+
+	// ---- 状态 ----
+	EClcStallTier CurrentTier = EClcStallTier::Mid;
+	EClcPurchaseOutcome LastOutcome = EClcPurchaseOutcome::None;
+
+	/** 玩家当前瞄准的石头（nullptr=没瞄准） */
+	UPROPERTY()
+	TWeakObjectPtr<AClcStone> CurrentAimedStone;
+
+	bool bInMicroReaction = false;
+	float ReactionTimer = 0.0f;
+	float MoodReshuffleTimer = 0.0f;
+
+	// ---- 嘴上话术 / 气泡状态 ----
+	bool bPlayerInRange = false;
+	bool bEagleEyeActive = false;
+	ETalkState CurrentTalkState = ETalkState::Enter;
+	UPROPERTY()
+	TWeakObjectPtr<APawn> PlayerInRange;
+
+	/** 缓存的整摊声称档位——商人一旦决定演某档就稳定，避免每帧重 roll 跳变；档位变化时失效 */
+	EClcStallTier CachedClaimedTier = EClcStallTier::Mid;
+	bool bClaimedTierValid = false;
+
+	// ---- 气泡 ----
+	UPROPERTY()
+	UClcMerchantBubbleWidget* BubbleWidget = nullptr;
+
+	// ---- 内部方法 ----
+	void LoadConfigs();
+	/** 贴地——从当前位置向下 trace 找地面，落 Z */
+	void SnapToGround();
+	void RecomputeTier();
+	void PlayMoodAnim();
+	void PlayMicroReactionForStone(AClcStone* Stone);
+	void TickAimedStone();
+	void OnAimedStoneChanged(AClcStone* NewStone);
+
+	/** 带 blend 的动画播放——用 dynamic montage 代替 PlayAnimation 的瞬切 */
+	void PlayAnimWithBlend(UAnimSequence* Anim, bool bLoop);
+
+	/** 计算嘴上「声称档位」——撒谎倾向决定非好摊被说成好摊的概率；结果缓存至档位变化 */
+	EClcStallTier ComputeClaimedTier();
+
+	/** 统一刷新气泡——按 (EagleEye, InRange) 决定显示模式或隐藏 */
+	void RefreshBubble();
+	void EnsureBubbleWidget();
+	void DestroyBubbleWidget();
+
+	/** TriggerSphere overlap 回调——走近/离开触发嘴上气泡 */
+	UFUNCTION()
+	void OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	UFUNCTION()
+	void OnTalkTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	/** 摊位石头移除回调——摊位算好购买结果传过来 */
+	UFUNCTION()
+	void OnStoneRemoved(EClcPurchaseOutcome Outcome);
+};

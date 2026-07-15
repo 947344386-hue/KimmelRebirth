@@ -2,6 +2,7 @@
 
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcStone.h"
+#include "Actors/ClcMerchant.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Data/ClcStallConfig.h"
 #include "Data/ClcStoneMeshConfig.h"
@@ -9,6 +10,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/ArrowComponent.h"
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -42,6 +44,12 @@ AClcStoneStall::AClcStoneStall()
 	StoneSpawnCenter->SetupAttachment(StallMesh);
 	StoneSpawnCenter->SetRelativeLocation(FVector(0.0f, 0.0f, 10.0f));
 
+	// 商人站位锚点——箭头位置=商人站位，箭头朝向=商人面朝方向；每个实例可在蓝图里独立编辑
+	MerchantSpawnPoint = CreateDefaultSubobject<UArrowComponent>(TEXT("MerchantSpawnPoint"));
+	MerchantSpawnPoint->SetupAttachment(BenchRoot);
+	MerchantSpawnPoint->SetRelativeLocation(FVector(150.0f, 0.0f, 0.0f));
+	MerchantSpawnPoint->SetRelativeRotation(FRotator(0.0f, 180.0f, 0.0f));
+
 	// 预览用 InstancedStaticMesh——挂在 BenchRoot 下，不继承 StallMesh 的桌面缩放
 	PreviewGrid = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("PreviewGrid"));
 	PreviewGrid->SetupAttachment(BenchRoot);
@@ -72,6 +80,7 @@ void AClcStoneStall::BeginPlay()
 	}
 
 	SpawnStones();
+	SpawnMerchant();
 }
 
 void AClcStoneStall::OnConstruction(const FTransform& Transform)
@@ -263,6 +272,7 @@ void AClcStoneStall::SpawnStones()
 		if (Stone)
 		{
 			Stone->Initialize(Data, Mesh, Scale, DisplayName);
+			Stone->SetOwningStall(this);
 			SpawnedStones.Add(Stone);
 		}
 	}
@@ -281,4 +291,62 @@ float AClcStoneStall::GetTotalTheoreticalValue() const
 		if (Stone) Total += Stone->GetStoneData().Internal.TheoreticalValue;
 	}
 	return Total;
+}
+
+void AClcStoneStall::SpawnMerchant()
+{
+	if (SpawnedMerchant) return;
+	if (!MerchantSpawnPoint) return;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	// 从 MerchantSpawnPoint 箭头取位置和朝向——箭头位置=商人站位，箭头朝向=商人面朝方向
+	const FTransform SpawnTM = MerchantSpawnPoint->GetComponentTransform();
+
+	SpawnedMerchant = GetWorld()->SpawnActor<AClcMerchant>(
+		AClcMerchant::StaticClass(),
+		SpawnTM.GetLocation(),
+		SpawnTM.GetRotation().Rotator(),
+		Params);
+
+	if (SpawnedMerchant)
+	{
+		SpawnedMerchant->Initialize(this);
+	}
+}
+
+void AClcStoneStall::NotifyStoneRemoved(AClcStone* Stone)
+{
+	if (!Stone) return;
+
+	// 在移除前算购买结果：这块的价值 vs 全摊平均（含这块）
+	const float StoneValue = Stone->GetStoneData().Internal.TheoreticalValue;
+	float TotalValue = 0.0f;
+	int32 Count = 0;
+	for (AClcStone* S : SpawnedStones)
+	{
+		if (IsValid(S))
+		{
+			TotalValue += S->GetStoneData().Internal.TheoreticalValue;
+			Count++;
+		}
+	}
+	const float AvgValue = (Count > 0) ? (TotalValue / static_cast<float>(Count)) : StoneValue;
+
+	EClcPurchaseOutcome Outcome;
+	if (StoneValue >= AvgValue)
+	{
+		Outcome = EClcPurchaseOutcome::TookGood;
+	}
+	else
+	{
+		Outcome = EClcPurchaseOutcome::TookBad;
+	}
+
+	// 从数组移除——修复原来 RemoveFromStall 直接 Destroy 不通知的悬挂指针问题
+	SpawnedStones.Remove(Stone);
+
+	// 广播给商人（及其他监听者）
+	OnStoneRemoved.Broadcast(Outcome);
 }

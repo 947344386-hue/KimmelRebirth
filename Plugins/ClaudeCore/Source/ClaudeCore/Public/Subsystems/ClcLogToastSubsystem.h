@@ -77,7 +77,7 @@ private:
 	TArray<FLogEntry> Entries;
 	int32 NextLogId = 0;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	UClcLogToastListWidget* ListWidget = nullptr;
 
 	FTimerHandle TickHandle;

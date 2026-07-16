@@ -64,6 +64,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	UClcMerchantPersonality* GetPersonality() const { return Personality; }
 
+	/** 摊位石头铺好后由摊位调用——重算档位（SpawnMerchant 时空摊会被误判成 Bad） */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	void RecomputeTier();
+
+	/** 商人欺骗倾向 [0,1]（无性格兜底 0.5） */
+	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
+	float GetDeceptionLevel() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -111,8 +119,13 @@ private:
 	float ReactionTimer = 0.0f;
 	float MoodReshuffleTimer = 0.0f;
 
+	/** 商人高频 Tick 时将瞄准 trace 限制为每 0.1 秒一次 */
+	float AimTraceTimer = 0.0f;
+
+	/** ClcMerchant.DebugBubble 汇总日志的实例级限频计时器 */
+	float DebugBubbleLogTimer = 0.0f;
+
 	// ---- 嘴上话术 / 气泡状态 ----
-	bool bPlayerInRange = false;
 	bool bEagleEyeActive = false;
 	ETalkState CurrentTalkState = ETalkState::Enter;
 	UPROPERTY()
@@ -130,7 +143,6 @@ private:
 	void LoadConfigs();
 	/** 贴地——从当前位置向下 trace 找地面，落 Z */
 	void SnapToGround();
-	void RecomputeTier();
 	void PlayMoodAnim();
 	void PlayMicroReactionForStone(AClcStone* Stone);
 	void TickAimedStone();

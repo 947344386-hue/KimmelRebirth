@@ -2,7 +2,6 @@
 
 #include "Data/ClcJadeTypes.h"
 #include "Math/RandomStream.h"
-#include "Containers/Queue.h"
 
 namespace
 {
@@ -30,7 +29,12 @@ namespace
 	{
 		static const int32 Dirs[4][2] = { {1,0}, {-1,0}, {0,1}, {0,-1} };
 
-		TQueue<FIntPoint> Queue;
+		// 用 flat array 代替 TQueue——256x256 固定尺寸，栈分配更快
+		TArray<FIntPoint> Queue;
+		Queue.Reserve(4096);
+
+		TArray<bool> Visited;
+		Visited.Init(false, Res * Res);
 
 		int32 Placed = 0;
 
@@ -41,20 +45,18 @@ namespace
 			{
 				Map[Idx] = PixelValue;
 				Placed = 1;
-				Queue.Enqueue(FIntPoint(StartX, StartY));
+				Queue.Add(FIntPoint(StartX, StartY));
+				Visited[Idx] = true;
 			}
 		}
 
 		// 如果起始像素无法放置（已占用或边界），直接返回 0
 		if (Placed == 0) return 0;
 
-		TSet<uint64> Visited; // pack x,y into uint64 for visited tracking
-		Visited.Add(((uint64)StartX << 32) | (uint32)StartY);
-
-		while (!Queue.IsEmpty() && Placed < MaxPixels)
+		int32 Head = 0;
+		while (Head < Queue.Num() && Placed < MaxPixels)
 		{
-			FIntPoint P;
-			Queue.Dequeue(P);
+			const FIntPoint P = Queue[Head++];
 
 			// 打乱方向顺序，增加 blob 不规则感
 			int32 DirOrder[4] = { 0,1,2,3 };
@@ -71,11 +73,9 @@ namespace
 
 				if (NX < 0 || NX >= Res || NY < 0 || NY >= Res) continue;
 
-				const uint64 Key = ((uint64)NX << 32) | (uint32)NY;
-				if (Visited.Contains(Key)) continue;
-				Visited.Add(Key);
-
 				const int32 NIdx = NY * Res + NX;
+				if (Visited[NIdx]) continue;
+				Visited[NIdx] = true;
 
 				if (Map[NIdx] != 0) continue;
 
@@ -90,7 +90,7 @@ namespace
 				// 随机决定是否继续扩展此邻居（增加形状不规则性）
 				if (Rng.FRand() < 0.85f)
 				{
-					Queue.Enqueue(FIntPoint(NX, NY));
+					Queue.Add(FIntPoint(NX, NY));
 				}
 			}
 		}
@@ -114,29 +114,33 @@ namespace
 				if (Map[Idx] != 1 || Visited[Idx]) continue;
 
 				// 新连通域，BFS 计数
-				TQueue<FIntPoint> Queue;
-				Queue.Enqueue(FIntPoint(X, Y));
+				TArray<int32> Queue;
+				Queue.Reserve(256);
+				Queue.Add(Idx);
 				Visited[Idx] = true;
 
 				int32 ComponentSize = 0;
-				while (!Queue.IsEmpty())
+				int32 Head = 0;
+				while (Head < Queue.Num())
 				{
-					FIntPoint P;
-					Queue.Dequeue(P);
+					const int32 CurIdx = Queue[Head++];
 					++ComponentSize;
+
+					const int32 CX = CurIdx % Res;
+					const int32 CY = CurIdx / Res;
 
 					// 4 邻域
 					const int32 Nbrs[4][2] = { {1,0}, {-1,0}, {0,1}, {0,-1} };
 					for (const auto& D : Nbrs)
 					{
-						const int32 NX = P.X + D[0];
-						const int32 NY = P.Y + D[1];
+						const int32 NX = CX + D[0];
+						const int32 NY = CY + D[1];
 						if (NX < 0 || NX >= Res || NY < 0 || NY >= Res) continue;
 						const int32 NIdx = NY * Res + NX;
 						if (!Visited[NIdx] && Map[NIdx] == 1)
 						{
 							Visited[NIdx] = true;
-							Queue.Enqueue(FIntPoint(NX, NY));
+							Queue.Add(NIdx);
 						}
 					}
 				}

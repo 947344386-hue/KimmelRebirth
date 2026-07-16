@@ -56,9 +56,9 @@ void UClcStoneEntryWidget::NativeOnMouseLeave(const FPointerEvent& InPointerEven
 
 void UClcStoneEntryWidget::RemoveFromParent()
 {
-	// 先调 Super（真正执行移除），再清 tooltip
-	Super::RemoveFromParent();
+	// 先清 tooltip（widget 还在层级中，清理更安全），再调 Super 执行移除
 	DestroyTooltip();
+	Super::RemoveFromParent();
 }
 
 void UClcStoneEntryWidget::NativeDestruct()
@@ -80,6 +80,12 @@ void UClcStoneEntryWidget::DestroyTooltip()
 
 UClcStoneMarketSubsystem* UClcStoneEntryWidget::GetMarketSubsystem() const
 {
-	UWorld* World = GetWorld();
-	return World ? World->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>() : nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			return GI->GetSubsystem<UClcStoneMarketSubsystem>();
+		}
+	}
+	return nullptr;
 }

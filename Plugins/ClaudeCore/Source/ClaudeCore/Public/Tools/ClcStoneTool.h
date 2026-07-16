@@ -34,6 +34,10 @@ struct FClcToolTraceInfo
 	/** 鼠标射线方向（归一化，世界坐标） */
 	UPROPERTY(BlueprintReadOnly)
 	FVector RayDirection = FVector::ForwardVector;
+
+	/** 命中三角形面索引（-1=无效，来自 FHitResult::FaceIndex，用于 O(1) UV 查找） */
+	UPROPERTY(BlueprintReadOnly)
+	int32 FaceIndex = -1;
 };
 
 /**

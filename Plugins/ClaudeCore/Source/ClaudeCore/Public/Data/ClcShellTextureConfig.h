@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ClcLog.h"
 #include "Engine/DataAsset.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -71,12 +72,19 @@ public:
         return ShellEntries.Num() > 0 ? FMath::RandRange(0, ShellEntries.Num() - 1) : 0;
     }
 
-    /** 按索引查皮壳名称，BP 中直接调用（自动加载配置） */
+    /** 按索引查皮壳名称，BP 中直接调用（结果缓存，避免重复 LoadObject） */
     UFUNCTION(BlueprintCallable, Category = "Shell")
     static FName GetShellName(int32 ShellTypeIndex)
     {
+        static FString CachedPath;
+        static TWeakObjectPtr<UClcShellTextureConfig> CachedConfig;
         const FString Path = GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath;
-        const UClcShellTextureConfig* Cfg = LoadObject<UClcShellTextureConfig>(nullptr, *Path);
+        if (Path != CachedPath || !CachedConfig.IsValid())
+        {
+            CachedPath = Path;
+            CachedConfig = LoadObject<UClcShellTextureConfig>(nullptr, *Path);
+        }
+        const UClcShellTextureConfig* Cfg = CachedConfig.Get();
         if (Cfg)
         {
             if (const FClcShellTextureEntry* Entry = Cfg->GetEntryByIndex(ShellTypeIndex))
@@ -100,7 +108,7 @@ public:
         const FClcShellTextureEntry* Entry = GetEntryByIndex(ShellTypeIndex);
         if (!Entry)
         {
-            UE_LOG(LogTemp, Warning, TEXT("[ShellTexture] ShellTypeIndex %d not found!"), ShellTypeIndex);
+            UE_LOG(LogClaudeCore, Warning, TEXT("[ShellTexture] ShellTypeIndex %d not found!"), ShellTypeIndex);
             return 0;
         }
 
@@ -141,7 +149,7 @@ public:
         MID->SetScalarParameterValue(TEXT("ShellRoughness"), Entry->DefaultRoughness);
         MID->SetScalarParameterValue(TEXT("ShellMetallic"), Entry->DefaultMetallic);
 
-        UE_LOG(LogTemp, Log,
+        UE_LOG(LogClaudeCore, Log,
             TEXT("[ShellTexture] Injected %d/3 into MID (Type=%d, Name=%s, Rough=%.2f)"),
             Transferred, ShellTypeIndex, *Entry->ShellName.ToString(), Entry->DefaultRoughness);
 

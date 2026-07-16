@@ -41,7 +41,11 @@ void UClcStoneTooltipWidget::NativeTick(const FGeometry& MyGeometry, float InDel
 			FVector2D TipPos = Mouse + TooltipOffset;
 
 			// 拿视口尺寸 + tip 自身尺寸做边界检测
-			const FVector2D TipSize = MyGeometry.GetLocalSize();
+			FVector2D TipSize = MyGeometry.GetLocalSize();
+			if (TipSize.IsNearlyZero())
+			{
+				TipSize = GetDesiredSize();
+			}
 			FVector2D ViewportSize = FVector2D::ZeroVector;
 			if (UGameViewportClient* GVC = GetWorld() ? GetWorld()->GetGameViewport() : nullptr)
 			{
@@ -145,7 +149,7 @@ UClcStoneTooltipWidget* UClcStoneTooltipWidget::ShowTooltipNextTo(
 	}
 
 	Tooltip->SetAnchor(AnchorWidget);
-	Tooltip->AddToViewport(999);
+	Tooltip->AddToViewport(1000); // tooltip 层级最高，避免被其他 UI 遮挡
 
 	// 初始定位：鼠标位置 + Offset（NativeTick 每帧接管）
 	if (APlayerController* PC = World->GetFirstPlayerController())

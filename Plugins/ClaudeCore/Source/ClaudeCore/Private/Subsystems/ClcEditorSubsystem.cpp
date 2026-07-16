@@ -9,10 +9,7 @@ void UClcEditorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateLambda([this]()
-	{
-		RegisterToolbarButton();
-	}));
+	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateUObject(this, &UClcEditorSubsystem::RegisterToolbarButton));
 }
 
 void UClcEditorSubsystem::Deinitialize()

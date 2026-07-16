@@ -58,6 +58,13 @@ void AClcFlashlightTool::OnLeftClick(bool bPressed)
 		if (UMaterialInstanceDynamic* MID = TargetStone->GetStoneMID())
 		{
 			MID->SetScalarParameterValue(TEXT("FlashlightOn"), bLightOn ? 1.0f : 0.0f);
+			if (bLightOn)
+			{
+				const float ConeCos = FMath::Cos(FMath::DegreesToRadians(FlashlightConeAngle));
+				MID->SetScalarParameterValue(TEXT("FlashlightConeCos"), ConeCos);
+				MID->SetScalarParameterValue(TEXT("FlashlightRange"), FlashlightRange);
+				MID->SetScalarParameterValue(TEXT("FlashlightXrayStrength"), FlashlightXrayStrength);
+			}
 		}
 	}
 }
@@ -89,20 +96,13 @@ void AClcFlashlightTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 	TargetRotation = LightDir.Rotation();
 	bHasTarget = true;
 
-	// ─── 材质常量参数（不依赖命中点，每帧刷一次保证生效） ───
-	// 注：FlashlightPos/Dir 移到 Tick，基于 SpotLight 平滑后的位姿设置，让 X-ray 光圈跟灯走
-	if (UMaterialInstanceDynamic* MID = TargetStone->GetStoneMID())
-	{
-		const float ConeCos = FMath::Cos(FMath::DegreesToRadians(FlashlightConeAngle));
-		MID->SetScalarParameterValue(TEXT("FlashlightConeCos"), ConeCos);
-		MID->SetScalarParameterValue(TEXT("FlashlightRange"), FlashlightRange);
-		MID->SetScalarParameterValue(TEXT("FlashlightXrayStrength"), FlashlightXrayStrength);
-	}
-
 	// ─── 耐久消耗 ───
 	if (bLightOn)
 	{
-		ConsumeDurability(DurabilityPerSecond * GetWorld()->GetDeltaSeconds());
+		if (UWorld* World = GetWorld())
+		{
+			ConsumeDurability(DurabilityPerSecond * World->GetDeltaSeconds());
+		}
 		if (IsBroken())
 		{
 			OnLeftClick(false); // 耐久耗尽自动关灯

@@ -82,7 +82,6 @@ protected:
 
 private:
 	FClcStoneRuntimeData RuntimeData;
-	bool bPlayerInRange = false;
 	bool bCameraAiming = false;
 	bool bInfoCardVisible = false;
 	float RangeCheckTimer = 0.0f;

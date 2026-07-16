@@ -23,6 +23,23 @@ struct CLAUDECORE_API FClcOriginGradeBonus
 };
 
 /**
+ * 商人吹卖黑话池——一个声称种水档位对应一组候选黑话
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcPitchPool
+{
+	GENERATED_BODY()
+
+	/** 声称种水档位 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pitch")
+	EClcJadeGrade Grade = EClcJadeGrade::Bean;
+
+	/** 该档位候选黑话（生成时随机取 2 条拼成 ClaimedPitch） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pitch")
+	TArray<FText> Phrases;
+};
+
+/**
  * 定价与石头生成参数——全部可配置，设计师在编辑器中填表
  */
 UCLASS(BlueprintType)
@@ -73,7 +90,7 @@ public:
 	float UnopenedFloorDiscountFactor = 0.1f;
 
 	/** [已弃用] 未开窗原石的单位面积保底价——保留向后兼容，CalculateSalePrice 已改用 UnopenedFloorDiscountFactor */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
+	UPROPERTY(meta=(DeprecatedProperty))
 	float PriceFloorPerArea = 5.0f;
 
 	/** 单位面积杂裂惩罚扣分 */
@@ -103,6 +120,16 @@ public:
 	/** 石头标价的基础系数（乘以表面积，再叠加隐藏溢价） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float BasePricePerArea = 0.1f;
+
+	// ---- 命名/话术 ----
+
+	/**
+	 * 商人吹卖黑话池——按声称种水档位(EClcJadeGrade)索引。
+	 * 生成时按真实种水+商人欺骗倾向 roll 出声称档，从对应池随机取 2 条拼成 ClaimedPitch。
+	 * 池空时回退到档位 DisplayName。文案在此 DA 调整，勿硬编码。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Naming", meta = (TitleProperty = "{Grade}"))
+	TArray<FClcPitchPool> JadePitchPool;
 
 	// ---- GM / 调试 ----
 

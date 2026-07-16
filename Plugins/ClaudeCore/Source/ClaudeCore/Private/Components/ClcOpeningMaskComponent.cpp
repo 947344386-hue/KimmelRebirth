@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Components/ClcOpeningMaskComponent.h"
+#include "ClcLog.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -285,9 +286,11 @@ void UClcOpeningMaskComponent::EnsureRevealTexFromDistribution(const FClcStoneDi
 	RevealTex = UTexture2D::CreateTransient(Res, Res, PF_B8G8R8A8);
 	if (!RevealTex) return;
 
-	void* RawData = RevealTex->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+	FTexturePlatformData* PlatformData = RevealTex->GetPlatformData();
+	if (!PlatformData || PlatformData->Mips.Num() == 0) return;
+	void* RawData = PlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
 	FMemory::Memcpy(RawData, Pixels.GetData(), TotalPixels * sizeof(FColor));
-	RevealTex->GetPlatformData()->Mips[0].BulkData.Unlock();
+	PlatformData->Mips[0].BulkData.Unlock();
 
 	RevealTex->SRGB = true;
 	RevealTex->CompressionSettings = TC_Default;
@@ -367,9 +370,11 @@ void UClcOpeningMaskComponent::EnsureTypeTexFromDistribution(const FClcStoneDist
 	TypeTex = UTexture2D::CreateTransient(Res, Res, PF_B8G8R8A8);
 	if (!TypeTex) return;
 
-	void* RawData = TypeTex->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
+	FTexturePlatformData* TypePlatformData = TypeTex->GetPlatformData();
+	if (!TypePlatformData || TypePlatformData->Mips.Num() == 0) return;
+	void* RawData = TypePlatformData->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
 	FMemory::Memcpy(RawData, Pixels.GetData(), TotalPixels * sizeof(FColor));
-	TypeTex->GetPlatformData()->Mips[0].BulkData.Unlock();
+	TypePlatformData->Mips[0].BulkData.Unlock();
 
 	// mask 数据用线性空间 + Masks 压缩（4 通道独立）
 	TypeTex->SRGB = false;
@@ -404,7 +409,7 @@ void UClcOpeningMaskComponent::ApplyModulationParams(UMaterialInstanceDynamic* M
 	}
 	MID->SetScalarParameterValue(TEXT("ModGradeRoughBias"), GradeRoughBias);
 
-	UE_LOG(LogTemp, Verbose, TEXT("[ClcMask] Modulation: Rot=%.1f° GradeBias=%.2f"),
+	UE_LOG(LogClaudeCore, Verbose, TEXT("[ClcMask] Modulation: Rot=%.1f° GradeBias=%.2f"),
 		RotationDeg, GradeRoughBias);
 }
 
@@ -534,6 +539,7 @@ void UClcOpeningMaskComponent::UploadMaskToGPU()
 	ENQUEUE_RENDER_COMMAND(UploadOpeningMask)(
 		[RT, BufferData = MaskBuffer, Res = MaskResolution](FRHICommandListImmediate& RHICmdList)
 		{
+			if (!IsValid(RT)) return;
 			FTextureRenderTarget2DResource* RTResource =
 				static_cast<FTextureRenderTarget2DResource*>(RT->GetRenderTargetResource());
 			if (!RTResource) return;

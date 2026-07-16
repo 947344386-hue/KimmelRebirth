@@ -34,10 +34,8 @@ void UClcMerchantBubbleWidget::SetSecondaryText(const FText& Text)
 	}
 }
 
-void UClcMerchantBubbleWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UClcMerchantBubbleWidget::UpdateScreenPosition()
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
 	if (!AnchorMerchant.IsValid())
 	{
 		SetVisibility(ESlateVisibility::Hidden);
@@ -49,6 +47,27 @@ void UClcMerchantBubbleWidget::NativeTick(const FGeometry& MyGeometry, float InD
 
 	const FVector WorldPos = AnchorMerchant->GetActorLocation() + AnchorWorldOffset;
 	FVector2D ScreenPos;
-	UGameplayStatics::ProjectWorldToScreen(PC, WorldPos, ScreenPos, true);
-	SetPositionInViewport(ScreenPos + ScreenOffset);
+	const bool bProjected = UGameplayStatics::ProjectWorldToScreen(PC, WorldPos, ScreenPos, true);
+
+	int32 ViewportX = 0;
+	int32 ViewportY = 0;
+	PC->GetViewportSize(ViewportX, ViewportY);
+
+	const FVector2D FinalPos = ScreenPos + ScreenOffset;
+	const bool bOnScreen = bProjected && ViewportX > 0 && ViewportY > 0
+		&& FinalPos.X >= 0.0f && FinalPos.X <= static_cast<float>(ViewportX)
+		&& FinalPos.Y >= 0.0f && FinalPos.Y <= static_cast<float>(ViewportY);
+
+	if (!bOnScreen)
+	{
+		SetVisibility(ESlateVisibility::Hidden);
+		return;
+	}
+
+	// WBP 默认使用 SelfHitTestInvisible；恢复该状态避免气泡拦截鼠标输入。
+	if (GetVisibility() == ESlateVisibility::Hidden)
+	{
+		SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	SetPositionInViewport(FinalPos);
 }

@@ -85,4 +85,7 @@ protected:
 private:
 	/** 是否正在打磨（左键按住中） */
 	bool bIsGrinding = false;
+
+	/** 最近一次 trace 的 FaceIndex（传给 ExecuteGrind O(1) 查 UV） */
+	int32 LastFaceIndex = -1;
 };

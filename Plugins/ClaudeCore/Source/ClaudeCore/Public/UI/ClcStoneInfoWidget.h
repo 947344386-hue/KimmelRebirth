@@ -28,6 +28,9 @@ public:
 	/** 设锚点——信息卡每帧跟随此 Actor 的 (ActorLocation + WorldOffset) 屏幕投影 */
 	void SetAnchor(AActor* InAnchor, const FVector& InWorldOffset);
 
+	/** 立即将锚点世界位置投影到视口；创建后调用以避免首帧显示在左上角。 */
+	void UpdateScreenPosition();
+
 	/** 信息卡相对小白点屏幕投影的像素偏移（BP Class Defaults 里配，默认正上方 50px） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcStoneInfo")
 	FVector2D ScreenOffset = FVector2D(0.0f, -50.0f);

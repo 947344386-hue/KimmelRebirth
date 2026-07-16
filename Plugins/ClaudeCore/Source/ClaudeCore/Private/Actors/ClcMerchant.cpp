@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcMerchant.h"
+#include "ClcLog.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcStone.h"
 #include "Data/ClcMerchantConfig.h"
@@ -19,10 +20,36 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/Engine.h"
+#include "HAL/IConsoleManager.h"
+
+// 运行时控制台开关：~ ClcMerchant.DebugDrawTalkTrigger 1  （对所有商人实例生效）
+static IConsoleVariable* GetDebugDrawTalkTriggerCVar()
+{
+	static IConsoleVariable* CVar = []{
+		return IConsoleManager::Get().RegisterConsoleVariable(
+			TEXT("ClcMerchant.DebugDrawTalkTrigger"), 0,
+			TEXT("Draw TalkTrigger sphere + merchant/stone center points + on-screen range status for all merchants."));
+	}();
+	return CVar;
+}
+
+// 运行时控制台开关：~ ClcMerchant.DebugBubble 1  （输出气泡调用链 log + 气泡 widget 屏幕状态）
+static IConsoleVariable* GetDebugBubbleCVar()
+{
+	static IConsoleVariable* CVar = []{
+		return IConsoleManager::Get().RegisterConsoleVariable(
+			TEXT("ClcMerchant.DebugBubble"), 0,
+			TEXT("Log RefreshBubble/Ensure/Destroy/AimChanged calls + on-screen bubble widget state."));
+	}();
+	return CVar;
+}
 
 AClcMerchant::AClcMerchant()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// 平时维持原 0.1s Tick；气泡创建时临时切到每帧，确保离屏后仍能由 Actor 驱动恢复。
 	PrimaryActorTick.TickInterval = 0.1f;
 
 	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
@@ -47,6 +74,11 @@ void AClcMerchant::BeginPlay()
 
 void AClcMerchant::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// 解绑摊位 delegate，防止商人销毁后摊位广播到悬空对象
+	if (BoundStall.IsValid())
+	{
+		BoundStall->OnStoneRemoved.RemoveDynamic(this, &AClcMerchant::OnStoneRemoved);
+	}
 	DestroyBubbleWidget();
 	Super::EndPlay(EndPlayReason);
 }
@@ -94,6 +126,16 @@ void AClcMerchant::Initialize(AClcStoneStall* Stall)
 	// 贴地——spawn 位置由摊位箭头给，Z 落到地面
 	SnapToGround();
 
+	// 把 TalkTrigger 中心对齐摊位石头中心——模拟玩家走到石头范围内时商人才开口，
+	// 而非走到商人站位附近。商人偏台时此偏移补偿，使触发范围始终覆盖石头。
+	// 用 SetWorldLocation 而非 SetRelativeLocation：TalkTrigger 挂在 Mesh 下，局部坐标
+	// 会被 Actor 旋转二次变换，商人随摊位旋转时球心会被拽偏。SetWorldLocation 由引擎换算局部坐标。
+	if (TalkTrigger && BoundStall.IsValid())
+	{
+		const FVector StoneCenter = BoundStall->GetStoneSpawnCenterLocation();
+		TalkTrigger->SetWorldLocation(StoneCenter);
+	}
+
 	// 初始档位 + mood 动画
 	RecomputeTier();
 	PlayMoodAnim();
@@ -107,7 +149,7 @@ void AClcMerchant::LoadConfigs()
 	Config = LoadObject<UClcMerchantConfig>(nullptr, *DS->MerchantConfigPath);
 	if (!Config)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMerchant] Failed to load MerchantConfig: %s"), *DS->MerchantConfigPath);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMerchant] Failed to load MerchantConfig: %s"), *DS->MerchantConfigPath);
 		return;
 	}
 
@@ -126,7 +168,7 @@ void AClcMerchant::LoadConfigs()
 	TalkConfig = Config->TalkConfig;
 	if (!TalkConfig)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcMerchant] TalkConfig missing in MerchantConfig——嘴上话术无池，气泡不显示话术"));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMerchant] TalkConfig missing in MerchantConfig——嘴上话术无池，气泡不显示话术"));
 	}
 
 	// 从骨骼网格体池随机抽一条——空池则不设（BP 子类指定）
@@ -167,9 +209,13 @@ void AClcMerchant::SnapToGround()
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(this);
 
-	if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	if (UWorld* World = GetWorld())
 	{
-		SetActorLocation(FVector(Cur.X, Cur.Y, Hit.Location.Z));
+		World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+		if (Hit.bBlockingHit)
+		{
+			SetActorLocation(FVector(Cur.X, Cur.Y, Hit.Location.Z));
+		}
 	}
 }
 
@@ -358,8 +404,16 @@ void AClcMerchant::TickAimedStone()
 
 void AClcMerchant::OnAimedStoneChanged(AClcStone* NewStone)
 {
+	if (NewStone && !IsValid(NewStone)) return;
 	if (CurrentAimedStone.Get() == NewStone) return;
 
+#if !UE_BUILD_SHIPPING
+	if (GetDebugBubbleCVar()->GetInt() != 0)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] AimChanged (changed): new=%s"),
+			NewStone?*NewStone->GetName():TEXT("none"));
+	}
+#endif
 	CurrentAimedStone = NewStone;
 
 	// 瞄准变化更新嘴上话术状态——瞄准块=Aim，没瞄准=Enter（回整摊推销）
@@ -384,6 +438,28 @@ void AClcMerchant::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 气泡位置由 Actor Tick 驱动：Widget 离屏后 Slate 可能停止 NativeTick，不能让 Widget 自救。
+	if (BubbleWidget)
+	{
+		BubbleWidget->UpdateScreenPosition();
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (GetDebugBubbleCVar()->GetInt() != 0)
+	{
+		DebugBubbleLogTimer += DeltaTime;
+		if (DebugBubbleLogTimer >= 1.5f)
+		{
+			DebugBubbleLogTimer = 0.f;
+			const bool bInViewport = BubbleWidget && BubbleWidget->IsInViewport();
+			const int32 Vis = BubbleWidget ? (int32)BubbleWidget->GetVisibility() : -1;
+			UE_LOG(LogClaudeCore, Warning,
+				TEXT("[Bubble:%s] InRange=%d Widget=%d InViewport=%d Vis=%d EagleEye=%d"),
+				*GetName(), PlayerInRange.IsValid()?1:0, BubbleWidget?1:0, bInViewport?1:0, Vis, bEagleEyeActive?1:0);
+		}
+	}
+#endif
+
 	if (!Config) return;
 
 	// 微反应倒计时
@@ -407,8 +483,51 @@ void AClcMerchant::Tick(float DeltaTime)
 		}
 	}
 
-	// 瞄准检测
-	TickAimedStone();
+	// 瞄准检测维持原 0.1 秒节奏，避免 Actor 改为每帧 Tick 后增加 trace 开销。
+	AimTraceTimer -= DeltaTime;
+	if (AimTraceTimer <= 0.0f)
+	{
+		AimTraceTimer = 0.1f;
+		TickAimedStone();
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (GetDebugDrawTalkTriggerCVar()->GetInt() != 0 && TalkTrigger && GetWorld())
+	{
+		const bool bInRange = PlayerInRange.IsValid();
+		const FVector TriggerCenter = TalkTrigger->GetComponentLocation();
+		const float Radius = TalkTrigger->GetScaledSphereRadius();
+
+		// 触发球：玩家在内=绿，在外=黄
+		DrawDebugSphere(GetWorld(), TriggerCenter, Radius, 24,
+			bInRange ? FColor::Green : FColor::Yellow, false, 0.15f, 0, 2.0f);
+
+		// 商人位置（青）→ 石头中心（品红）连线——确认触发中心是否已对齐石头
+		const FVector MyLoc = GetActorLocation();
+		DrawDebugPoint(GetWorld(), MyLoc, 15.f, FColor::Cyan, false, 0.15f);
+		if (BoundStall.IsValid())
+		{
+			const FVector StoneCenter = BoundStall->GetStoneSpawnCenterLocation();
+			DrawDebugPoint(GetWorld(), StoneCenter, 15.f, FColor::Magenta, false, 0.15f);
+			DrawDebugLine(GetWorld(), MyLoc, StoneCenter, FColor::White, false, 0.15f, 0, 1.5f);
+		}
+
+		// 玩家位置（绿点）+ 屏幕状态
+		if (bInRange && PlayerInRange.IsValid())
+		{
+			DrawDebugPoint(GetWorld(), PlayerInRange->GetActorLocation(), 20.f, FColor::Green, false, 0.15f);
+		}
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(
+				4321, 0.15f, bInRange ? FColor::Green : FColor::Yellow,
+				FString::Printf(TEXT("[TalkTrigger] %s  Center=(%.0f,%.0f,%.0f)  R=%.0f  bEagleEye=%d"),
+					bInRange ? TEXT("IN RANGE ✓") : TEXT("OUT ✗"),
+					TriggerCenter.X, TriggerCenter.Y, TriggerCenter.Z, Radius,
+					bEagleEyeActive ? 1 : 0));
+		}
+	}
+#endif
 }
 
 // ---- 性格驱动：声称档位 ----
@@ -438,6 +557,11 @@ EClcStallTier AClcMerchant::ComputeClaimedTier()
 	return CachedClaimedTier;
 }
 
+float AClcMerchant::GetDeceptionLevel() const
+{
+	return Personality ? Personality->DeceptionLevel : 0.5f;
+}
+
 // ---- 气泡（单实例切模式）----
 
 void AClcMerchant::ShowBubble()
@@ -456,7 +580,14 @@ void AClcMerchant::HideBubble()
 
 void AClcMerchant::RefreshBubble()
 {
-	const bool bShouldShow = bEagleEyeActive || bPlayerInRange;
+	const bool bShouldShow = bEagleEyeActive || PlayerInRange.IsValid();
+#if !UE_BUILD_SHIPPING
+	if (GetDebugBubbleCVar()->GetInt() != 0)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Refresh: bShouldShow=%d bEagleEye=%d InRange=%d CurWidget=%d TalkState=%d"),
+			bShouldShow?1:0, bEagleEyeActive?1:0, PlayerInRange.IsValid()?1:0, BubbleWidget?1:0, (int32)CurrentTalkState);
+	}
+#endif
 	if (!bShouldShow)
 	{
 		DestroyBubbleWidget();
@@ -479,12 +610,29 @@ void AClcMerchant::RefreshBubble()
 		const EClcStallTier Claimed = ComputeClaimedTier();
 		const FText Talk = TalkConfig ? TalkConfig->PickLine(Personality, CurrentTalkState, Claimed) : FText::GetEmpty();
 		BubbleWidget->SetBubbleText(Talk);
-		BubbleWidget->SetSecondaryText(FText::GetEmpty());
+
+		FText Secondary = FText::GetEmpty();
+		if (CurrentTalkState == ETalkState::Aim && CurrentAimedStone.IsValid())
+		{
+			const FString& Pitch = CurrentAimedStone->GetStoneData().Internal.ClaimedPitch;
+			if (!Pitch.IsEmpty())
+			{
+				Secondary = FText::FromString(Pitch);
+			}
+		}
+		BubbleWidget->SetSecondaryText(Secondary);
 	}
 }
 
 void AClcMerchant::EnsureBubbleWidget()
 {
+#if !UE_BUILD_SHIPPING
+	if (GetDebugBubbleCVar()->GetInt() != 0)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Ensure: alreadyHas=%d hasClass=%d"),
+			BubbleWidget?1:0, (Config && Config->BubbleWidgetClass)?1:0);
+	}
+#endif
 	if (BubbleWidget || !Config || !Config->BubbleWidgetClass) return;
 
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
@@ -496,15 +644,30 @@ void AClcMerchant::EnsureBubbleWidget()
 		BubbleWidget->SetAnchor(this, Config->BubbleAnchorOffset);
 		BubbleWidget->SetScreenOffset(Config->BubbleScreenOffset);
 		BubbleWidget->AddToViewport(50);
+		BubbleWidget->UpdateScreenPosition();
+		SetActorTickInterval(0.0f); // 气泡存在期间每帧驱动屏幕投影
+#if !UE_BUILD_SHIPPING
+		if (GetDebugBubbleCVar()->GetInt() != 0)
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Ensure: CREATED widget=%p"), BubbleWidget);
+		}
+#endif
 	}
 }
 
 void AClcMerchant::DestroyBubbleWidget()
 {
+#if !UE_BUILD_SHIPPING
+	if (GetDebugBubbleCVar()->GetInt() != 0 && BubbleWidget)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Destroy: removing widget=%p"), BubbleWidget);
+	}
+#endif
 	if (BubbleWidget)
 	{
 		BubbleWidget->RemoveFromParent();
 		BubbleWidget = nullptr;
+		SetActorTickInterval(0.1f); // 无气泡时恢复低频 Tick
 	}
 }
 
@@ -517,8 +680,13 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 	{
 		if (Pawn->IsLocallyControlled())
 		{
+#if !UE_BUILD_SHIPPING
+			if (GetDebugBubbleCVar()->GetInt() != 0)
+			{
+				UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] BeginOverlap triggered (set InRange)"));
+			}
+#endif
 			PlayerInRange = Pawn;
-			bPlayerInRange = true;
 			CurrentTalkState = ETalkState::Enter;
 			RefreshBubble();
 		}
@@ -530,8 +698,13 @@ void AClcMerchant::OnTalkTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, 
 {
 	if (PlayerInRange.Get() == Other)
 	{
+#if !UE_BUILD_SHIPPING
+		if (GetDebugBubbleCVar()->GetInt() != 0)
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] EndOverlap triggered (reset InRange → will DestroyBubble)"));
+		}
+#endif
 		PlayerInRange.Reset();
-		bPlayerInRange = false;
 		// 非鹰眼则隐藏；鹰眼则 RefreshBubble 保持鹰眼模式
 		RefreshBubble();
 	}

@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcOpeningStone.h"
+#include "ClcLog.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ClcOpeningMaskComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -10,7 +11,6 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
-#include "Engine/Engine.h"
 
 AClcOpeningStone::AClcOpeningStone()
 {
@@ -55,7 +55,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 
 	if (!Mesh)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcOpeningStone] Failed to load stone mesh!"));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcOpeningStone] Failed to load stone mesh!"));
 		return false;
 	}
 
@@ -67,7 +67,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialAssetPath);
 	if (!Material)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcOpeningStone] Failed to load material: %s"), *MaterialAssetPath);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcOpeningStone] Failed to load material: %s"), *MaterialAssetPath);
 		return false;
 	}
 
@@ -77,7 +77,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	StoneMID = StoneMesh->CreateDynamicMaterialInstance(0, Material, TEXT("StoneMID"));
 	if (!StoneMID)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcOpeningStone] Failed to create MID!"));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcOpeningStone] Failed to create MID!"));
 		return false;
 	}
 
@@ -220,7 +220,10 @@ bool AClcOpeningStone::GetStoneData(FClcStoneRuntimeData& OutData) const
 	}
 
 	// 保存遮罩像素数据
-	OpeningMaskComp->SaveMaskToData(OutData);
+	if (OpeningMaskComp)
+	{
+		OpeningMaskComp->SaveMaskToData(OutData);
+	}
 
 	return true;
 }

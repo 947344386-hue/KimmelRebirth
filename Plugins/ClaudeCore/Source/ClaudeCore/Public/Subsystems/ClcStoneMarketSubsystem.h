@@ -30,13 +30,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	void RefreshMarket();
 
-	/** 生成一块石头的内部数据（不创建Actor） */
+	/** 生成一块石头的内部数据（不创建Actor）。DeceptionLevel=商人欺骗倾向，用于 roll 声称种水黑话 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
-	FClcStoneInternalData GenerateStoneInternal(bool& bOutSuccess);
+	FClcStoneInternalData GenerateStoneInternal(bool& bOutSuccess, float DeceptionLevel = 0.5f);
 
-	/** 生成石头展示名 */
+	/** 生成石头展示名：产地+皮壳+重量+黑话吹卖句 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
-	FString GenerateDisplayName(const FString& Origin) const;
+	FString GenerateDisplayName(const FClcStoneInternalData& StoneData) const;
 
 	/** V2定价公式——给定石头运行时数据，返回当前回收价格 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")

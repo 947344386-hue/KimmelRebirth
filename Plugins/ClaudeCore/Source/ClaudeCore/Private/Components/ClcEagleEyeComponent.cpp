@@ -1,11 +1,14 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Components/ClcEagleEyeComponent.h"
+#include "ClcLog.h"
 #include "Data/ClcEagleEyeConfig.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "ClcDeveloperSettings.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcMerchant.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 
 UClcEagleEyeComponent::UClcEagleEyeComponent()
 {
@@ -17,7 +20,13 @@ void UClcEagleEyeComponent::BeginPlay()
 	Super::BeginPlay();
 	InitializeConfig();
 
-	MarketSubsystem = GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>();
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			MarketSubsystem = GI->GetSubsystem<UClcStoneMarketSubsystem>();
+		}
+	}
 }
 
 void UClcEagleEyeComponent::InitializeConfig()
@@ -25,7 +34,7 @@ void UClcEagleEyeComponent::InitializeConfig()
 	Config = LoadObject<UClcEagleEyeConfig>(nullptr, *GetDefault<UClcDeveloperSettings>()->EagleEyeConfigPath);
 	if (!Config)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcEagleEye] Failed to load EagleEyeConfig! Path: %s (check Project Settings → ClaudeCore)"),
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcEagleEye] Failed to load EagleEyeConfig! Path: %s (check Project Settings → ClaudeCore)"),
 			*GetDefault<UClcDeveloperSettings>()->EagleEyeConfigPath);
 	}
 }
@@ -34,7 +43,7 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 {
 	if (bCoolingDown)
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("[ClcEagleEye] On cooldown, can't activate."));
+		UE_LOG(LogClaudeCore, Verbose, TEXT("[ClcEagleEye] On cooldown, can't activate."));
 		return;
 	}
 
@@ -52,6 +61,8 @@ void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	// 注：不在此禁用 Tick——ActivateEagleEye 由蓝图异步触发，Tick 启停时序与按键不同步会导致
+	// 间歇性"偶尔没效果"。Tick 一直运行的开销极小（几个 float 比较），保持稳定优先。
 	if (!Config) return;
 
 	if (bActive)

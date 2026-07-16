@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ClcLog.h"
 #include "Engine/DataAsset.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -99,7 +100,7 @@ public:
             ++Transferred;
         }
 
-        UE_LOG(LogTemp, Log, TEXT("[ClcJadeTexture] Injected %d/6 textures into MID"), Transferred);
+        UE_LOG(LogClaudeCore, Log, TEXT("[ClcJadeTexture] Injected %d/6 textures into MID"), Transferred);
         return Transferred;
     }
 };

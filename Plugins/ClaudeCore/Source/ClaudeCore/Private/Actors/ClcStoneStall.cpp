@@ -36,10 +36,6 @@ AClcStoneStall::AClcStoneStall()
 		StallMesh->SetRelativeScale3D(FVector(1.0f, 1.0f, 0.2f));
 	}
 
-	BallSpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("BallSpawnPoint"));
-	BallSpawnPoint->SetupAttachment(StallMesh);
-	BallSpawnPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 200.0f));
-
 	StoneSpawnCenter = CreateDefaultSubobject<USceneComponent>(TEXT("StoneSpawnCenter"));
 	StoneSpawnCenter->SetupAttachment(StallMesh);
 	StoneSpawnCenter->SetRelativeLocation(FVector(0.0f, 0.0f, 10.0f));
@@ -70,17 +66,53 @@ void AClcStoneStall::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 运行时隐藏预览
-	PreviewGrid->SetVisibility(false);
+	// OnConstruction 的 BuildGridPreview 会把 PreviewGrid 设为可见（编辑器预览），
+	// 运行时必须在此显式隐藏，否则预览 cube 会与石头重叠显示
+	if (PreviewGrid)
+	{
+		PreviewGrid->SetVisibility(false);
+	}
 
-	MarketSubsystem = GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>();
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			MarketSubsystem = GI->GetSubsystem<UClcStoneMarketSubsystem>();
+		}
+	}
 	if (MarketSubsystem)
 	{
 		MarketSubsystem->RegisterStall(this);
 	}
 
-	SpawnStones();
 	SpawnMerchant();
+	SpawnStones();
+}
+
+void AClcStoneStall::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 销毁生成的石头和商人，防止摊位销毁后残留浮空 Actor
+	for (AClcStone* Stone : SpawnedStones)
+	{
+		if (IsValid(Stone))
+		{
+			Stone->Destroy();
+		}
+	}
+	SpawnedStones.Empty();
+
+	if (IsValid(SpawnedMerchant))
+	{
+		SpawnedMerchant->Destroy();
+		SpawnedMerchant = nullptr;
+	}
+
+	if (MarketSubsystem)
+	{
+		MarketSubsystem->UnregisterStall(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AClcStoneStall::OnConstruction(const FTransform& Transform)
@@ -222,6 +254,7 @@ void AClcStoneStall::SpawnStones()
 
 	const float CellSize = StallCfg->UnitCellSize;
 	const FVector Center = StoneSpawnCenter->GetComponentLocation();
+	const FQuat SpawnQuat = StoneSpawnCenter->GetComponentQuat();
 	const float Jitter = CellSize * StallCfg->CellJitterRatio;
 
 	for (int32 i = 0; i < Count; ++i)
@@ -235,7 +268,7 @@ void AClcStoneStall::SpawnStones()
 		const float JY = FMath::FRandRange(-Jitter, Jitter);
 
 		bool bSuccess = false;
-		FClcStoneInternalData Data = MarketSubsystem->GenerateStoneInternal(bSuccess);
+		FClcStoneInternalData Data = MarketSubsystem->GenerateStoneInternal(bSuccess, SpawnedMerchant ? SpawnedMerchant->GetDeceptionLevel() : 0.5f);
 		if (!bSuccess) continue;
 
 		UStaticMesh* Mesh = MeshCfg->GetRandomMesh();
@@ -259,14 +292,15 @@ void AClcStoneStall::SpawnStones()
 		// SpawnLoc.Z = Center.Z - (Origin.Z - BoxExtent.Z) * Scale
 		const FBoxSphereBounds Bounds = Mesh->GetBounds();
 		const float BottomOffset = (Bounds.BoxExtent.Z - Bounds.Origin.Z) * Scale;
-		const FVector SpawnLoc = Center + FVector(OffsetX + JX, OffsetY + JY, BottomOffset);
+		// 本地网格偏移（含抖动 + Z 贴地）经摊位旋转变换到世界空间——摊位旋转后石头跟着转
+		const FVector SpawnLoc = Center + SpawnQuat.RotateVector(FVector(OffsetX + JX, OffsetY + JY, BottomOffset));
 
 		const float Yaw = FMath::FRandRange(0.0f, 360.0f);
 
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-		const FString DisplayName = MarketSubsystem->GenerateDisplayName(Data.Origin);
+		const FString DisplayName = MarketSubsystem->GenerateDisplayName(Data);
 
 		AClcStone* Stone = GetWorld()->SpawnActor<AClcStone>(AClcStone::StaticClass(), SpawnLoc, FRotator(0, Yaw, 0), Params);
 		if (Stone)
@@ -276,11 +310,17 @@ void AClcStoneStall::SpawnStones()
 			SpawnedStones.Add(Stone);
 		}
 	}
+
+	// 石头铺好后补算档位（SpawnMerchant 时空摊会被误判成 Bad）
+	if (SpawnedMerchant)
+	{
+		SpawnedMerchant->RecomputeTier();
+	}
 }
 
-FTransform AClcStoneStall::GetBallSpawnLocation() const
+FVector AClcStoneStall::GetStoneSpawnCenterLocation() const
 {
-	return BallSpawnPoint->GetComponentTransform();
+	return StoneSpawnCenter ? StoneSpawnCenter->GetComponentLocation() : GetActorLocation();
 }
 
 float AClcStoneStall::GetTotalTheoreticalValue() const
@@ -288,7 +328,7 @@ float AClcStoneStall::GetTotalTheoreticalValue() const
 	float Total = 0.0f;
 	for (AClcStone* Stone : SpawnedStones)
 	{
-		if (Stone) Total += Stone->GetStoneData().Internal.TheoreticalValue;
+		if (IsValid(Stone)) Total += Stone->GetStoneData().Internal.TheoreticalValue;
 	}
 	return Total;
 }
@@ -318,7 +358,7 @@ void AClcStoneStall::SpawnMerchant()
 
 void AClcStoneStall::NotifyStoneRemoved(AClcStone* Stone)
 {
-	if (!Stone) return;
+	if (!IsValid(Stone)) return;
 
 	// 在移除前算购买结果：这块的价值 vs 全摊平均（含这块）
 	const float StoneValue = Stone->GetStoneData().Internal.TheoreticalValue;

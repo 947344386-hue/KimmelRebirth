@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "ClcLog.h"
 #include "UI/ClcLogToastListWidget.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -25,8 +26,6 @@ void UClcLogToastSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UClcLogToastSubsystem::Deinitialize()
 {
-	Super::Deinitialize();
-
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TickHandle);
@@ -39,6 +38,9 @@ void UClcLogToastSubsystem::Deinitialize()
 	}
 
 	Entries.Empty();
+	NextLogId = 0;
+
+	Super::Deinitialize();
 }
 
 int32 UClcLogToastSubsystem::AddLog(const FString& Message, float Duration, FLinearColor Color)
@@ -130,7 +132,7 @@ void UClcLogToastSubsystem::CreateListWidget()
 	}
 	if (!ListWidgetClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcLogToast] ListWidgetClass not configured and WBP_LogToastList not found at /Game/JadeBetting/UI/. AddLog will still broadcast delegates but no UI will show."));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcLogToast] ListWidgetClass not configured and WBP_LogToastList not found at /Game/JadeBetting/UI/. AddLog will still broadcast delegates but no UI will show."));
 		return;
 	}
 

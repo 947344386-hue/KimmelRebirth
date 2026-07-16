@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcStoneVendor.h"
+#include "ClcLog.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/ClcInteractionIndicator.h"
@@ -80,7 +81,11 @@ void AClcStoneVendor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!CachedPC.IsValid()) return;
+	if (!CachedPC.IsValid())
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
 
 	// 非出售模式：范围内按 F 进入
 	if (!bInSellMode && PlayerInRange.IsValid())
@@ -101,6 +106,10 @@ void AClcStoneVendor::Tick(float DeltaTime)
 			}
 			ExitSellMode();
 		}
+	}
+	else
+	{
+		SetActorTickEnabled(false);
 	}
 }
 
@@ -158,8 +167,10 @@ void AClcStoneVendor::EnterSellMode(UClcBackpackSubsystem* Backpack)
 	CachedBackpack = Backpack;
 	bInSellMode = true;
 
+	const bool bWasAlreadyOpen = Backpack->IsBackpackOpen();
+
 	// 打开背包（ToggleBackpack 同步创建 Widget）
-	if (!Backpack->IsBackpackOpen())
+	if (!bWasAlreadyOpen)
 	{
 		Backpack->ToggleBackpack();
 	}
@@ -171,7 +182,11 @@ void AClcStoneVendor::EnterSellMode(UClcBackpackSubsystem* Backpack)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcVendor] BackpackWidget is null! Check BackpackWidgetClass in BackpackSubsystem config."));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcVendor] BackpackWidget is null! Check BackpackWidgetClass in BackpackSubsystem config."));
+		if (!bWasAlreadyOpen)
+		{
+			Backpack->ToggleBackpack(); // 回滚：关闭刚打开的背包
+		}
 		bInSellMode = false;
 		CachedBackpack = nullptr;
 		return;
@@ -221,10 +236,17 @@ void AClcStoneVendor::OnStoneSelectedForSale(int32 StoneIndex)
 	FClcStoneRuntimeData StoneData = Stones[StoneIndex];
 
 	// 算回收价
-	UClcStoneMarketSubsystem* Market = GetWorld() ? GetWorld()->GetGameInstance()->GetSubsystem<UClcStoneMarketSubsystem>() : nullptr;
+	UClcStoneMarketSubsystem* Market = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			Market = GI->GetSubsystem<UClcStoneMarketSubsystem>();
+		}
+	}
 	if (!Market)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcVendor] MarketSubsystem unavailable!"));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcVendor] MarketSubsystem unavailable!"));
 		return;
 	}
 
@@ -272,6 +294,7 @@ void AClcStoneVendor::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp,
 		if (Pawn->IsLocallyControlled())
 		{
 			PlayerInRange = Pawn;
+				SetActorTickEnabled(true);
 			CachedPC = Cast<APlayerController>(Pawn->GetController());
 		}
 	}

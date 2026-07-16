@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "ClcLog.h"
 #include "Data/ClcStoneConfig.h"
 #include "Data/ClcStoneMeshConfig.h"
 #include "Data/ClcStallConfig.h"
@@ -49,6 +50,8 @@ void UClcStoneMarketSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	// 加载配置DataAsset——路径从 DeveloperSettings 读，挪资产只改 Project Settings
 	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	if (!DS) return;
+
 	StoneConfig = LoadObject<UClcStoneConfig>(nullptr, *DS->StoneConfigPath);
 	MeshConfig = LoadObject<UClcStoneMeshConfig>(nullptr, *DS->StoneMeshConfigPath);
 	StallConfig = LoadObject<UClcStallConfig>(nullptr, *DS->StallConfigPath);
@@ -56,19 +59,19 @@ void UClcStoneMarketSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (!StoneConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StoneConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneConfigPath);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMarket] Failed to load StoneConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneConfigPath);
 	}
 	if (!MeshConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StoneMeshConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneMeshConfigPath);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMarket] Failed to load StoneMeshConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StoneMeshConfigPath);
 	}
 	if (!StallConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Failed to load StallConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StallConfigPath);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMarket] Failed to load StallConfig! Path: %s (check Project Settings → ClaudeCore)"), *DS->StallConfigPath);
 	}
 	if (!ShellTextureConfig)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcMarket] ShellTextureConfig not found. Path: %s (check Project Settings → ClaudeCore)"), *DS->ShellTextureConfigPath);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMarket] ShellTextureConfig not found. Path: %s (check Project Settings → ClaudeCore)"), *DS->ShellTextureConfigPath);
 	}
 }
 
@@ -108,14 +111,14 @@ void UClcStoneMarketSubsystem::UnregisterStall(AClcStoneStall* Stall)
 // 石头生成
 // ============================================================
 
-FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOutSuccess)
+FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOutSuccess, float DeceptionLevel)
 {
 	bOutSuccess = false;
 	FClcStoneInternalData Data;
 
 	if (!StoneConfig || StoneConfig->Origins.Num() == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcMarket] Cannot generate stone: missing config or origins."));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMarket] Cannot generate stone: missing config or origins."));
 		return Data;
 	}
 
@@ -132,6 +135,42 @@ FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOut
 
 	// 2. 种水（带软关联）
 	Data.Grade = RollGrade(Random, Data.Origin);
+
+	// 2b. 商人吹卖黑话：按真实种水+欺骗倾向 roll 声称档，从黑话池取 2 条拼成 ClaimedPitch
+	EClcJadeGrade ClaimedGrade = Data.Grade;
+	if (ClaimedGrade != EClcJadeGrade::Glass)
+	{
+		if (Random.GetFraction() < DeceptionLevel)
+		{
+			ClaimedGrade = static_cast<EClcJadeGrade>(FMath::Min<int32>(static_cast<int32>(ClaimedGrade) + 1, static_cast<int32>(EClcJadeGrade::Glass)));
+			if (Random.GetFraction() < 0.2f)
+			{
+				ClaimedGrade = static_cast<EClcJadeGrade>(FMath::Min<int32>(static_cast<int32>(ClaimedGrade) + 1, static_cast<int32>(EClcJadeGrade::Glass)));
+			}
+		}
+	}
+	const TArray<FText>* Pool = nullptr;
+	for (const FClcPitchPool& P : StoneConfig->JadePitchPool)
+	{
+		if (P.Grade == ClaimedGrade) { Pool = &P.Phrases; break; }
+	}
+	if (Pool)
+	{
+		const int32 N = Pool->Num();
+		if (N > 0)
+		{
+			const int32 IdxA = Random.RandRange(0, N - 1);
+			const int32 IdxB = (N >= 2) ? (IdxA + 1 + Random.RandRange(0, N - 2)) % N : IdxA;
+			Data.ClaimedPitch = (*Pool)[IdxA].ToString() + (*Pool)[IdxB].ToString();
+		}
+	}
+	if (Data.ClaimedPitch.IsEmpty())
+	{
+		if (const UEnum* Enum = StaticEnum<EClcJadeGrade>())
+		{
+			Data.ClaimedPitch = Enum->GetDisplayNameTextByValue(static_cast<int32>(ClaimedGrade)).ToString();
+		}
+	}
 
 	// 3. 绿/黑/大块连续比例
 	RollRatios(Random, Data.GreenRatio, Data.BlackRatio, Data.LargestGreenPatchRatio);
@@ -162,7 +201,7 @@ EClcJadeGrade UClcStoneMarketSubsystem::RollGrade(FRandomStream& Random, const F
 		: StoneConfig->GradeRollWeights;
 	if (bUsingDefault)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcMarket] GradeRollWeights 未配置，使用内置默认(豆40/糯30/冰20/玻10)。请在 DA_StoneConfig 填表以自定义。"));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMarket] GradeRollWeights 未配置，使用内置默认(豆40/糯30/冰20/玻10)。请在 DA_StoneConfig 填表以自定义。"));
 	}
 
 	// 构建加权表（基础权重 + 产地加成）
@@ -218,18 +257,30 @@ void UClcStoneMarketSubsystem::RollRatios(FRandomStream& Random, float& OutGreen
 		return;
 	}
 
-	OutGreen = FMath::FRandRange(StoneConfig->GreenRatioRange.X, StoneConfig->GreenRatioRange.Y);
+	OutGreen = Random.FRandRange(StoneConfig->GreenRatioRange.X, StoneConfig->GreenRatioRange.Y);
 	// 黑面积上限不超过 (1 - 绿面积) 且不超过配置上限
 	const float MaxBlack = FMath::Min(1.0f - OutGreen, StoneConfig->BlackRatioRange.Y);
-	OutBlack = FMath::FRandRange(StoneConfig->BlackRatioRange.X, MaxBlack);
-	OutLargestPatch = FMath::FRandRange(StoneConfig->LargestPatchRatioRange.X, StoneConfig->LargestPatchRatioRange.Y);
+	OutBlack = Random.FRandRange(StoneConfig->BlackRatioRange.X, MaxBlack);
+	OutLargestPatch = Random.FRandRange(StoneConfig->LargestPatchRatioRange.X, StoneConfig->LargestPatchRatioRange.Y);
 }
 
-FString UClcStoneMarketSubsystem::GenerateDisplayName(const FString& Origin) const
+FString UClcStoneMarketSubsystem::GenerateDisplayName(const FClcStoneInternalData& StoneData) const
 {
-	int32& Counter = const_cast<TMap<FString, int32>&>(DisplayNameCounters).FindOrAdd(Origin, 0);
+	// 序号按产地计数，避免同名
+	int32& Counter = const_cast<TMap<FString, int32>&>(DisplayNameCounters).FindOrAdd(StoneData.Origin, 0);
 	Counter++;
-	return FString::Printf(TEXT("%s #%d"), *Origin, Counter);
+
+	const FName Shell = UClcShellTextureConfig::GetShellName(StoneData.ShellTypeIndex);
+
+	// <产地> <皮壳> <重量>公斤 #<N> · <黑话>
+	FString Base = FString::Printf(TEXT("%s %s %d公斤 #%d"),
+		*StoneData.Origin, *Shell.ToString(), StoneData.WeightKg, Counter);
+
+	if (!StoneData.ClaimedPitch.IsEmpty())
+	{
+		Base.Append(TEXT(" · ")).Append(StoneData.ClaimedPitch);
+	}
+	return Base;
 }
 
 // ============================================================
@@ -278,6 +329,7 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 
 	const FClcStoneInternalData& I = StoneData.Internal;
 	const float S_total = I.SurfaceArea;
+	if (S_total <= 0.0f) return 0;
 	const float S_opened = StoneData.AccumulatedOpenedArea;
 	const float S_unopened = S_total - S_opened;
 

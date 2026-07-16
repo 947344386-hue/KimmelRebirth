@@ -25,6 +25,7 @@ class CLAUDECORE_API UClcLogToastListWidget : public UUserWidget
 
 public:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 
 protected:
 	/** 容器——BP 子类里放一个 VerticalBox 命名 "LogContainer"，BindWidget 自动绑定 */

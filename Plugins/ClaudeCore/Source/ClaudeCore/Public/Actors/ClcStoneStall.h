@@ -35,13 +35,14 @@ public:
 	void SpawnStones();
 
 	UFUNCTION(BlueprintCallable, Category = "ClcStall")
-	FTransform GetBallSpawnLocation() const;
-
-	UFUNCTION(BlueprintCallable, Category = "ClcStall")
 	const TArray<AClcStone*>& GetDisplayedStones() const { return SpawnedStones; }
 
 	UFUNCTION(BlueprintCallable, Category = "ClcStall")
 	float GetTotalTheoreticalValue() const;
+
+	/** 获取石头摆放中心的世界坐标（所有石头围绕此点）——商人 TalkTrigger 用此对齐中心 */
+	UFUNCTION(BlueprintCallable, Category = "ClcStall")
+	FVector GetStoneSpawnCenterLocation() const;
 
 	/** 石头被买走时广播 */
 	UPROPERTY(BlueprintAssignable, Category = "ClcStall")
@@ -56,6 +57,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** 摊位根组件（无缩放）——Actor Scale 保持 (1,1,1)，桌面缩放设在 StallMesh 上避免污染 Actor Transform */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStall")
@@ -64,9 +66,6 @@ protected:
 	/** 摊位显示Mesh（可替换，挂在 BenchRoot 下，桌面缩放在此设置） */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStall")
 	UStaticMeshComponent* StallMesh;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStall")
-	USceneComponent* BallSpawnPoint;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStall")
 	USceneComponent* StoneSpawnCenter;

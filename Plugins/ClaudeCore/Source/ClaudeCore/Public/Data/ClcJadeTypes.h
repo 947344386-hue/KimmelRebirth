@@ -79,9 +79,17 @@ struct CLAUDECORE_API FClcStoneInternalData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	EClcJadeGrade Grade = EClcJadeGrade::Bean;
 
+	/** 商人嘴上吹的黑话句——生成时按真实种水+商人欺骗倾向定档后从黑话池取，名字与气泡同读它（不一定如实，半可信） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	FString ClaimedPitch;
+
 	/** 石头总表面积（平方单位，从Mesh Bounds推算） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float SurfaceArea = 0.0f;
+
+	/** 估算重量（公斤，按 Mesh 包围盒椭球体积 × 翡翠密度 3.3 g/cm³ 换算，四舍五入到整公斤，仅供展示） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	int32 WeightKg = 0;
 
 	/** 玉石绿色面积占全石表面积的比例 [0, 1] */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")

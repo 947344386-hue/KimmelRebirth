@@ -27,8 +27,6 @@ public:
 	virtual void AddGold(int32 Amount) override;
 	virtual bool SpendGold(int32 Amount) override;
 
-	FClcStoneRuntimeData* GetStoneMutable(int32 Index);
-
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
 	void UpdateStoneData(int32 Index, const FClcStoneRuntimeData& UpdatedData);
 
@@ -63,7 +61,7 @@ private:
 
 	static constexpr int32 MAX_STONE_SLOTS = 200;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	UClcBackpackWidget* BackpackWidget;
 
 	UPROPERTY(EditAnywhere, Category = "Backpack")

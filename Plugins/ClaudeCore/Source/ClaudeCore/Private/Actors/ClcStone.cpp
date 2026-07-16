@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcStone.h"
+#include "ClcLog.h"
 #include "Actors/ClcStoneStall.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ClcInteractionIndicator.h"
@@ -37,7 +38,12 @@ void AClcStone::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!InfoCardClass) { InfoCardClass = LoadClass<UClcStoneInfoWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_StoneInfo.WBP_StoneInfo_C")); }
+	// InfoCardClass 兜底：BP_Stone 子类若未在 Details 显式指定，按约定路径加载 WBP_StoneInfo。
+	// 不兜底会导致 ShowInfoCard 因 InfoCardClass=null 直接 return，瞄准石头无信息卡。
+	if (!InfoCardClass)
+	{
+		InfoCardClass = LoadClass<UClcStoneInfoWidget>(nullptr, TEXT("/Game/JadeBetting/UI/WBP_StoneInfo.WBP_StoneInfo_C"));
+	}
 }
 
 void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InMesh, float InScale, const FString& InDisplayName)
@@ -68,7 +74,7 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcStone] MarketSubsystem unavailable, prices based on placeholder SA=1000!"));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcStone] MarketSubsystem unavailable, prices based on placeholder SA=1000!"));
 	}
 
 	// 应用皮壳材质 + 从配置表注入贴图
@@ -86,23 +92,13 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcStone] Shell material not found: %s"), *ShellMaterialPath);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcStone] Shell material not found: %s"), *ShellMaterialPath);
 	}
 }
 
 FName AClcStone::GetShellName() const
 {
-	const int32 Idx = RuntimeData.Internal.ShellTypeIndex;
-	if (UClcShellTextureConfig* ShellCfg = Cast<UClcShellTextureConfig>(
-		StaticLoadObject(UClcShellTextureConfig::StaticClass(), nullptr,
-			*GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath)))
-	{
-		if (const FClcShellTextureEntry* Entry = ShellCfg->GetEntryByIndex(Idx))
-		{
-			return Entry->ShellName;
-		}
-	}
-	return NAME_None;
+	return UClcShellTextureConfig::GetShellName(RuntimeData.Internal.ShellTypeIndex);
 }
 
 void AClcStone::RecalculateSurfaceArea()
@@ -110,14 +106,22 @@ void AClcStone::RecalculateSurfaceArea()
 	if (!StoneMesh || !StoneMesh->GetStaticMesh())
 	{
 		RuntimeData.Internal.SurfaceArea = 1000.0f;
+		RuntimeData.Internal.WeightKg = 0;
 		return;
 	}
 
-	// 从Mesh Bounds估算表面积
+	// 从Mesh Bounds估算表面积与重量
 	const FBoxSphereBounds Bounds = StoneMesh->GetStaticMesh()->GetBounds();
-	const float Radius = Bounds.SphereRadius * GetActorScale3D().GetMax();
+	const float Scale = GetActorScale3D().GetMax();
+	const float Radius = Bounds.SphereRadius * Scale;
 	// 球体表面积近似：4πr²，乘以0.8做修正（不规则石头比球体小一点）
 	RuntimeData.Internal.SurfaceArea = 4.0f * PI * Radius * Radius * 0.8f;
+
+	// 重量：包围盒椭球体积 × 翡翠密度（3.3 g/cm³ ≈ 0.0033 kg/cm³），四舍五入到整公斤，至少 1 kg
+	constexpr float JadeDensityKgPerCm3 = 0.0033f;
+	const FVector HalfExtents = Bounds.BoxExtent * Scale;
+	const float VolumeCm3 = (4.0f / 3.0f) * PI * HalfExtents.X * HalfExtents.Y * HalfExtents.Z;
+	RuntimeData.Internal.WeightKg = FMath::Max(1, FMath::RoundToInt(VolumeCm3 * JadeDensityKgPerCm3));
 }
 
 void AClcStone::Tick(float DeltaTime)
@@ -155,12 +159,15 @@ bool AClcStone::OnInteract(AActor* Interactor)
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 	if (!PC) return false;
 
-	UClcBackpackSubsystem* Backpack = PC->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>();
+	ULocalPlayer* LP = PC->GetLocalPlayer();
+	if (!LP) return false;
+
+	UClcBackpackSubsystem* Backpack = LP->GetSubsystem<UClcBackpackSubsystem>();
 	if (!Backpack) return false;
 
 	if (!Backpack->SpendGold(RuntimeData.Internal.PurchasePrice))
 	{
-		if (UClcLogToastSubsystem* LT = PC->GetLocalPlayer()->GetSubsystem<UClcLogToastSubsystem>())
+		if (UClcLogToastSubsystem* LT = LP->GetSubsystem<UClcLogToastSubsystem>())
 		{
 			LT->AddLog(TEXT("金币不足"), 2.0f, FLinearColor::Red);
 		}
@@ -169,7 +176,7 @@ bool AClcStone::OnInteract(AActor* Interactor)
 
 	Backpack->AddStone(RuntimeData);
 
-	if (UClcLogToastSubsystem* LT = PC->GetLocalPlayer()->GetSubsystem<UClcLogToastSubsystem>())
+	if (UClcLogToastSubsystem* LT = LP->GetSubsystem<UClcLogToastSubsystem>())
 	{
 		LT->AddLog(FString::Printf(TEXT("购买成功！%s 已加入背包"), *RuntimeData.DisplayName), 2.0f, FLinearColor::Green);
 	}
@@ -195,9 +202,9 @@ void AClcStone::ShowInfoCard()
 	InfoCardWidget = CreateWidget<UClcStoneInfoWidget>(PC, InfoCardClass);
 	if (InfoCardWidget)
 	{
-		InfoCardWidget->AddToViewport(50);
-		// 锚点 = 本石头 actor，世界偏移 = 小白点的 WidgetOffset（Actor 上方 50 单位）
 		InfoCardWidget->SetAnchor(this, InteractionIndicator->WidgetOffset);
+		InfoCardWidget->AddToViewport(50);
+		InfoCardWidget->UpdateScreenPosition();
 		InfoCardWidget->ShowInfo(RuntimeData);
 		bInfoCardVisible = true;
 	}

@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "ClcLog.h"
 #include "UI/ClcBackpackWidget.h"
 #include "Data/ClcStoneConfig.h"
 #include "ClcDeveloperSettings.h"
@@ -15,9 +16,12 @@ void UClcBackpackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	// 从 DataAsset 读取初始金币——路径走 DeveloperSettings
 	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
-	if (UClcStoneConfig* Config = LoadObject<UClcStoneConfig>(nullptr, *DS->StoneConfigPath))
+	if (DS && !DS->StoneConfigPath.IsEmpty())
 	{
-		Gold = Config->InitialGold;
+		if (UClcStoneConfig* Config = LoadObject<UClcStoneConfig>(nullptr, *DS->StoneConfigPath))
+		{
+			Gold = Config->InitialGold;
+		}
 	}
 }
 
@@ -76,7 +80,7 @@ int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 {
 	if (Stones.Num() >= MAX_STONE_SLOTS)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcBackpack] MAX_STONE_SLOTS (%d) exceeded!"), MAX_STONE_SLOTS);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcBackpack] MAX_STONE_SLOTS (%d) exceeded!"), MAX_STONE_SLOTS);
 		return -1;
 	}
 
@@ -139,15 +143,6 @@ bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	return true;
-}
-
-FClcStoneRuntimeData* UClcBackpackSubsystem::GetStoneMutable(int32 Index)
-{
-	if (Stones.IsValidIndex(Index))
-	{
-		return &Stones[Index];
-	}
-	return nullptr;
 }
 
 void UClcBackpackSubsystem::UpdateStoneData(int32 Index, const FClcStoneRuntimeData& UpdatedData)

@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcLogToastListWidget.h"
+#include "ClcLog.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/LocalPlayer.h"
@@ -20,13 +21,27 @@ void UClcLogToastListWidget::NativeConstruct()
 	}
 }
 
+void UClcLogToastListWidget::NativeDestruct()
+{
+	// 解绑 Subsystem 委托，防止 widget 销毁后 subsystem 触发悬挂指针
+	if (ULocalPlayer* LP = GetOwningLocalPlayer())
+	{
+		if (UClcLogToastSubsystem* Sub = LP->GetSubsystem<UClcLogToastSubsystem>())
+		{
+			Sub->OnLogAdded.RemoveDynamic(this, &UClcLogToastListWidget::HandleLogAdded);
+			Sub->OnLogRemoved.RemoveDynamic(this, &UClcLogToastListWidget::HandleLogRemoved);
+		}
+	}
+	Super::NativeDestruct();
+}
+
 void UClcLogToastListWidget::HandleLogAdded(int32 LogId, const FString& Message, const FLinearColor& Color)
 {
 	// 调 BP 实现创建 entry widget
 	UUserWidget* Entry = CreateEntryWidget(Message, Color);
 	if (!Entry)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcLogToastList] CreateEntryWidget returned null! LogId=%d"), LogId);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcLogToastList] CreateEntryWidget returned null! LogId=%d"), LogId);
 		return;
 	}
 
@@ -37,7 +52,7 @@ void UClcLogToastListWidget::HandleLogAdded(int32 LogId, const FString& Message,
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcLogToastList] LogContainer is null! BindWidget 名字必须是 'LogContainer'。"));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcLogToastList] LogContainer is null! BindWidget 名字必须是 'LogContainer'。"));
 	}
 
 	EntryMap.Add(LogId, Entry);

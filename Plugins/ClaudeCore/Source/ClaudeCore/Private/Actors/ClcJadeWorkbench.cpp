@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Actors/ClcJadeWorkbench.h"
+#include "ClcLog.h"
 #include "Actors/ClcOpeningStone.h"
 #include "Tools/ClcStoneTool.h"
 #include "Tools/ClcOpeningTool.h"
@@ -98,6 +99,12 @@ void AClcJadeWorkbench::BeginPlay()
 
 	TriggerSphere->SetSphereRadius(TriggerRadius);
 
+	// 初始化 BaseFOV——避免 EnterOpeningMode 时 WorkCamera 为 null 用默认 90 导致 aim zoom 基准错误
+	if (WorkCamera)
+	{
+		BaseFOV = WorkCamera->FieldOfView;
+	}
+
 	// 配置交互指示器：范围选中模式 + 委托(背包有石头→选中)
 	if (InteractionIndicator)
 	{
@@ -162,6 +169,28 @@ void AClcJadeWorkbench::Tick(float DeltaTime)
 			HUDPushTimer = HUDPushInterval;
 		}
 	}
+}
+
+void AClcJadeWorkbench::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 清理子 Actor、Widget、Delegate，防止世界拆卸时悬挂引用
+	if (CurrentState != EClcWorkbenchState::Inactive)
+	{
+		ExitOpeningMode();
+	}
+	DestroyCurrentTool();
+	DestroyOpeningStone();
+	DestroyHUD();
+
+	if (InteractionIndicator)
+	{
+		InteractionIndicator->OnQueryCanSelect.Unbind();
+	}
+
+	TriggerSphere->OnComponentBeginOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerBeginOverlap);
+	TriggerSphere->OnComponentEndOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerEndOverlap);
+
+	Super::EndPlay(EndPlayReason);
 }
 
 // ============================================================
@@ -259,6 +288,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 					TraceInfo.bHasHit = true;
 					TraceInfo.HitPoint = HitResult.ImpactPoint;
 					TraceInfo.SurfaceNormal = HitResult.Normal;
+					TraceInfo.FaceIndex = HitResult.FaceIndex;
 				}
 			}
 		}
@@ -461,7 +491,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 
 	if (CachedCarrier->GetStones().Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ClcWorkbench] Player has no stones."));
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcWorkbench] Player has no stones."));
 		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
 		{
 			LT->AddLog(TEXT("背包空，无可开窗的石头"), 2.0f, FLinearColor::Yellow);
@@ -649,7 +679,7 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
 	if (!AllStones.IsValidIndex(StoneIndex))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcWorkbench] Invalid stone index: %d"), StoneIndex);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] Invalid stone index: %d"), StoneIndex);
 		return;
 	}
 
@@ -681,14 +711,14 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 
 	if (!OpeningStone)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcWorkbench] Failed to spawn OpeningStone!"));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] Failed to spawn OpeningStone!"));
 		return;
 	}
 
 	// 初始化石头（加载 Mesh + 材质 + 遮罩）
 	if (!OpeningStone->Initialize(ActiveStoneData, OpeningMaterialPath))
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcWorkbench] OpeningStone Initialize failed!"));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] OpeningStone Initialize failed!"));
 		OpeningStone->Destroy();
 		OpeningStone = nullptr;
 		return;

@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Components/ClcInteractionIndicator.h"
+#include "ClcLog.h"
 #include "UI/ClcInteractionWidget.h"
 #include "Components/WidgetComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -22,7 +23,7 @@ void UClcInteractionIndicator::BeginPlay()
 
 	if (!WidgetClass)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[ClcIndicator] Failed to load WBP_InteractionIndicator!"));
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcIndicator] Failed to load WBP_InteractionIndicator!"));
 		return;
 	}
 
@@ -107,17 +108,13 @@ void UClcInteractionIndicator::UpdateInteractionState()
 			Params.AddIgnoredActor(Pawn);
 			Params.AddIgnoredActor(GetOwner()->GetAttachParentActor());
 
-			TArray<FHitResult> Hits;
-			if (GetWorld()->LineTraceMultiByChannel(Hits, CamLoc, CamLoc + CamDir * 10000.0f,
+			FHitResult Hit;
+			if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, CamLoc + CamDir * InteractionRadius * 1.5f,
 				ECC_Visibility, Params))
 			{
-				for (const FHitResult& H : Hits)
+				if (Hit.GetActor() == GetOwner())
 				{
-					if (H.GetActor() == GetOwner())
-					{
-						bSelected = true;
-						break;
-					}
+					bSelected = true;
 				}
 			}
 		}

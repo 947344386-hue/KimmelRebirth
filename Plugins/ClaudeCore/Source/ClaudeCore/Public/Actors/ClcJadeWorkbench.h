@@ -71,6 +71,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// ---- 组件 ----
 
@@ -220,7 +221,6 @@ private:
 
 	// ---- 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
 	bool bExitKeyPrev = false;
-	bool bBKeyPrev = false;
 	bool bTKeyPrev = false;
 
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */

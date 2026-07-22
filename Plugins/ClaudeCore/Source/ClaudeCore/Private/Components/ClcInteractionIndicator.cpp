@@ -97,25 +97,30 @@ void UClcInteractionIndicator::UpdateInteractionState()
 	}
 	else
 	{
-		// 瞄准模式：摄像机射线命中 Owner 才算选中
+		// 瞄准模式：摄像机方向命中 Owner 才算选中。
+		// 用球扫（SweepSingleByChannel）替代细射线——放宽命中，越肩偏高视角下不必把摄像机压很低，
+		// 且球比线粗，不易被石头前缘/摊位边/地面遮挡。AimSweepRadius=0 时退回细射线（兼容）。
 		APlayerCameraManager* CamMgr = PC->PlayerCameraManager;
 		if (CamMgr)
 		{
 			const FVector CamLoc = CamMgr->GetCameraLocation();
 			const FVector CamDir = CamMgr->GetCameraRotation().Vector();
+			const FVector TraceEnd = CamLoc + CamDir * InteractionRadius * 1.5f;
 
 			FCollisionQueryParams Params;
 			Params.AddIgnoredActor(Pawn);
 			Params.AddIgnoredActor(GetOwner()->GetAttachParentActor());
 
 			FHitResult Hit;
-			if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, CamLoc + CamDir * InteractionRadius * 1.5f,
-				ECC_Visibility, Params))
+			const float SweepR = FMath::Max(0.0f, AimSweepRadius);
+			const bool bHit = (SweepR > SMALL_NUMBER)
+				? GetWorld()->SweepSingleByChannel(Hit, CamLoc, TraceEnd, FQuat::Identity,
+					ECC_Visibility, FCollisionShape::MakeSphere(SweepR), Params)
+				: GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, TraceEnd, ECC_Visibility, Params);
+
+			if (bHit && Hit.GetActor() == GetOwner())
 			{
-				if (Hit.GetActor() == GetOwner())
-				{
-					bSelected = true;
-				}
+				bSelected = true;
 			}
 		}
 	}

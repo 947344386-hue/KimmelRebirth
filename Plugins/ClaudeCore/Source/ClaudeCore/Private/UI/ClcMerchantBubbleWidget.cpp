@@ -9,6 +9,7 @@ void UClcMerchantBubbleWidget::SetAnchor(AActor* InMerchant, const FVector& InWo
 {
 	AnchorMerchant = InMerchant;
 	AnchorWorldOffset = InWorldOffset;
+	SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
 }
 
 void UClcMerchantBubbleWidget::SetBubbleText(const FText& Text)

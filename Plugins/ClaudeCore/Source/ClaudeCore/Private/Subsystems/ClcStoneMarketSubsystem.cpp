@@ -42,6 +42,67 @@ namespace
 		}();
 		return M;
 	}
+
+	FString BuildProductName(const FString& Pitch)
+	{
+		if (Pitch.Contains(TEXT("新坑味")))
+		{
+			return TEXT("新坑料");
+		}
+
+		const bool bGlue = Pitch.Contains(TEXT("起胶感"));
+		const bool bTransparent = Pitch.Contains(TEXT("透度好"));
+		const bool bLongWater = Pitch.Contains(TEXT("水头长")) || Pitch.Contains(TEXT("水长"));
+		const bool bMediumWater = Pitch.Contains(TEXT("水头中"));
+		const bool bShortWater = Pitch.Contains(TEXT("水短"));
+		const bool bFine = Pitch.Contains(TEXT("肉尚细"));
+		const bool bCoarse = Pitch.Contains(TEXT("肉粗"));
+
+		FString Prefix;
+		if (Pitch.Contains(TEXT("高冰味")))
+		{
+			Prefix = TEXT("冰");
+		}
+		else if (Pitch.Contains(TEXT("老味足")) || Pitch.Contains(TEXT("种份老")) || Pitch.Contains(TEXT("老种")))
+		{
+			Prefix = TEXT("老");
+		}
+		else if (Pitch.Contains(TEXT("糯化感")) || Pitch.Contains(TEXT("种尚可")))
+		{
+			Prefix = TEXT("糯");
+		}
+		else if (Pitch.Contains(TEXT("嫩种")))
+		{
+			Prefix = TEXT("嫩");
+		}
+
+		if (Prefix.IsEmpty())
+		{
+			if (bGlue && (bLongWater || bMediumWater || bShortWater)) return TEXT("胶润料");
+			if (bTransparent && (bLongWater || bMediumWater || bShortWater)) return TEXT("水透料");
+			if (bFine && bMediumWater) return TEXT("润细料");
+			if (bCoarse && bShortWater) return TEXT("粗水料");
+		}
+
+		FString Suffix;
+		if (bGlue) Suffix = TEXT("胶");
+		else if (bTransparent) Suffix = TEXT("透");
+		else if (bFine) Suffix = TEXT("细");
+		else if (bMediumWater) Suffix = TEXT("润");
+		else if (bLongWater || bShortWater) Suffix = TEXT("水");
+		else if (bCoarse) Suffix = TEXT("粗");
+
+		if (!Prefix.IsEmpty() && !Suffix.IsEmpty())
+		{
+			return Prefix + Suffix + TEXT("料");
+		}
+		if (Prefix == TEXT("老")) return TEXT("老味料");
+		if (Prefix == TEXT("冰")) return TEXT("冰味料");
+		if (Prefix == TEXT("糯")) return TEXT("糯化料");
+		if (Prefix == TEXT("嫩")) return TEXT("嫩种料");
+		if (!Suffix.IsEmpty()) return Suffix + TEXT("润料");
+		return TEXT("原石料");
+	}
 }
 
 void UClcStoneMarketSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -266,21 +327,7 @@ void UClcStoneMarketSubsystem::RollRatios(FRandomStream& Random, float& OutGreen
 
 FString UClcStoneMarketSubsystem::GenerateDisplayName(const FClcStoneInternalData& StoneData) const
 {
-	// 序号按产地计数，避免同名
-	int32& Counter = const_cast<TMap<FString, int32>&>(DisplayNameCounters).FindOrAdd(StoneData.Origin, 0);
-	Counter++;
-
-	const FName Shell = UClcShellTextureConfig::GetShellName(StoneData.ShellTypeIndex);
-
-	// <产地> <皮壳> <重量>公斤 #<N> · <黑话>
-	FString Base = FString::Printf(TEXT("%s %s %d公斤 #%d"),
-		*StoneData.Origin, *Shell.ToString(), StoneData.WeightKg, Counter);
-
-	if (!StoneData.ClaimedPitch.IsEmpty())
-	{
-		Base.Append(TEXT(" · ")).Append(StoneData.ClaimedPitch);
-	}
-	return Base;
+	return BuildProductName(StoneData.ClaimedPitch);
 }
 
 // ============================================================

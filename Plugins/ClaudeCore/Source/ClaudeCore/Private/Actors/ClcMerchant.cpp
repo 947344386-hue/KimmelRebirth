@@ -9,7 +9,11 @@
 #include "Data/ClcMerchantBubbleConfig.h"
 #include "Data/ClcMerchantTalkConfig.h"
 #include "Data/ClcMerchantPersonality.h"
+#include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Data/ClcStallConfig.h"
+#include "Engine/GameInstance.h"
 #include "UI/ClcMerchantBubbleWidget.h"
+#include "UI/ClcMerchantEagleEyeWidget.h"
 #include "ClcDeveloperSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -79,7 +83,8 @@ void AClcMerchant::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		BoundStall->OnStoneRemoved.RemoveDynamic(this, &AClcMerchant::OnStoneRemoved);
 	}
-	DestroyBubbleWidget();
+	DestroyTalkBubbleWidget();
+	DestroyEagleEyeWidget();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -382,8 +387,26 @@ void AClcMerchant::TickAimedStone()
 		Params.AddIgnoredActor(Pawn);
 	}
 
+	// 和石头 UClcInteractionIndicator 一致：球扫放宽命中，避免"Indicator 选中但商人细射线擦边没中"
+	// 导致嘴上气泡偶尔不显示种水叫卖（ClaimedPitch）。半径取自 DA_StallConfig.StoneAimSweepRadius。
+	float AimSweepR = 25.0f;
+	if (UGameInstance* GI = GetWorld()->GetGameInstance())
+	{
+		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+		{
+			if (UClcStallConfig* StallCfg = Market->GetStallConfig())
+			{
+				AimSweepR = FMath::Max(0.0f, StallCfg->StoneAimSweepRadius);
+			}
+		}
+	}
+
 	AClcStone* HitStone = nullptr;
-	if (GetWorld()->LineTraceSingleByChannel(Hit, CameraLoc, TraceEnd, ECC_Visibility, Params))
+	const bool bHit = (AimSweepR > SMALL_NUMBER)
+		? GetWorld()->SweepSingleByChannel(Hit, CameraLoc, TraceEnd, FQuat::Identity,
+			ECC_Visibility, FCollisionShape::MakeSphere(AimSweepR), Params)
+		: GetWorld()->LineTraceSingleByChannel(Hit, CameraLoc, TraceEnd, ECC_Visibility, Params);
+	if (bHit)
 	{
 		AActor* HitActor = Hit.GetActor();
 		if (HitActor && HitActor->IsA(AClcStone::StaticClass()))
@@ -418,16 +441,18 @@ void AClcMerchant::OnAimedStoneChanged(AClcStone* NewStone)
 
 	// 瞄准变化更新嘴上话术状态——瞄准块=Aim，没瞄准=Enter（回整摊推销）
 	CurrentTalkState = NewStone ? ETalkState::Aim : ETalkState::Enter;
-	RefreshBubble();
+	RefreshTalkBubble();
 
 	if (NewStone)
 	{
 		PlayMicroReactionForStone(NewStone);
+		MicroReactionRetriggerTimer = Config ? Config->MicroReactionDuration : 2.5f;
 	}
 	else
 	{
 		bInMicroReaction = false;
 		ReactionTimer = 0.0f;
+		MicroReactionRetriggerTimer = 0.0f;
 		PlayMoodAnim();
 	}
 }
@@ -438,10 +463,14 @@ void AClcMerchant::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 气泡位置由 Actor Tick 驱动：Widget 离屏后 Slate 可能停止 NativeTick，不能让 Widget 自救。
-	if (BubbleWidget)
+	// UI 位置由 Actor Tick 驱动：Widget 离屏后 Slate 可能停止 NativeTick，不能让 Widget 自救。
+	if (TalkBubbleWidget)
 	{
-		BubbleWidget->UpdateScreenPosition();
+		TalkBubbleWidget->UpdateScreenPosition();
+	}
+	if (EagleEyeWidget)
+	{
+		EagleEyeWidget->UpdateScreenPosition();
 	}
 
 #if !UE_BUILD_SHIPPING
@@ -451,11 +480,12 @@ void AClcMerchant::Tick(float DeltaTime)
 		if (DebugBubbleLogTimer >= 1.5f)
 		{
 			DebugBubbleLogTimer = 0.f;
-			const bool bInViewport = BubbleWidget && BubbleWidget->IsInViewport();
-			const int32 Vis = BubbleWidget ? (int32)BubbleWidget->GetVisibility() : -1;
+			const bool bTalkInViewport = TalkBubbleWidget && TalkBubbleWidget->IsInViewport();
+			const bool bEagleInViewport = EagleEyeWidget && EagleEyeWidget->IsInViewport();
 			UE_LOG(LogClaudeCore, Warning,
-				TEXT("[Bubble:%s] InRange=%d Widget=%d InViewport=%d Vis=%d EagleEye=%d"),
-				*GetName(), PlayerInRange.IsValid()?1:0, BubbleWidget?1:0, bInViewport?1:0, Vis, bEagleEyeActive?1:0);
+				TEXT("[MerchantUI:%s] InRange=%d Talk=%d TalkViewport=%d Eagle=%d EagleViewport=%d EagleEye=%d"),
+				*GetName(), PlayerInRange.IsValid()?1:0, TalkBubbleWidget?1:0, bTalkInViewport?1:0,
+				EagleEyeWidget?1:0, bEagleInViewport?1:0, bEagleEyeActive?1:0);
 		}
 	}
 #endif
@@ -480,6 +510,18 @@ void AClcMerchant::Tick(float DeltaTime)
 		if (MoodReshuffleTimer <= 0.0f)
 		{
 			PlayMoodAnim();
+		}
+	}
+
+	// Aim 态持续时节律重播微反应——球扫后瞄准稳定，不再靠抖动触发 OnAimedStoneChanged，
+	// 需主动节律，否则玩家持续瞄一块石头时商人无动作反馈。每次仍过 ActingSkill gate。
+	if (CurrentTalkState == ETalkState::Aim && CurrentAimedStone.IsValid() && !bInMicroReaction)
+	{
+		MicroReactionRetriggerTimer -= DeltaTime;
+		if (MicroReactionRetriggerTimer <= 0.0f)
+		{
+			MicroReactionRetriggerTimer = Config->MicroReactionDuration;
+			PlayMicroReactionForStone(CurrentAimedStone.Get());
 		}
 	}
 
@@ -562,113 +604,146 @@ float AClcMerchant::GetDeceptionLevel() const
 	return Personality ? Personality->DeceptionLevel : 0.5f;
 }
 
-// ---- 气泡（单实例切模式）----
+// ---- 独立口头气泡 / 鹰眼洞察 ----
 
 void AClcMerchant::ShowBubble()
 {
-	// 鹰眼激活——切两行模式（性格 tag + 心理话）
 	bEagleEyeActive = true;
-	RefreshBubble();
+	RefreshEagleEyeWidget();
 }
 
 void AClcMerchant::HideBubble()
 {
-	// 鹰眼结束——若仍 InRange 回嘴上模式，否则隐藏
 	bEagleEyeActive = false;
-	RefreshBubble();
+	RefreshEagleEyeWidget();
 }
 
-void AClcMerchant::RefreshBubble()
+void AClcMerchant::RefreshTalkBubble()
 {
-	const bool bShouldShow = bEagleEyeActive || PlayerInRange.IsValid();
 #if !UE_BUILD_SHIPPING
 	if (GetDebugBubbleCVar()->GetInt() != 0)
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Refresh: bShouldShow=%d bEagleEye=%d InRange=%d CurWidget=%d TalkState=%d"),
-			bShouldShow?1:0, bEagleEyeActive?1:0, PlayerInRange.IsValid()?1:0, BubbleWidget?1:0, (int32)CurrentTalkState);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[TalkBubble] Refresh: InRange=%d Widget=%d TalkState=%d"),
+			PlayerInRange.IsValid()?1:0, TalkBubbleWidget?1:0, (int32)CurrentTalkState);
 	}
 #endif
-	if (!bShouldShow)
+	if (!PlayerInRange.IsValid())
 	{
-		DestroyBubbleWidget();
+		DestroyTalkBubbleWidget();
 		return;
 	}
 
-	EnsureBubbleWidget();
-	if (!BubbleWidget) return;
+	EnsureTalkBubbleWidget();
+	if (!TalkBubbleWidget) return;
 
-	if (bEagleEyeActive)
-	{
-		// 鹰眼两行：主行心理话(诚实) + 次行性格 tag
-		const FText Psyche = BubbleConfig ? BubbleConfig->PickLine(CurrentTier, LastOutcome) : FText::GetEmpty();
-		BubbleWidget->SetBubbleText(Psyche);
-		BubbleWidget->SetSecondaryText(Personality ? Personality->TagText : FText::GetEmpty());
-	}
-	else
-	{
-		// 嘴上模式：主行话术(可骗，按声称档位) + 次行空
-		const EClcStallTier Claimed = ComputeClaimedTier();
-		const FText Talk = TalkConfig ? TalkConfig->PickLine(Personality, CurrentTalkState, Claimed) : FText::GetEmpty();
-		BubbleWidget->SetBubbleText(Talk);
+	const EClcStallTier Claimed = ComputeClaimedTier();
+	const FText Talk = TalkConfig ? TalkConfig->PickLine(Personality, CurrentTalkState, Claimed) : FText::GetEmpty();
+	TalkBubbleWidget->SetBubbleText(Talk);
 
-		FText Secondary = FText::GetEmpty();
-		if (CurrentTalkState == ETalkState::Aim && CurrentAimedStone.IsValid())
+	FText Secondary = FText::GetEmpty();
+	if (CurrentTalkState == ETalkState::Aim && CurrentAimedStone.IsValid())
+	{
+		const FString& Pitch = CurrentAimedStone->GetStoneData().Internal.ClaimedPitch;
+		if (!Pitch.IsEmpty())
 		{
-			const FString& Pitch = CurrentAimedStone->GetStoneData().Internal.ClaimedPitch;
-			if (!Pitch.IsEmpty())
-			{
-				Secondary = FText::FromString(Pitch);
-			}
+			Secondary = FText::FromString(Pitch);
 		}
-		BubbleWidget->SetSecondaryText(Secondary);
 	}
+	TalkBubbleWidget->SetSecondaryText(Secondary);
 }
 
-void AClcMerchant::EnsureBubbleWidget()
+void AClcMerchant::RefreshEagleEyeWidget()
 {
 #if !UE_BUILD_SHIPPING
 	if (GetDebugBubbleCVar()->GetInt() != 0)
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Ensure: alreadyHas=%d hasClass=%d"),
-			BubbleWidget?1:0, (Config && Config->BubbleWidgetClass)?1:0);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[EagleEyeWidget] Refresh: Active=%d Widget=%d"),
+			bEagleEyeActive?1:0, EagleEyeWidget?1:0);
 	}
 #endif
-	if (BubbleWidget || !Config || !Config->BubbleWidgetClass) return;
+	if (!bEagleEyeActive)
+	{
+		DestroyEagleEyeWidget();
+		return;
+	}
+
+	EnsureEagleEyeWidget();
+	if (!EagleEyeWidget) return;
+
+	const FText Psyche = BubbleConfig ? BubbleConfig->PickLine(CurrentTier, LastOutcome) : FText::GetEmpty();
+
+	// 主行：性格 tag + 邪恶度配色（DeceptionLevel 高=越骗越紫，低=偏青）
+	const FString TagStr = Personality ? Personality->TagText.ToString() : TEXT("神秘人");
+	EagleEyeWidget->SetBubbleText(FText::FromString(FString::Printf(TEXT("性格：%s"), *TagStr)));
+
+	const FLinearColor GoodColor(0.05f, 0.80f, 0.70f);  // 青（善良）
+	const FLinearColor EvilColor(0.60f, 0.15f, 0.80f);  // 紫（邪恶）
+	const float Evilness = Personality ? FMath::Clamp(Personality->DeceptionLevel, 0.0f, 1.0f) : 0.5f;
+	EagleEyeWidget->SetPersonalityColor(FLinearColor::LerpUsingHSV(GoodColor, EvilColor, Evilness));
+
+	// 次行：心理侧写
+	EagleEyeWidget->SetSecondaryText(FText::FromString(FString::Printf(TEXT("心理侧写：%s"), *Psyche.ToString())));
+}
+
+void AClcMerchant::EnsureTalkBubbleWidget()
+{
+	if (TalkBubbleWidget || !Config || !Config->TalkBubbleWidgetClass) return;
 
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 	if (!PC) return;
 
-	BubbleWidget = CreateWidget<UClcMerchantBubbleWidget>(PC, Config->BubbleWidgetClass);
-	if (BubbleWidget)
+	TalkBubbleWidget = CreateWidget<UClcMerchantBubbleWidget>(PC, Config->TalkBubbleWidgetClass);
+	if (TalkBubbleWidget)
 	{
-		BubbleWidget->SetAnchor(this, Config->BubbleAnchorOffset);
-		BubbleWidget->SetScreenOffset(Config->BubbleScreenOffset);
-		BubbleWidget->AddToViewport(50);
-		BubbleWidget->UpdateScreenPosition();
-		SetActorTickInterval(0.0f); // 气泡存在期间每帧驱动屏幕投影
-#if !UE_BUILD_SHIPPING
-		if (GetDebugBubbleCVar()->GetInt() != 0)
-		{
-			UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Ensure: CREATED widget=%p"), BubbleWidget);
-		}
-#endif
+		TalkBubbleWidget->SetAnchor(this, Config->TalkBubbleAnchorOffset);
+		TalkBubbleWidget->SetScreenOffset(Config->TalkBubbleScreenOffset);
+		TalkBubbleWidget->AddToViewport(50);
+		TalkBubbleWidget->UpdateScreenPosition();
+		UpdateWidgetTickInterval();
 	}
 }
 
-void AClcMerchant::DestroyBubbleWidget()
+void AClcMerchant::EnsureEagleEyeWidget()
 {
-#if !UE_BUILD_SHIPPING
-	if (GetDebugBubbleCVar()->GetInt() != 0 && BubbleWidget)
+	if (EagleEyeWidget || !Config || !Config->EagleEyeWidgetClass) return;
+
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!PC) return;
+
+	EagleEyeWidget = CreateWidget<UClcMerchantEagleEyeWidget>(PC, Config->EagleEyeWidgetClass);
+	if (EagleEyeWidget)
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[Bubble] Destroy: removing widget=%p"), BubbleWidget);
+		EagleEyeWidget->SetAnchor(this, Config->EagleEyeAnchorOffset);
+		EagleEyeWidget->SetScreenOffset(Config->EagleEyeScreenOffset);
+		EagleEyeWidget->AddToViewport(51);
+		EagleEyeWidget->UpdateScreenPosition();
+		UpdateWidgetTickInterval();
 	}
-#endif
-	if (BubbleWidget)
+}
+
+void AClcMerchant::DestroyTalkBubbleWidget()
+{
+	if (TalkBubbleWidget)
 	{
-		BubbleWidget->RemoveFromParent();
-		BubbleWidget = nullptr;
-		SetActorTickInterval(0.1f); // 无气泡时恢复低频 Tick
+		TalkBubbleWidget->RemoveFromParent();
+		TalkBubbleWidget = nullptr;
+		UpdateWidgetTickInterval();
 	}
+}
+
+void AClcMerchant::DestroyEagleEyeWidget()
+{
+	if (EagleEyeWidget)
+	{
+		EagleEyeWidget->RemoveFromParent();
+		EagleEyeWidget = nullptr;
+		UpdateWidgetTickInterval();
+	}
+}
+
+void AClcMerchant::UpdateWidgetTickInterval()
+{
+	SetActorTickInterval((TalkBubbleWidget || EagleEyeWidget) ? 0.0f : 0.1f);
 }
 
 // ---- TriggerSphere overlap ----
@@ -688,7 +763,7 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 #endif
 			PlayerInRange = Pawn;
 			CurrentTalkState = ETalkState::Enter;
-			RefreshBubble();
+			RefreshTalkBubble();
 		}
 	}
 }
@@ -705,8 +780,8 @@ void AClcMerchant::OnTalkTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, 
 		}
 #endif
 		PlayerInRange.Reset();
-		// 非鹰眼则隐藏；鹰眼则 RefreshBubble 保持鹰眼模式
-		RefreshBubble();
+		// 离开范围只销毁口头气泡；鹰眼洞察由技能生命周期独立控制。
+		RefreshTalkBubble();
 	}
 }
 
@@ -717,6 +792,7 @@ void AClcMerchant::OnStoneRemoved(EClcPurchaseOutcome Outcome)
 	LastOutcome = Outcome;
 	CurrentTalkState = ETalkState::Purchase;
 	RecomputeTier();
-	// 刷新当前模式反馈：鹰眼更新心理话，嘴上更新购入话术
-	RefreshBubble();
+	// 两个通道分别更新：口头话术仅在范围内，心理话仅在鹰眼激活时。
+	RefreshTalkBubble();
+	RefreshEagleEyeWidget();
 }

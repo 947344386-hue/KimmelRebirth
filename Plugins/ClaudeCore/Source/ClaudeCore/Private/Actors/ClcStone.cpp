@@ -192,6 +192,15 @@ bool AClcStone::PurchaseStone(AActor* Buyer)
 	return OnInteract(Buyer);
 }
 
+void AClcStone::ApplyInteractionConfig(float InInteractionRadius, float InAimSweepRadius)
+{
+	if (InteractionIndicator)
+	{
+		InteractionIndicator->InteractionRadius = InInteractionRadius;
+		InteractionIndicator->AimSweepRadius = InAimSweepRadius;
+	}
+}
+
 void AClcStone::ShowInfoCard()
 {
 	if (bInfoCardVisible || !InfoCardClass) return;
@@ -203,7 +212,7 @@ void AClcStone::ShowInfoCard()
 	if (InfoCardWidget)
 	{
 		InfoCardWidget->SetAnchor(this, InteractionIndicator->WidgetOffset);
-		InfoCardWidget->AddToViewport(50);
+		InfoCardWidget->AddToViewport(60);
 		InfoCardWidget->UpdateScreenPosition();
 		InfoCardWidget->ShowInfo(RuntimeData);
 		bInfoCardVisible = true;

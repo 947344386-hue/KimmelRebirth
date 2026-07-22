@@ -15,6 +15,7 @@ class UClcMerchantBubbleConfig;
 class UClcMerchantTalkConfig;
 class UClcMerchantPersonality;
 class UClcMerchantBubbleWidget;
+class UClcMerchantEagleEyeWidget;
 class USkeletalMeshComponent;
 class USphereComponent;
 class UAnimSequence;
@@ -27,10 +28,8 @@ class APawn;
  *   3. 性格 tag：鹰眼可见固有标签，驱动该商人的撒谎倾向 + 演技
  *   4. 心理话：鹰眼限时，诚实（原气泡重新定位）
  *
- * 气泡单实例切模式（两者不共存）：
- *   走近 + 非鹰眼 → 主行=嘴上话术，次行空
- *   鹰眼 → 主行=心理话，次行=性格 tag
- * 嘴上话术配合整摊人设（烂摊演好摊，瞄准单块也按整摊声称评价）；单块真坏靠微反应诚实泄漏——交叉点在此。
+ * 口头气泡与鹰眼洞察使用独立 Widget，可在玩家处于话术范围内时同屏显示。
+ * 鹰眼开启/结束只影响洞察 UI，不覆盖或销毁口头气泡。
  *
  * 生命周期：由 AClcStoneStall spawn + Initialize。鹰眼通过 ShowBubble/HideBubble 切鹰眼模式。
  */
@@ -48,17 +47,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void Initialize(AClcStoneStall* Stall);
 
-	/** 鹰眼激活时调——气泡切两行模式（性格 tag + 心理话） */
+	/** 鹰眼激活时调——显示独立心理话与性格洞察 UI */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void ShowBubble();
 
-	/** 鹰眼结束时调——若仍 InRange 回嘴上模式，否则隐藏 */
+	/** 鹰眼结束时调——仅隐藏洞察 UI，不影响口头气泡 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void HideBubble();
 
-	/** 当前是否显示气泡 */
+	/** 当前是否显示任一商人 UI */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
-	bool IsBubbleVisible() const { return BubbleWidget != nullptr; }
+	bool IsBubbleVisible() const { return TalkBubbleWidget != nullptr || EagleEyeWidget != nullptr; }
 
 	/** 获取当前性格（可能为空） */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
@@ -117,6 +116,9 @@ private:
 
 	bool bInMicroReaction = false;
 	float ReactionTimer = 0.0f;
+
+	/** Aim 态持续时节律重播微反应的倒计时——球扫后瞄准稳定，不再靠抖动触发，需主动节律 */
+	float MicroReactionRetriggerTimer = 0.0f;
 	float MoodReshuffleTimer = 0.0f;
 
 	/** 商人高频 Tick 时将瞄准 trace 限制为每 0.1 秒一次 */
@@ -135,9 +137,12 @@ private:
 	EClcStallTier CachedClaimedTier = EClcStallTier::Mid;
 	bool bClaimedTierValid = false;
 
-	// ---- 气泡 ----
+	// ---- UI ----
 	UPROPERTY()
-	UClcMerchantBubbleWidget* BubbleWidget = nullptr;
+	UClcMerchantBubbleWidget* TalkBubbleWidget = nullptr;
+
+	UPROPERTY()
+	UClcMerchantEagleEyeWidget* EagleEyeWidget = nullptr;
 
 	// ---- 内部方法 ----
 	void LoadConfigs();
@@ -154,10 +159,14 @@ private:
 	/** 计算嘴上「声称档位」——撒谎倾向决定非好摊被说成好摊的概率；结果缓存至档位变化 */
 	EClcStallTier ComputeClaimedTier();
 
-	/** 统一刷新气泡——按 (EagleEye, InRange) 决定显示模式或隐藏 */
-	void RefreshBubble();
-	void EnsureBubbleWidget();
-	void DestroyBubbleWidget();
+	/** 分别刷新口头气泡与鹰眼洞察，二者生命周期互不影响 */
+	void RefreshTalkBubble();
+	void RefreshEagleEyeWidget();
+	void EnsureTalkBubbleWidget();
+	void EnsureEagleEyeWidget();
+	void DestroyTalkBubbleWidget();
+	void DestroyEagleEyeWidget();
+	void UpdateWidgetTickInterval();
 
 	/** TriggerSphere overlap 回调——走近/离开触发嘴上气泡 */
 	UFUNCTION()

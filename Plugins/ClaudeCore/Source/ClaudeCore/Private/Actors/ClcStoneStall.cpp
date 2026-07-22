@@ -300,13 +300,13 @@ void AClcStoneStall::SpawnStones()
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-		const FString DisplayName = MarketSubsystem->GenerateDisplayName(Data);
-
 		AClcStone* Stone = GetWorld()->SpawnActor<AClcStone>(AClcStone::StaticClass(), SpawnLoc, FRotator(0, Yaw, 0), Params);
 		if (Stone)
 		{
-			Stone->Initialize(Data, Mesh, Scale, DisplayName);
+			Stone->Initialize(Data, Mesh, Scale, FString());
+			Stone->SetDisplayName(MarketSubsystem->GenerateDisplayName(Stone->GetStoneData().Internal));
 			Stone->SetOwningStall(this);
+			Stone->ApplyInteractionConfig(StallCfg->StoneInteractionRadius, StallCfg->StoneAimSweepRadius);
 			SpawnedStones.Add(Stone);
 		}
 	}

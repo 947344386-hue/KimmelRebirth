@@ -52,6 +52,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	bool PurchaseStone(AActor* Buyer);
 
+	/** 摊位生成时调用——按 DA_StallConfig 设置交互半径和瞄准球扫半径 */
+	UFUNCTION(BlueprintCallable, Category = "ClcStone")
+	void ApplyInteractionConfig(float InInteractionRadius, float InAimSweepRadius);
+
 	/** 在此石头上显示信息卡片 */
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	void ShowInfoCard();

@@ -41,17 +41,30 @@ void UClcEagleEyeComponent::InitializeConfig()
 
 void UClcEagleEyeComponent::ActivateEagleEye()
 {
+	if (!Config) return;
+
+	// 激活中再次按键：无视 CD，刷新持续时间并重置一轮 CD。
+	// - CD ≤ 持续：持续窗口内按键即可永续，CD 形同无（类无 CD）。
+	// - CD > 持续：每次刷新把 CD 重置到满，激活结束时 CD 尚未走完，需等其结束才能重启（并行计时）。
+	if (bActive)
+	{
+		ActiveTimer = Config->ActiveDuration;
+		bCoolingDown = true;
+		CooldownTimer = Config->CooldownDuration;
+		return;
+	}
+
+	// 非激活态：CD 未好则不能启动新一轮。
 	if (bCoolingDown)
 	{
 		UE_LOG(LogClaudeCore, Verbose, TEXT("[ClcEagleEye] On cooldown, can't activate."));
 		return;
 	}
 
-	if (!Config) return;
-
 	bActive = true;
 	ActiveTimer = Config->ActiveDuration;
-	bCoolingDown = false;
+	bCoolingDown = true;
+	CooldownTimer = Config->CooldownDuration;
 
 	ToggleMerchantBubbles(true);
 }
@@ -71,10 +84,9 @@ void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 		if (ActiveTimer <= 0.0f)
 		{
-			// 激活结束 → 关气泡 → 进入冷却
+			// 激活结束 → 关气泡。CD 在激活时已并行启动，不在此处重置，
+			// 否则会使实际冷却 = 激活持续 + CooldownDuration，无法连续激活。
 			bActive = false;
-			bCoolingDown = true;
-			CooldownTimer = Config->CooldownDuration;
 			ToggleMerchantBubbles(false);
 		}
 	}

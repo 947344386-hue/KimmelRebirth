@@ -9,6 +9,7 @@
 class UClcMerchantAnimConfig;
 class UClcMerchantBubbleConfig;
 class UClcMerchantBubbleWidget;
+class UClcMerchantEagleEyeWidget;
 class UClcMerchantTalkConfig;
 class UClcMerchantPersonality;
 class USkeletalMesh;
@@ -25,11 +26,15 @@ class CLAUDECORE_API UClcMerchantConfig : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	// ---- 气泡 ----
+	// ---- UI ----
 
-	/** 气泡锚点相对商人的世界偏移（头顶） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bubble")
-	FVector BubbleAnchorOffset = FVector(0.f, 0.f, 180.f);
+	/** 口头气泡锚点相对商人的世界偏移 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
+	FVector TalkBubbleAnchorOffset = FVector(0.f, 0.f, 180.f);
+
+	/** 鹰眼洞察锚点相对商人的世界偏移 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
+	FVector EagleEyeAnchorOffset = FVector(0.f, 0.f, 210.f);
 
 	// ---- 视觉 ----
 
@@ -52,15 +57,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Placement")
 	float MeshFacingYawOffset = 0.f;
 
-	// ---- 气泡 ----
+	// ---- UI ----
 
-	/** 气泡 Widget 类 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bubble")
-	TSubclassOf<UClcMerchantBubbleWidget> BubbleWidgetClass;
+	/** 口头气泡 Widget 类 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
+	TSubclassOf<UClcMerchantBubbleWidget> TalkBubbleWidgetClass;
 
-	/** 气泡相对商人头顶投影的屏幕像素偏移 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bubble")
-	FVector2D BubbleScreenOffset = FVector2D(0.f, -60.f);
+	/** 口头气泡相对锚点投影的屏幕像素偏移 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
+	FVector2D TalkBubbleScreenOffset = FVector2D(0.f, -60.f);
+
+	/** 鹰眼洞察 Widget 类 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
+	TSubclassOf<UClcMerchantEagleEyeWidget> EagleEyeWidgetClass;
+
+	/** 鹰眼洞察相对锚点投影的屏幕像素偏移 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
+	FVector2D EagleEyeScreenOffset = FVector2D(180.f, -90.f);
 
 	// ---- 时序 ----
 

@@ -31,6 +31,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ClcInteraction")
 	float InteractionRadius = 200.0f;
 
+	/** 瞄准模式球扫半径——把单条射线改成球扫，放宽命中。
+	 *  越肩偏高视角下不必把摄像机压很低就能选中；球比线粗，不易被石头前缘/摊位边/地面遮挡。
+	 *  0 = 退回细射线（兼容旧行为）。石头默认 25，可在 BP_Stone 调。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ClcInteraction", meta = (ClampMin = 0.0f))
+	float AimSweepRadius = 25.0f;
+
 	/** 小白点Widget相对于Actor的位置偏移 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ClcInteraction")
 	FVector WidgetOffset = FVector(0.0f, 0.0f, 50.0f);

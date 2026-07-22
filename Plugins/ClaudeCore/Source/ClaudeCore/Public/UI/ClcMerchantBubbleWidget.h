@@ -8,10 +8,8 @@
 #include "ClcMerchantBubbleWidget.generated.h"
 
 /**
- * 商人气泡——鹰眼激活时显示于商人头顶，单句内心独白。
- *
- * 位置由 AClcMerchant::Tick 驱动：商人 Actor 始终 Tick，不受 Slate 离屏裁剪影响。
- * 生命周期由 AClcMerchant 管（ShowBubble/HideBubble），鹰眼只管开关。
+ * 商人口头气泡——玩家进入话术范围时显示推销话术与单块声称。
+ * 鹰眼心理话由独立的 UClcMerchantEagleEyeWidget 显示，可与本气泡同屏。
  */
 UCLASS()
 class CLAUDECORE_API UClcMerchantBubbleWidget : public UUserWidget
@@ -32,16 +30,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchantBubble")
 	void SetBubbleText(const FText& Text);
 
-	/** 设次行文字（鹰眼模式下的性格 tag；传空则折叠次行不占位） */
+	/** 设次行文字（瞄准石头时的声称；传空则折叠次行不占位） */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchantBubble")
 	void SetSecondaryText(const FText& Text);
 
 protected:
-	/** BP 绑定（可选，名字对上即用）——主行（嘴上话术 / 心理话） */
+	/** BP 绑定（可选，名字对上即用）——主行 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	UTextBlock* BubbleTextBlock;
 
-	/** BP 绑定（可选）——次行（鹰眼模式下的性格 tag） */
+	/** BP 绑定（可选）——次行 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	UTextBlock* SecondaryTextBlock;
 

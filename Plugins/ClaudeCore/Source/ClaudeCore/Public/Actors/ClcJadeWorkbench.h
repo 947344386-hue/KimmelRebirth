@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Data/ClcJadeTypes.h"
+#include "Interfaces/ClcInteractable.h"
 #include "ClcJadeWorkbench.generated.h"
 
 /** 工具模式（BP 可用 Switch on EClcToolMode） */
@@ -33,7 +34,7 @@ struct FClcWorkbenchHUDData;
  * 每帧做鼠标 LineTrace，命中石头时把结果传给当前工具的 OnUpdate。
  */
 UCLASS()
-class CLAUDECORE_API AClcJadeWorkbench : public AActor
+class CLAUDECORE_API AClcJadeWorkbench : public AActor, public IClcInteractable
 {
 	GENERATED_BODY()
 
@@ -67,6 +68,10 @@ public:
 	/** 获取当前激活的工具 */
 	UFUNCTION(BlueprintCallable, Category = "ClcWorkbench")
 	AClcStoneTool* GetCurrentTool() const { return CurrentTool; }
+
+	// ---- IClcInteractable ----
+	virtual FText GetInteractionPrompt() const override;
+	virtual bool OnInteract(AActor* Interactor) override;
 
 protected:
 	virtual void BeginPlay() override;

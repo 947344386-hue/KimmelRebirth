@@ -12,3 +12,9 @@ Saved/
 # OS
 .DS_Store
 Thumbs.db
+
+# 全量大推排除：可重生构建产物 + IDE 产物 + 已验证零引用的 dormant 插件
+LocalDerivedDataCache/
+*.sln
+.vsconfig
+Plugins/VibeUE/

@@ -127,6 +127,9 @@ private:
 	/** ClcMerchant.DebugBubble 汇总日志的实例级限频计时器 */
 	float DebugBubbleLogTimer = 0.0f;
 
+	/** 购买反馈保留期间继续跟踪瞄准目标，但不允许 Aim/Enter 覆盖 Purchase 文本 */
+	float PurchaseFeedbackTimer = 0.0f;
+
 	// ---- 嘴上话术 / 气泡状态 ----
 	bool bEagleEyeActive = false;
 	ETalkState CurrentTalkState = ETalkState::Enter;

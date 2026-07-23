@@ -48,7 +48,58 @@ void UClcInteractionIndicator::TickComponent(float DeltaTime, ELevelTick TickTyp
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 收敛后视觉态由角色侧 UClcInteractionComponent 统一驱动（ApplyControllerState）。
+	// 最近 0.5s 内被驱动过则不自检，避免与中心组件双重 trace；
+	// 角色未挂中心组件或组件停止 Tick 时 0.5s 超时，回退到下方旧自检逻辑，保证不黑屏。
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastDrivenTime > 0.0 && (Now - LastDrivenTime) < 0.5)
+	{
+		return;
+	}
 	UpdateInteractionState();
+}
+
+void UClcInteractionIndicator::ApplyControllerState(int32 NewState)
+{
+	if (!InteractionWidget || !WidgetComp) return;
+
+	// 记录驱动时刻——Tick 据此判断是否回退自检。
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	LastDrivenTime = Now;
+
+	// 强制隐藏——Owner 进特殊模式时设 bHidden=true
+	if (bHidden)
+	{
+		if (CurrentState != 0)
+		{
+			InteractionWidget->SetStateHidden();
+			WidgetComp->SetVisibility(false);
+			CurrentState = 0;
+		}
+		return;
+	}
+
+	if (CurrentState == NewState) return;
+	CurrentState = NewState;
+
+	switch (NewState)
+	{
+	case 0:
+		InteractionWidget->SetStateHidden();
+		WidgetComp->SetVisibility(false);
+		break;
+	case 1:
+		WidgetComp->SetVisibility(true);
+		InteractionWidget->SetStateInRange();
+		break;
+	case 2:
+		WidgetComp->SetVisibility(true);
+		InteractionWidget->SetStateSelected();
+		break;
+	default:
+		break;
+	}
 }
 
 void UClcInteractionIndicator::UpdateInteractionState()

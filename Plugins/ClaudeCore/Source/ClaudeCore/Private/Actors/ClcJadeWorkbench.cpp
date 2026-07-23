@@ -633,6 +633,26 @@ bool AClcJadeWorkbench::QueryCanSelect()
 	return false;
 }
 
+// ============================================================
+// IClcInteractable
+// ============================================================
+
+FText AClcJadeWorkbench::GetInteractionPrompt() const
+{
+	return InteractionPrompt;
+}
+
+bool AClcJadeWorkbench::OnInteract(AActor* Interactor)
+{
+	// 工作台目前仍由自身 Tick 轮询 F 键进入（EnterOpeningMode）。
+	// 此实现为接口契约（让 GetAllActorsWithInterface 收集到工作台 → 中心组件驱动其准星/Indicator）
+	// + 未来中心化输入路由预留；当前无人调用，不与现有 F 键自轮询冲突。
+	// 被调用时若已激活则忽略，避免重复进入。
+	if (CurrentState != EClcWorkbenchState::Inactive) return false;
+	EnterOpeningMode();
+	return true;
+}
+
 void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 {
 	// AwaitingStone 状态：首次选石

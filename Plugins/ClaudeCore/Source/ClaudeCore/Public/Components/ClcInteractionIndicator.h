@@ -62,6 +62,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcInteraction")
 	int32 GetInteractionState() const { return CurrentState; }
 
+	/** 由角色侧 UClcInteractionComponent 统一驱动视觉态——收敛后各 Indicator 不再各自球扫自检。
+	 *  记录最近驱动时刻；若超过 0.5s 无人驱动（如角色未挂中心组件），本组件 Tick 回退到自检。 */
+	UFUNCTION(BlueprintCallable, Category = "ClcInteraction")
+	void ApplyControllerState(int32 NewState);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -76,6 +81,9 @@ private:
 
 	/** 当前状态 0=隐藏, 1=在范围内, 2=选中 */
 	int32 CurrentState = 0;
+
+	/** 最近一次被中心组件 ApplyControllerState 驱动的世界时间秒；超过 0.5s 未驱动则 Tick 回退自检。 */
+	float LastDrivenTime = -1.0f;
 
 	/** Widget类 */
 	UPROPERTY(EditAnywhere, Category = "Interaction")

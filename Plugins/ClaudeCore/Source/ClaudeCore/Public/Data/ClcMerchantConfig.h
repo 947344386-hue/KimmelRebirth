@@ -85,6 +85,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing")
 	float MicroReactionDuration = 2.5f;
 
+	/** 购买反馈气泡的最低显示时间（秒），期间瞄准变化不会覆盖文本 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing", meta = (ClampMin = "0.1"))
+	float PurchaseFeedbackDuration = 1.8f;
+
 	/** mood 动画重抽间隔（秒，0=每次播完才重抽） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Timing")
 	float MoodReshuffleInterval = 0.f;

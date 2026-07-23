@@ -4,6 +4,7 @@
 #include "ClcLog.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcStone.h"
+#include "Components/ClcInteractionComponent.h"
 #include "Data/ClcMerchantConfig.h"
 #include "Data/ClcMerchantAnimConfig.h"
 #include "Data/ClcMerchantBubbleConfig.h"
@@ -373,7 +374,31 @@ void AClcMerchant::TickAimedStone()
 
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 	if (!PC) return;
+	APawn* Pawn = PC->GetPawn();
 
+	// 收敛路径：角色挂了 UClcInteractionComponent 时，读其唯一中心球扫结果，
+	// 不再自做 5000 球扫——单 trace/单容差，消除旧"Indicator 选中但商人细射线擦边没中→气泡偶尔没种水"的分叉。
+	// 中心组件 LookDistance(默认 6000) ≥ 旧 5000，商人长距离瞄准反应不缩短。
+	if (UClcInteractionComponent* InterComp = Pawn ? Pawn->FindComponentByClass<UClcInteractionComponent>() : nullptr)
+	{
+		AActor* LookedAt = InterComp->GetLookedAtActor();
+		AClcStone* HitStone = nullptr;
+		if (LookedAt && LookedAt->IsA(AClcStone::StaticClass()))
+		{
+			for (AClcStone* S : BoundStall->GetDisplayedStones())
+			{
+				if (S == LookedAt)
+				{
+					HitStone = S;
+					break;
+				}
+			}
+		}
+		OnAimedStoneChanged(HitStone);
+		return;
+	}
+
+	// 回退：角色未挂中心组件时走旧自检（与收敛前等价，不引入新分叉；加回组件即自动收敛）。
 	FVector CameraLoc;
 	FRotator CameraRot;
 	PC->GetPlayerViewPoint(CameraLoc, CameraRot);
@@ -382,13 +407,11 @@ void AClcMerchant::TickAimedStone()
 
 	FHitResult Hit;
 	FCollisionQueryParams Params;
-	if (APawn* Pawn = PC->GetPawn())
+	if (Pawn)
 	{
 		Params.AddIgnoredActor(Pawn);
 	}
 
-	// 和石头 UClcInteractionIndicator 一致：球扫放宽命中，避免"Indicator 选中但商人细射线擦边没中"
-	// 导致嘴上气泡偶尔不显示种水叫卖（ClaimedPitch）。半径取自 DA_StallConfig.StoneAimSweepRadius。
 	float AimSweepR = 25.0f;
 	if (UGameInstance* GI = GetWorld()->GetGameInstance())
 	{
@@ -439,9 +462,12 @@ void AClcMerchant::OnAimedStoneChanged(AClcStone* NewStone)
 #endif
 	CurrentAimedStone = NewStone;
 
-	// 瞄准变化更新嘴上话术状态——瞄准块=Aim，没瞄准=Enter（回整摊推销）
-	CurrentTalkState = NewStone ? ETalkState::Aim : ETalkState::Enter;
-	RefreshTalkBubble();
+	// 购买反馈保留期间仍同步瞄准目标和动作，到期后直接恢复到最新目标的话术。
+	if (PurchaseFeedbackTimer <= 0.0f)
+	{
+		CurrentTalkState = NewStone ? ETalkState::Aim : ETalkState::Enter;
+		RefreshTalkBubble();
+	}
 
 	if (NewStone)
 	{
@@ -491,6 +517,17 @@ void AClcMerchant::Tick(float DeltaTime)
 #endif
 
 	if (!Config) return;
+
+	if (PurchaseFeedbackTimer > 0.0f)
+	{
+		PurchaseFeedbackTimer -= DeltaTime;
+		if (PurchaseFeedbackTimer <= 0.0f)
+		{
+			PurchaseFeedbackTimer = 0.0f;
+			CurrentTalkState = CurrentAimedStone.IsValid() ? ETalkState::Aim : ETalkState::Enter;
+			RefreshTalkBubble();
+		}
+	}
 
 	// 微反应倒计时
 	if (bInMicroReaction)
@@ -791,6 +828,7 @@ void AClcMerchant::OnStoneRemoved(EClcPurchaseOutcome Outcome)
 {
 	LastOutcome = Outcome;
 	CurrentTalkState = ETalkState::Purchase;
+	PurchaseFeedbackTimer = FMath::Max(Config ? Config->PurchaseFeedbackDuration : 1.8f, 0.1f);
 	RecomputeTier();
 	// 两个通道分别更新：口头话术仅在范围内，心理话仅在鹰眼激活时。
 	RefreshTalkBubble();

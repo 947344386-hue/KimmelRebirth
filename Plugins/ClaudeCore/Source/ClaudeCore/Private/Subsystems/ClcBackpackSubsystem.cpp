@@ -85,8 +85,6 @@ int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 	}
 
 	const int32 NewIndex = Stones.Add(StoneData);
-	Stones[NewIndex].BackpackIndex = NewIndex;
-
 	if (BackpackWidget && bIsOpen)
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
@@ -100,10 +98,6 @@ bool UClcBackpackSubsystem::RemoveStone(int32 StoneIndex)
 	if (!Stones.IsValidIndex(StoneIndex)) return false;
 
 	Stones.RemoveAt(StoneIndex);
-	for (int32 i = StoneIndex; i < Stones.Num(); ++i)
-	{
-		Stones[i].BackpackIndex = i;
-	}
 
 	if (BackpackWidget && bIsOpen)
 	{
@@ -150,7 +144,6 @@ void UClcBackpackSubsystem::UpdateStoneData(int32 Index, const FClcStoneRuntimeD
 	if (Stones.IsValidIndex(Index))
 	{
 		Stones[Index] = UpdatedData;
-		Stones[Index].BackpackIndex = Index;
 	}
 }
 

@@ -49,9 +49,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ClcInteraction", meta=(ClampMin=100.0f))
 	float LookDistance = 6000.0f;
 
-	/** 收集附近交互物的扫描半径（围绕玩家，需 ≥ 各交互物 InteractionRadius 的最大值）。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="ClcInteraction", meta=(ClampMin=100.0f))
-	float ScanRadius = 2000.0f;
 
 	/** 屏幕中心准星 Widget 类（BP 子类排版，复用 UClcInteractionWidget）。
 	 *  未指定则按约定路径加载 /Game/JadeBetting/UI/WBP_Reticle。资产未创建前准星不显示，

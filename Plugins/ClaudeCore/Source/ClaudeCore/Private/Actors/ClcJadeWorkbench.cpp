@@ -345,8 +345,6 @@ void AClcJadeWorkbench::UpdateAimZoom(float DeltaTime)
 	if (!WorkCamera) return;
 
 	const bool bAimDown = CachedPC.IsValid() && CachedPC->IsInputKeyDown(EKeys::RightMouseButton);
-	bIsAiming = bAimDown;
-
 	const float TargetFOV = bAimDown ? (BaseFOV / AimZoomFactor) : BaseFOV;
 	const float CurrentFOV = WorkCamera->FieldOfView;
 	const float NewFOV = FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimZoomSpeed);
@@ -549,7 +547,6 @@ void AClcJadeWorkbench::ExitOpeningMode()
 
 	// 恢复 FOV（右键放大可能改过）
 	if (WorkCamera) WorkCamera->SetFieldOfView(BaseFOV);
-	bIsAiming = false;
 
 	// 恢复摄像机
 	if (CachedPC.IsValid())
@@ -558,7 +555,6 @@ void AClcJadeWorkbench::ExitOpeningMode()
 	}
 
 	CurrentState = EClcWorkbenchState::Inactive;
-	ActiveStoneBackpackIndex = -1;
 
 	// 恢复小白点（玩家还在范围内会自动显示）
 	if (InteractionIndicator) InteractionIndicator->bHidden = false;
@@ -705,7 +701,6 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 
 	// 取出石头数据
 	ActiveStoneData = AllStones[StoneIndex];
-	ActiveStoneBackpackIndex = StoneIndex;
 
 	// 从背包移除（保持索引一致）
 	if (CachedCarrierObj.IsValid())
@@ -805,7 +800,6 @@ void AClcJadeWorkbench::RemoveStoneFromBench()
 	// 销毁 Actor
 	DestroyOpeningStone();
 
-	ActiveStoneBackpackIndex = -1;
 	ActiveStoneData = FClcStoneRuntimeData();
 
 	OnStoneRemoved();

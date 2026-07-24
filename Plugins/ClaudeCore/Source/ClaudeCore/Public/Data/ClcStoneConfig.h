@@ -89,9 +89,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float UnopenedFloorDiscountFactor = 0.1f;
 
-	/** [已弃用] 未开窗原石的单位面积保底价——保留向后兼容，CalculateSalePrice 已改用 UnopenedFloorDiscountFactor */
-	UPROPERTY(meta=(DeprecatedProperty))
-	float PriceFloorPerArea = 5.0f;
 
 	/** 单位面积杂裂惩罚扣分 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")

@@ -50,7 +50,6 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 {
 	RuntimeData.Internal = InData;
 	RuntimeData.DisplayName = InDisplayName;
-	RuntimeData.BackpackIndex = -1;
 	RuntimeData.AccumulatedOpenedArea = 0.0f;
 	RuntimeData.OpenedGreenArea = 0.0f;
 	RuntimeData.OpenedBlackArea = 0.0f;

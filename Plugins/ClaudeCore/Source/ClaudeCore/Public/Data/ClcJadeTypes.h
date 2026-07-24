@@ -160,9 +160,6 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	FString DisplayName;
 
-	/** 在背包中的槽位索引，-1 表示不在背包中 */
-	UPROPERTY()
-	int32 BackpackIndex = -1;
 
 	/** 遮罩 RT 像素缓冲区（256×256 字节），退出工作台时保存，再进入时恢复 */
 	UPROPERTY()

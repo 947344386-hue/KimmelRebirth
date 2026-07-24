@@ -23,7 +23,4 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye")
 	float CooldownDuration = 6.0f;
 
-	/** 扫描摊位范围半径 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye")
-	float ScanRadius = 3000.0f;
 };

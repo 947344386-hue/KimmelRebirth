@@ -218,9 +218,6 @@ private:
 
 	bool bLeftMousePrev = false;
 
-	/** 右键是否处于长按放大状态 */
-	bool bIsAiming = false;
-
 	/** 进入开窗时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
 	float BaseFOV = 90.0f;
 
@@ -238,7 +235,6 @@ private:
 	UPROPERTY()
 	AClcOpeningStone* OpeningStone = nullptr;
 
-	int32 ActiveStoneBackpackIndex = -1;
 	FClcStoneRuntimeData ActiveStoneData;
 
 	UPROPERTY()

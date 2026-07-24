@@ -40,5 +40,4 @@
 ## 注意
 - 工作台/回收商准星"选中态"需**背包有石头**（`QueryCanSelect` 门控；空背包只显空圈，设计如此）。
 - 商人瞄准反应读 `UClcInteractionComponent::GetLookedAtActor`——角色须挂 `ClcInteractionComponent`，否则回退旧自检（仍可用）。
-- `UClcInteractionComponent::ScanRadius`（默认 2000）须 ≥ 各交互物 `InteractionRadius` 最大值；某半径调超 2000 须同步调大。
 - 价格逻辑统一在 `UClcStoneMarketSubsystem`，勿在 Stone/Vendor/商人/UI 复制定价公式。

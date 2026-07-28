@@ -6,6 +6,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "UI/ClcBackpackWidget.h"
@@ -119,6 +120,19 @@ void AClcStoneVendor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (bInSellMode)
 	{
 		ExitSellMode();
+	}
+
+	// 兜底注销按键提示（CachedPC 可能已失效，子系统 Deinitialize 会统一清理）
+	if (VendorPromptHandle != 0 && CachedPC.IsValid())
+	{
+		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+			{
+				KP->UnregisterKeyPrompt(VendorPromptHandle);
+			}
+		}
+		VendorPromptHandle = 0;
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -296,6 +310,20 @@ void AClcStoneVendor::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp,
 			PlayerInRange = Pawn;
 				SetActorTickEnabled(true);
 			CachedPC = Cast<APlayerController>(Pawn->GetController());
+
+			if (VendorPromptHandle == 0 && CachedPC.IsValid())
+			{
+				if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+				{
+					if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+					{
+						VendorPromptHandle = KP->RegisterKeyPrompt(
+							EnterKey,
+							NSLOCTEXT("ClcVendor", "VendorPromptLabel", "出售石头"),
+							FName("Vendor"), 100);
+					}
+				}
+			}
 		}
 	}
 }
@@ -306,6 +334,19 @@ void AClcStoneVendor::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, A
 	if (PlayerInRange.Get() == Other)
 	{
 		PlayerInRange.Reset();
+
+		if (VendorPromptHandle != 0 && CachedPC.IsValid())
+		{
+			if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+			{
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+				{
+					KP->UnregisterKeyPrompt(VendorPromptHandle);
+				}
+			}
+			VendorPromptHandle = 0;
+		}
+
 		// 出售模式期间保留 CachedPC（Esc退出用）；非出售模式清掉
 		if (!bInSellMode)
 		{

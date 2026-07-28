@@ -9,6 +9,7 @@
 #include "ClcStone.generated.h"
 
 class UStaticMeshComponent;
+class UBoxComponent;
 class UClcInteractionIndicator;
 class AClcStoneStall;
 
@@ -67,8 +68,8 @@ public:
 	/** 从摊位场景中移除（被购买或市场刷新） */
 	void RemoveFromStall();
 
-	/** 设置所属摊位——购买时通知摊位用 */
-	void SetOwningStall(AClcStoneStall* Stall) { OwningStall = Stall; }
+	/** 设置所属摊位——购买时通知摊位用（实现放 .cpp，避免 AClcStoneStall 不完整时 TWeakObjectPtr 赋值实例化失败） */
+	void SetOwningStall(AClcStoneStall* Stall);
 
 protected:
 	virtual void BeginPlay() override;
@@ -79,6 +80,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStone")
 	UClcInteractionIndicator* InteractionIndicator;
+
+	/** 仅供鹰眼 XRay Scanner 捕获本 Actor；不参与购买/瞄准/物理碰撞。 */
+	UPROPERTY(VisibleAnywhere, Category = "ClcStone|XRay")
+	UBoxComponent* XRayOverlapProxy;
 
 	/** 摊位展示用皮壳材质路径（纯皮壳，不含开窗逻辑） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcStone")

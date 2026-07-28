@@ -15,6 +15,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
@@ -75,9 +76,9 @@ AClcJadeWorkbench::AClcJadeWorkbench()
 	CameraArm->SetRelativeRotation(FRotator(-15.0f, 0.0f, 0.0f));
 	CameraArm->bDoCollisionTest = false;
 	CameraArm->bUsePawnControlRotation = false;
-	CameraArm->bInheritPitch = false;
-	CameraArm->bInheritYaw = false;
-	CameraArm->bInheritRoll = false;
+	CameraArm->bInheritPitch = true;
+	CameraArm->bInheritYaw = true;
+	CameraArm->bInheritRoll = true;
 
 	WorkCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("WorkCamera"));
 	WorkCamera->SetupAttachment(CameraArm);
@@ -189,6 +190,19 @@ void AClcJadeWorkbench::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	TriggerSphere->OnComponentBeginOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerBeginOverlap);
 	TriggerSphere->OnComponentEndOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerEndOverlap);
+
+	// 兜底注销按键提示（CachedPC 可能已失效，子系统 Deinitialize 会统一清理）
+	if (WorkbenchPromptHandle != 0 && CachedPC.IsValid())
+	{
+		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+			{
+				KP->UnregisterKeyPrompt(WorkbenchPromptHandle);
+			}
+		}
+		WorkbenchPromptHandle = 0;
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -374,6 +388,9 @@ void AClcJadeWorkbench::SwitchToolMode(EClcToolMode NewMode)
 	SpawnCurrentTool();
 
 	OnToolModeChanged(NewMode);
+
+	// 立即刷新 HUD（工具切换改变 tips 文案），不等 0.3s 定时
+	PushHUDData();
 }
 
 void AClcJadeWorkbench::SpawnCurrentTool()
@@ -440,6 +457,19 @@ void AClcJadeWorkbench::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedCom
 			PlayerInRange = Pawn;
 			CachePlayerRefs();
 			// 小白点由 InteractionIndicator 自动显示（范围+背包有石头→选中）
+			if (WorkbenchPromptHandle == 0 && CachedPC.IsValid())
+			{
+				if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+				{
+					if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+					{
+						WorkbenchPromptHandle = KP->RegisterKeyPrompt(
+							EnterKey,
+							NSLOCTEXT("ClcWorkbench", "WorkbenchPromptLabel", "使用工作台"),
+							FName("Workbench"), 100);
+					}
+				}
+			}
 		}
 	}
 }
@@ -451,6 +481,18 @@ void AClcJadeWorkbench::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp,
 	{
 		PlayerInRange.Reset();
 		// 小白点由 InteractionIndicator 自动隐藏（离开范围）
+
+		if (WorkbenchPromptHandle != 0 && CachedPC.IsValid())
+		{
+			if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+			{
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+				{
+					KP->UnregisterKeyPrompt(WorkbenchPromptHandle);
+				}
+			}
+			WorkbenchPromptHandle = 0;
+		}
 
 		if (CurrentState != EClcWorkbenchState::Inactive)
 		{
@@ -730,6 +772,11 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 		return;
 	}
 
+	// 挂到 StoneSpawnPoint，让石头跟随工作台旋转；KeepWorldTransform 保持当前生成位置不变
+	OpeningStone->AttachToComponent(
+		StoneSpawnPoint,
+		FAttachmentTransformRules::KeepWorldTransform);
+
 	// 初始化石头（加载 Mesh + 材质 + 遮罩）
 	if (!OpeningStone->Initialize(ActiveStoneData, OpeningMaterialPath))
 	{
@@ -968,6 +1015,11 @@ void AClcJadeWorkbench::PushHUDData()
 	{
 		Data.ToolDurability = 0.0f;
 	}
+
+	// ── 操作提示——按当前工具模式给不同文案 ──
+	Data.OperationHints = (CurrentToolMode == EClcToolMode::Flashlight)
+		? TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | 右键 放大\nB 背包 | Esc 退出")
+		: TEXT("左键 开窗 | -/= 笔刷大小 | T 切手电筒\nWASD 旋转 | 右键 放大\nB 背包 | Esc 退出");
 
 	HUDWidget->RefreshData(Data);
 }

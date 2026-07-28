@@ -136,4 +136,7 @@ private:
 
 	/** 是否处于出售模式 */
 	bool bInSellMode = false;
+
+	/** 按键提示句柄：进入范围注册 F（出售），离开/EndPlay 注销 */
+	int32 VendorPromptHandle = 0;
 };

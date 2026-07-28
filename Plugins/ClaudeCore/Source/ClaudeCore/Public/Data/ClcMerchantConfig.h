@@ -16,6 +16,33 @@ class USkeletalMesh;
 class UAnimInstance;
 class UAnimMontage;
 
+/** 商人屏幕空间 UI 的模拟透视参数——按相机距离将 UI 缩放为近大远小。 */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcMerchantUISimulatedPerspectiveSettings
+{
+	GENERATED_BODY()
+
+	/** 是否按相机距离模拟近大远小；关闭时保持原始尺寸。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective")
+	bool bEnabled = true;
+
+	/** 到此距离及以内使用 NearScale（cm）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective", meta = (ClampMin = "0.0"))
+	float NearDistance = 300.f;
+
+	/** 到此距离及以外使用 FarScale（cm），必须大于 NearDistance。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective", meta = (ClampMin = "1.0"))
+	float FarDistance = 2500.f;
+
+	/** 靠近商人时的 UI 缩放。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective", meta = (ClampMin = "0.1"))
+	float NearScale = 1.10f;
+
+	/** 远离商人时的 UI 缩放。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective", meta = (ClampMin = "0.1"))
+	float FarScale = 0.70f;
+};
+
 /**
  * 商人主配置——摆位参数、视觉资源、气泡参数、时序、档位阈值、子配置引用。
  * 全部 EditAnywhere，编辑器内直接调。
@@ -28,11 +55,11 @@ class CLAUDECORE_API UClcMerchantConfig : public UPrimaryDataAsset
 public:
 	// ---- UI ----
 
-	/** 口头气泡锚点相对商人的世界偏移 */
+	/** 口头气泡锚点相对商人骨骼网格的局部偏移 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
 	FVector TalkBubbleAnchorOffset = FVector(0.f, 0.f, 180.f);
 
-	/** 鹰眼洞察锚点相对商人的世界偏移 */
+	/** 鹰眼洞察锚点相对商人骨骼网格的局部偏移 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
 	FVector EagleEyeAnchorOffset = FVector(0.f, 0.f, 210.f);
 
@@ -63,17 +90,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
 	TSubclassOf<UClcMerchantBubbleWidget> TalkBubbleWidgetClass;
 
-	/** 口头气泡相对锚点投影的屏幕像素偏移 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Talk")
-	FVector2D TalkBubbleScreenOffset = FVector2D(0.f, -60.f);
-
 	/** 鹰眼洞察 Widget 类 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
 	TSubclassOf<UClcMerchantEagleEyeWidget> EagleEyeWidgetClass;
 
-	/** 鹰眼洞察相对锚点投影的屏幕像素偏移 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|EagleEye")
-	FVector2D EagleEyeScreenOffset = FVector2D(180.f, -90.f);
+	/** 口头气泡与鹰眼洞察共用的 2D 模拟透视参数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective")
+	FClcMerchantUISimulatedPerspectiveSettings UISimulatedPerspective;
 
 	// ---- 时序 ----
 

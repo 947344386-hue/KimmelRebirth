@@ -86,4 +86,7 @@ private:
 	TWeakObjectPtr<AActor> CurrentSelectedActor;
 
 	int32 CurrentReticleState = 0;
+
+	/** 按键提示句柄：选中可购买原石时注册 E，取消选中时注销 */
+	int32 InteractPromptHandle = 0;
 };

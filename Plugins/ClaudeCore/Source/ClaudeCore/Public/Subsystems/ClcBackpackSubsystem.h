@@ -55,6 +55,7 @@ public:
 
 private:
 	void ShowNotification(const FString& Message);
+	void DeferredRegisterBPrompt();
 
 	TArray<FClcStoneRuntimeData> Stones;
 	int32 Gold = 0;
@@ -69,4 +70,7 @@ private:
 
 	bool bIsOpen = false;
 	int32 TotalEarned = 0;
+
+	/** 按键提示句柄：Initialize 注册 B（打开背包），Deinitialize 注销 */
+	int32 BackpackPromptHandle = 0;
 };

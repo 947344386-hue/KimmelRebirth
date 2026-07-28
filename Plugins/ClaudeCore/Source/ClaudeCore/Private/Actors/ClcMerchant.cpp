@@ -494,6 +494,7 @@ void AClcMerchant::Tick(float DeltaTime)
 	{
 		TalkBubbleWidget->UpdateScreenPosition();
 	}
+
 	if (EagleEyeWidget)
 	{
 		EagleEyeWidget->UpdateScreenPosition();
@@ -517,6 +518,17 @@ void AClcMerchant::Tick(float DeltaTime)
 #endif
 
 	if (!Config) return;
+
+	// 鹰眼残留倒计时——per-merchant 独立；到点销毁洞察 UI（范围外商人继续走自己的残留）。
+	if (bEagleEyeActive)
+	{
+		EagleEyeTimer -= DeltaTime;
+		if (EagleEyeTimer <= 0.0f)
+		{
+			bEagleEyeActive = false;
+			RefreshEagleEyeWidget();
+		}
+	}
 
 	if (PurchaseFeedbackTimer > 0.0f)
 	{
@@ -643,15 +655,17 @@ float AClcMerchant::GetDeceptionLevel() const
 
 // ---- 独立口头气泡 / 鹰眼洞察 ----
 
-void AClcMerchant::ShowBubble()
+void AClcMerchant::ShowBubble(float Duration)
 {
 	bEagleEyeActive = true;
+	EagleEyeTimer = Duration;
 	RefreshEagleEyeWidget();
 }
 
 void AClcMerchant::HideBubble()
 {
 	bEagleEyeActive = false;
+	EagleEyeTimer = 0.0f;
 	RefreshEagleEyeWidget();
 }
 
@@ -732,8 +746,8 @@ void AClcMerchant::EnsureTalkBubbleWidget()
 	TalkBubbleWidget = CreateWidget<UClcMerchantBubbleWidget>(PC, Config->TalkBubbleWidgetClass);
 	if (TalkBubbleWidget)
 	{
-		TalkBubbleWidget->SetAnchor(this, Config->TalkBubbleAnchorOffset);
-		TalkBubbleWidget->SetScreenOffset(Config->TalkBubbleScreenOffset);
+		TalkBubbleWidget->SetAnchor(Mesh, Config->TalkBubbleAnchorOffset);
+		TalkBubbleWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
 		TalkBubbleWidget->AddToViewport(50);
 		TalkBubbleWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();
@@ -750,8 +764,8 @@ void AClcMerchant::EnsureEagleEyeWidget()
 	EagleEyeWidget = CreateWidget<UClcMerchantEagleEyeWidget>(PC, Config->EagleEyeWidgetClass);
 	if (EagleEyeWidget)
 	{
-		EagleEyeWidget->SetAnchor(this, Config->EagleEyeAnchorOffset);
-		EagleEyeWidget->SetScreenOffset(Config->EagleEyeScreenOffset);
+		EagleEyeWidget->SetAnchor(Mesh, Config->EagleEyeAnchorOffset);
+		EagleEyeWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
 		EagleEyeWidget->AddToViewport(51);
 		EagleEyeWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();

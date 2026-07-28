@@ -1,11 +1,14 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "ClcLog.h"
 #include "UI/ClcBackpackWidget.h"
 #include "Data/ClcStoneConfig.h"
 #include "ClcDeveloperSettings.h"
 #include "Engine/World.h"
+#include "InputCoreTypes.h"
+#include "TimerManager.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -23,10 +26,48 @@ void UClcBackpackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			Gold = Config->InitialGold;
 		}
 	}
+
+	// 延迟到下一 tick 注册 B 提示——Initialize 阶段跨子系统 GetSubsystem 可能尚未就绪，
+	// 直接注册会被静默跳过（其他运行时注册的提示正常，唯独 Initialize 注册的 B 不出现）。
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::DeferredRegisterBPrompt);
+	}
+}
+
+void UClcBackpackSubsystem::DeferredRegisterBPrompt()
+{
+	if (BackpackPromptHandle != 0)
+	{
+		return;
+	}
+
+	if (ULocalPlayer* LP = GetLocalPlayer())
+	{
+		if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+		{
+			BackpackPromptHandle = KP->RegisterKeyPrompt(
+				EKeys::B,
+				NSLOCTEXT("ClcBackpack", "BackpackPromptLabel", "打开背包"),
+				FName("Backpack"), 0);
+			UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] B prompt registered, handle=%d"), BackpackPromptHandle);
+			return;
+		}
+	}
+	UE_LOG(LogClaudeCore, Warning, TEXT("[ClcBackpack] DeferredRegisterBPrompt: KeyPromptSubsystem unavailable; B prompt will not show."));
 }
 
 void UClcBackpackSubsystem::Deinitialize()
 {
+	if (BackpackPromptHandle != 0)
+	{
+		if (UClcKeyPromptSubsystem* KP = GetLocalPlayer()->GetSubsystem<UClcKeyPromptSubsystem>())
+		{
+			KP->UnregisterKeyPrompt(BackpackPromptHandle);
+		}
+		BackpackPromptHandle = 0;
+	}
+
 	if (BackpackWidget && BackpackWidget->IsInViewport())
 	{
 		BackpackWidget->RemoveFromParent();

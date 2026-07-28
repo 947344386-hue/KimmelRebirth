@@ -4,6 +4,7 @@
 #include "ClcLog.h"
 #include "Actors/ClcStoneStall.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "UI/ClcStoneInfoWidget.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
@@ -32,6 +33,11 @@ AClcStone::AClcStone()
 
 	InteractionIndicator = CreateDefaultSubobject<UClcInteractionIndicator>(TEXT("InteractionIndicator"));
 	InteractionIndicator->InteractionRadius = 400.0f; // 默认值，蓝图中可调
+}
+
+void AClcStone::SetOwningStall(AClcStoneStall* Stall)
+{
+	OwningStall = Stall;
 }
 
 void AClcStone::BeginPlay()

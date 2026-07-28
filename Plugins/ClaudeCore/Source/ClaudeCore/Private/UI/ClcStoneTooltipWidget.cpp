@@ -103,13 +103,13 @@ void UClcStoneTooltipWidget::ShowTooltip_Implementation(const FClcStoneTooltipIn
 		{
 			ValueStr = FString::Printf(TEXT("价格：%d（%d↑）"),
 				Info.CurrentValue, Info.PurchasePrice);
-			Color = FLinearColor::Green;
+			Color = FLinearColor::Red;
 		}
 		else if (Info.CurrentValue < Info.PurchasePrice)
 		{
 			ValueStr = FString::Printf(TEXT("价格：%d（%d↓）"),
 				Info.CurrentValue, Info.PurchasePrice);
-			Color = FLinearColor::Red;
+			Color = FLinearColor::Green;
 		}
 		else
 		{

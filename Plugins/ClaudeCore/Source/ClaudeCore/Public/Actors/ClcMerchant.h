@@ -18,6 +18,7 @@ class UClcMerchantBubbleWidget;
 class UClcMerchantEagleEyeWidget;
 class USkeletalMeshComponent;
 class USphereComponent;
+class UBoxComponent;
 class UAnimSequence;
 class APawn;
 
@@ -47,11 +48,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void Initialize(AClcStoneStall* Stall);
 
-	/** 鹰眼激活时调——显示独立心理话与性格洞察 UI */
+	/** 鹰眼激活/刷新——刷新本商人残留计时（Duration 秒）并显示洞察 UI；范围外商人不被调，保留自己残留 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
-	void ShowBubble();
+	void ShowBubble(float Duration);
 
-	/** 鹰眼结束时调——仅隐藏洞察 UI，不影响口头气泡 */
+	/** 强制立即结束本商人鹰眼（不等残留计时）；新模型组件不再调，保留作强制清理入口 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void HideBubble();
 
@@ -84,6 +85,10 @@ protected:
 	/** 嘴上话术范围触发器——玩家进入显示嘴上气泡，只响应本地 Pawn */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcMerchant")
 	USphereComponent* TalkTrigger;
+
+	/** 仅供鹰眼 XRay Scanner 捕获本 Actor；不影响 Mesh 与 TalkTrigger 的既有碰撞。 */
+	UPROPERTY(VisibleAnywhere, Category = "ClcMerchant|XRay")
+	UBoxComponent* XRayOverlapProxy;
 
 private:
 	// ---- 配置 ----
@@ -132,6 +137,8 @@ private:
 
 	// ---- 嘴上话术 / 气泡状态 ----
 	bool bEagleEyeActive = false;
+	/** 鹰眼残留倒计时（秒）——per-merchant 独立；到点 RefreshEagleEyeWidget 销毁 widget */
+	float EagleEyeTimer = 0.0f;
 	ETalkState CurrentTalkState = ETalkState::Enter;
 	UPROPERTY()
 	TWeakObjectPtr<APawn> PlayerInRange;
@@ -144,6 +151,7 @@ private:
 	UPROPERTY()
 	UClcMerchantBubbleWidget* TalkBubbleWidget = nullptr;
 
+	/** 鹰眼洞察 2D Widget——中心锚定到世界坐标投影，并按距离模拟近大远小。 */
 	UPROPERTY()
 	UClcMerchantEagleEyeWidget* EagleEyeWidget = nullptr;
 

@@ -228,6 +228,9 @@ private:
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;
 
+	/** 按键提示句柄：进入范围注册 F（使用工作台），离开/EndPlay 注销 */
+	int32 WorkbenchPromptHandle = 0;
+
 	// ---- 工作台状态 ----
 
 	EClcWorkbenchState CurrentState = EClcWorkbenchState::Inactive;

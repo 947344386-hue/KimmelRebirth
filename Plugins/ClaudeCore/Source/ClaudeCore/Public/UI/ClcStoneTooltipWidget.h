@@ -66,7 +66,7 @@ public:
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcTooltip|Text")
 	UTextBlock* ShellOrGradeText;
 
-	/** 价值行——格式"价格：1000（500↑）"，涨绿跌红等白 */
+	/** 价值行——格式"价格：1000（500↑）"，涨红跌绿等白 */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcTooltip|Text")
 	UTextBlock* ValueText;
 

@@ -3,13 +3,17 @@
 #include "Components/ClcInteractionComponent.h"
 #include "ClcLog.h"
 #include "Interfaces/ClcInteractable.h"
+#include "Actors/ClcStone.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "UI/ClcInteractionWidget.h"
+#include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Pawn.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "InputCoreTypes.h"
 #include "Blueprint/UserWidget.h"
 
 UClcInteractionComponent::UClcInteractionComponent()
@@ -158,6 +162,30 @@ void UClcInteractionComponent::UpdateInteraction()
 	// 准星选中：aim 命中优先，否则取 proximity 委托选中。
 	AActor* Selected = AimSelected ? AimSelected : ProximitySelected;
 	CurrentSelectedActor = Selected;
+
+	// ---- 按键提示：选中可购买原石（AClcStone）时显示 E，取消选中时隐藏 ----
+	// 工作台/回收商用 F（各自 overlap 注册 E 之外的键），这里只管 E。
+	{
+		const bool bShouldShowEPrompt = (Selected && Selected->IsA(AClcStone::StaticClass()));
+		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		{
+			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+			{
+				if (bShouldShowEPrompt && InteractPromptHandle == 0)
+				{
+					InteractPromptHandle = KP->RegisterKeyPrompt(
+						EKeys::E,
+						NSLOCTEXT("ClcInteraction", "PurchasePromptLabel", "购买原石"),
+						FName("Purchase"), 150);
+				}
+				else if (!bShouldShowEPrompt && InteractPromptHandle != 0)
+				{
+					KP->UnregisterKeyPrompt(InteractPromptHandle);
+					InteractPromptHandle = 0;
+				}
+			}
+		}
+	}
 
 	// ---- 3. 准星态 + Prompt 文案 ----
 	if (!bAnyInRange)

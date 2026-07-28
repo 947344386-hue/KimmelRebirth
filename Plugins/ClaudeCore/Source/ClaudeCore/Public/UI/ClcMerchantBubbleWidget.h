@@ -5,7 +5,10 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/TextBlock.h"
+#include "Data/ClcMerchantConfig.h"
 #include "ClcMerchantBubbleWidget.generated.h"
+
+class USceneComponent;
 
 /**
  * 商人口头气泡——玩家进入话术范围时显示推销话术与单块声称。
@@ -17,13 +20,13 @@ class CLAUDECORE_API UClcMerchantBubbleWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/** 设锚点——气泡跟随此 Actor 的 (ActorLocation + WorldOffset) 屏幕投影 */
-	void SetAnchor(AActor* InMerchant, const FVector& InWorldOffset);
+	/** 设锚点——气泡中心跟随组件局部 Offset 转换后的屏幕投影。 */
+	void SetAnchor(USceneComponent* InAnchorComponent, const FVector& InLocalOffset);
 
-	/** 设屏幕偏移（从 config 传入） */
-	void SetScreenOffset(const FVector2D& Offset) { ScreenOffset = Offset; }
+	/** 设置近大远小的屏幕空间模拟透视参数。 */
+	void SetSimulatedPerspective(const FClcMerchantUISimulatedPerspectiveSettings& InSettings);
 
-	/** 由商人 Actor Tick 调用；负责投影、屏外隐藏和重新入屏恢复 */
+	/** 由商人 Actor Tick 调用；负责投影、模拟透视缩放、屏外隐藏和重新入屏恢复 */
 	void UpdateScreenPosition();
 
 	/** 设气泡文字 */
@@ -44,7 +47,7 @@ protected:
 	UTextBlock* SecondaryTextBlock;
 
 private:
-	TWeakObjectPtr<AActor> AnchorMerchant;
-	FVector AnchorWorldOffset = FVector::ZeroVector;
-	FVector2D ScreenOffset = FVector2D::ZeroVector;
+	TWeakObjectPtr<USceneComponent> AnchorComponent;
+	FVector AnchorLocalOffset = FVector::ZeroVector;
+	FClcMerchantUISimulatedPerspectiveSettings SimulatedPerspective;
 };

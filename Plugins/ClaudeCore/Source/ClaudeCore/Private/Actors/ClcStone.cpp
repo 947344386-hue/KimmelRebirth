@@ -31,6 +31,14 @@ AClcStone::AClcStone()
 	StoneMesh->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	StoneMesh->SetGenerateOverlapEvents(false);
 
+	XRayOverlapProxy = CreateDefaultSubobject<UBoxComponent>(TEXT("XRayOverlapProxy"));
+	XRayOverlapProxy->SetupAttachment(StoneMesh);
+	XRayOverlapProxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	XRayOverlapProxy->SetCollisionObjectType(ECC_GameTraceChannel2);
+	XRayOverlapProxy->SetCollisionResponseToAllChannels(ECR_Ignore);
+	XRayOverlapProxy->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Overlap);
+	XRayOverlapProxy->SetGenerateOverlapEvents(true);
+
 	InteractionIndicator = CreateDefaultSubobject<UClcInteractionIndicator>(TEXT("InteractionIndicator"));
 	InteractionIndicator->InteractionRadius = 400.0f; // 默认值，蓝图中可调
 }
@@ -64,6 +72,10 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 	if (InMesh)
 	{
 		StoneMesh->SetStaticMesh(InMesh);
+		if (XRayOverlapProxy)
+		{
+			XRayOverlapProxy->SetBoxExtent(InMesh->GetBounds().BoxExtent, false);
+		}
 	}
 
 	SetActorScale3D(FVector(InScale));

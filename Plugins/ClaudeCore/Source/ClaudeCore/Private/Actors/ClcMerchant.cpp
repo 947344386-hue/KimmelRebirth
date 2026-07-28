@@ -18,6 +18,7 @@
 #include "ClcDeveloperSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/World.h"
@@ -60,6 +61,14 @@ AClcMerchant::AClcMerchant()
 	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
 	RootComponent = Mesh;
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	XRayOverlapProxy = CreateDefaultSubobject<UBoxComponent>(TEXT("XRayOverlapProxy"));
+	XRayOverlapProxy->SetupAttachment(RootComponent);
+	XRayOverlapProxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	XRayOverlapProxy->SetCollisionObjectType(ECC_GameTraceChannel2);
+	XRayOverlapProxy->SetCollisionResponseToAllChannels(ECR_Ignore);
+	XRayOverlapProxy->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Overlap);
+	XRayOverlapProxy->SetGenerateOverlapEvents(true);
 
 	// 嘴上话术范围触发器——只响应本地 Pawn Overlap（参考 AClcStoneVendor 范例）
 	TalkTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("TalkTrigger"));

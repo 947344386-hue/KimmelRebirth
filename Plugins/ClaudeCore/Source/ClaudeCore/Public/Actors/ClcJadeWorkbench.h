@@ -20,6 +20,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UCameraComponent;
 class USpringArmComponent;
+class USpotLightComponent;
 class UClcInteractionIndicator;
 class AClcOpeningStone;
 class AClcStoneTool;
@@ -102,6 +103,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UClcInteractionIndicator* InteractionIndicator;
 
+	/**
+	 * 自适应补光——按当前状态/工具调节强度，避免太亮或太暗。
+	 * 位置/锥角/颜色等直接在 BP 的 FillLight 组件上调；这里只暴露强度档位。
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USpotLightComponent* FillLight;
+
 	// ---- 配置 ----
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
@@ -141,6 +149,32 @@ protected:
 	/** WASD 旋转速度倍率 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	float RotationInputScale = 1.0f;
+
+	// ---- 自适应补光强度档位（位置/锥角/颜色在 BP 的 FillLight 组件上调） ----
+
+	/** 未进入工作台时的补光强度（0=灭，不照亮环境） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float FillLightInactiveIntensity = 0.0f;
+
+	/** 进入但还没放石头时的补光强度（看清台面） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float FillLightIdleIntensity = 2500.0f;
+
+	/** 开窗器模式补光强度（亮，看清表面精磨） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float OpenerFillLightIntensity = 7000.0f;
+
+	/** 手电筒选中但未开灯时的补光强度（中等，避免画面太暗） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float FlashlightIdleFillLightIntensity = 3000.0f;
+
+	/** 手电筒开灯透视时的补光强度（压暗，让手电光锥和 X-ray 突出） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float FlashlightActiveFillLightIntensity = 800.0f;
+
+	/** 补光强度过渡速度（越大越快，0=瞬切，建议 8~12） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
+	float FillLightTransitionSpeed = 10.0f;
 
 	// ---- 工具蓝图槽位（指定 BP 子类来覆写参数 / Mesh / 表现） ----
 
@@ -202,6 +236,11 @@ private:
 
 	/** 种水是否已暴露（首次开到绿时设为 true） */
 	bool bGradeRevealed = false;
+
+	/** 补光当前强度（每帧平滑追向 Target） */
+	float CurrentFillLightIntensity = 0.0f;
+	/** 补光目标强度（由 UpdateFillLightTarget 按状态算出） */
+	float TargetFillLightIntensity = 0.0f;
 
 private:
 	enum class EClcWorkbenchState : uint8
@@ -269,6 +308,13 @@ private:
 	void SwitchToolMode(EClcToolMode NewMode);
 	void SpawnCurrentTool();
 	void DestroyCurrentTool();
+
+	// ---- 自适应补光 ----
+
+	/** 按当前状态/工具/手电开关重算目标强度 */
+	void UpdateFillLightTarget();
+	/** 每帧把当前强度平滑追向目标并应用到 FillLight */
+	void TickFillLight(float DeltaTime);
 
 	UFUNCTION()
 	void OnBackpackStoneSelected(int32 StoneIndex);

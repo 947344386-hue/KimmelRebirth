@@ -9,6 +9,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -86,6 +87,20 @@ AClcJadeWorkbench::AClcJadeWorkbench()
 	// ---- 交互指示器（小白点：范围内+背包有石头→选中） ----
 	InteractionIndicator = CreateDefaultSubobject<UClcInteractionIndicator>(TEXT("InteractionIndicator"));
 
+	// ---- 自适应补光（挂到 StoneSpawnPoint 跟随石头/相机；位置/锥角/颜色在 BP 的 FillLight 组件上调） ----
+	FillLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("FillLight"));
+	FillLight->SetupAttachment(StoneSpawnPoint);
+	FillLight->SetRelativeLocation(FVector(70.0f, 0.0f, 130.0f));
+	FillLight->SetRelativeRotation(FRotator(-65.0f, 0.0f, 0.0f));
+	FillLight->SetIntensity(0.0f);
+	FillLight->SetLightColor(FLinearColor(1.0f, 0.96f, 0.88f));
+	FillLight->SetInnerConeAngle(60.0f);
+	FillLight->SetOuterConeAngle(80.0f);
+	FillLight->SetAttenuationRadius(500.0f);
+	FillLight->SetCastShadows(false);
+	FillLight->SetMobility(EComponentMobility::Movable);
+	FillLight->SetVisibility(false);
+
 	// ---- 工具类默认值（用户可在 Workbench Details 中改为 BP 子类） ----
 	OpeningToolClass = AClcOpeningTool::StaticClass();
 	FlashlightToolClass = AClcFlashlightTool::StaticClass();
@@ -118,6 +133,9 @@ void AClcJadeWorkbench::BeginPlay()
 void AClcJadeWorkbench::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	// 自适应补光：放在所有 early return 之前，保证进/出工作台、切工具、手电开关都能平滑过渡
+	TickFillLight(DeltaTime);
 
 	// Inactive 状态：检测进入按键
 	if (CurrentState == EClcWorkbenchState::Inactive && PlayerInRange.IsValid())
@@ -441,6 +459,60 @@ void AClcJadeWorkbench::DestroyCurrentTool()
 void AClcJadeWorkbench::OnToolModeChanged_Implementation([[maybe_unused]] EClcToolMode NewMode)
 {
 	// 蓝图覆写——刷新 UI、播放音效等
+}
+
+// ============================================================
+// 自适应补光
+// ============================================================
+
+void AClcJadeWorkbench::UpdateFillLightTarget()
+{
+	switch (CurrentState)
+	{
+	case EClcWorkbenchState::Inactive:
+		TargetFillLightIntensity = FillLightInactiveIntensity;
+		return;
+	case EClcWorkbenchState::AwaitingStone:
+		TargetFillLightIntensity = FillLightIdleIntensity;
+		return;
+	case EClcWorkbenchState::StoneOnBench:
+		break;
+	}
+
+	// StoneOnBench：按工具模式细分
+	if (CurrentToolMode == EClcToolMode::Opener)
+	{
+		TargetFillLightIntensity = OpenerFillLightIntensity;
+		return;
+	}
+
+	// Flashlight：开灯透视时压暗补光让 X-ray 突出，未开灯时保持中等避免画面太暗
+	const AClcFlashlightTool* FT = Cast<AClcFlashlightTool>(CurrentTool);
+	const bool bLightOn = FT && FT->IsLightOn();
+	TargetFillLightIntensity = bLightOn
+		? FlashlightActiveFillLightIntensity
+		: FlashlightIdleFillLightIntensity;
+}
+
+void AClcJadeWorkbench::TickFillLight(float DeltaTime)
+{
+	if (!FillLight) return;
+
+	UpdateFillLightTarget();
+
+	if (FillLightTransitionSpeed <= 0.0f || DeltaTime <= 0.0f)
+	{
+		CurrentFillLightIntensity = TargetFillLightIntensity;
+	}
+	else
+	{
+		CurrentFillLightIntensity = FMath::FInterpTo(
+			CurrentFillLightIntensity, TargetFillLightIntensity, DeltaTime, FillLightTransitionSpeed);
+	}
+
+	FillLight->SetIntensity(CurrentFillLightIntensity);
+	// 强度趋近 0 时关掉组件，省光照开销
+	FillLight->SetVisibility(CurrentFillLightIntensity > KINDA_SMALL_NUMBER);
 }
 
 // ============================================================

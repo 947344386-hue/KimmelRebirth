@@ -10,6 +10,8 @@ class UClcEagleEyeConfig;
 class UClcStoneMarketSubsystem;
 class UPostProcessComponent;
 class UMaterialInstanceDynamic;
+class UMeshComponent;
+class AActor;
 class AClcStoneStall;
 class AClcMerchant;
 
@@ -53,6 +55,10 @@ private:
 	bool InitializeScanEffect();
 	void StartOrRestartScanPulse(const FVector& Center);
 	void CleanupScanEffect();
+	bool CanRunLocalXRay() const;
+	void StartOrRestartXRayScan(const FVector& Center);
+	void DestroyActiveXRayScan();
+	void CloneXRayMeshes(AActor* TargetActor, float& OutMinZ, float& OutMaxZ);
 	bool IsInExclusiveFlow() const;
 
 	// ---- 配置 ----
@@ -76,6 +82,21 @@ private:
 
 	bool bScanActive = false;
 	float ScanEndTimer = 0.0f;
+
+	// ---- XRay 扫描层（自实现：clone 目标 Mesh + 共享 ScanMID 驱动扫描盒原点 Z 从底扫到顶）----
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> XRayScanMID;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMeshComponent>> XRayCloneComponents;
+
+	bool bXRayActive = false;
+	float XRayScanTimer = 0.0f;
+	float XRayScanDuration = 0.0f;
+	float XRayBottomZ = 0.0f;
+	float XRayTopZ = 0.0f;
+	FVector XRayScanCenter = FVector::ZeroVector;
+	bool bLoggedXRayMaterialWarning = false;
 
 	/** 按键提示句柄：常驻 Q（鹰眼），TickComponent 首帧 PC 就绪后注册，EndPlay 注销 */
 	int32 EagleEyePromptHandle = 0;

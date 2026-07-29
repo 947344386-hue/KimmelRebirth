@@ -81,10 +81,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStone")
 	UClcInteractionIndicator* InteractionIndicator;
 
-	/** 仅供鹰眼 XRay Scanner 捕获本 Actor；不参与购买/瞄准/物理碰撞。 */
-	UPROPERTY(VisibleAnywhere, Category = "ClcStone|XRay")
-	UBoxComponent* XRayOverlapProxy;
-
 	/** 摊位展示用皮壳材质路径（纯皮壳，不含开窗逻辑） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcStone")
 	FString ShellMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneShell.M_StoneShell");

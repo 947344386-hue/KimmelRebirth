@@ -86,10 +86,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcMerchant")
 	USphereComponent* TalkTrigger;
 
-	/** 仅供鹰眼 XRay Scanner 捕获本 Actor；不影响 Mesh 与 TalkTrigger 的既有碰撞。 */
-	UPROPERTY(VisibleAnywhere, Category = "ClcMerchant|XRay")
-	UBoxComponent* XRayOverlapProxy;
-
 private:
 	// ---- 配置 ----
 	UPROPERTY()

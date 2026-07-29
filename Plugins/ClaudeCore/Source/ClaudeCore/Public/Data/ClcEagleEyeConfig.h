@@ -37,19 +37,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|Scan Visual", meta = (ClampMin = "0.0"))
 	float ScanDuration = 2.0f;
 
-	/** 是否在 ScanWave 上叠加 ScanFX XRay phantom 扫描层 */
+	/** 是否启用鹰眼 XRay 扫描层（clone 范围内商人的 Mesh 并叠加三角扫描材质） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
 	bool bEnableXRayScan = true;
 
-	/** XRay Scanner 蓝图类；默认使用 ScanFX 的 BP_ScanFX_XRay_Scanner */
+	/** XRay 三角扫描材质。留空=用 ScanFX 的 MI_ScanFX_TriangleScanner；改颜色可复制该 MI 调 Vector 参数后指向新 MI */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
-	TSoftClassPtr<AActor> XRayScannerClass;
-
-	/** XRay Scanner Box 半尺寸（cm）；只捕获 EagleEyeXRay 专用碰撞代理的原石和商人 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay", meta = (ClampMin = "0.0"))
-	FVector XRayBoxHalfExtents = FVector(1500.0f, 1500.0f, 500.0f);
-
-	/** ScanDuration 结束后给 XRay Timeline/phantom 清理的额外时间（秒） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay", meta = (ClampMin = "0.0"))
-	float XRayCleanupGrace = 0.15f;
+	TSoftObjectPtr<UMaterialInterface> XRayScanMaterial;
 };

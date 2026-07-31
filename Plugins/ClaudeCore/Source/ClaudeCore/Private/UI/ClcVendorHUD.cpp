@@ -98,6 +98,23 @@ void UClcVendorHUD::RefreshData(const FClcVendorHUDData& Data)
 	SetText(HintsText, Data.OperationHints);
 
 	if (SellButton) SellButton->SetIsEnabled(Data.bCanSell);
+
+	// ── NPC 台词 ──
+	if (NpcDialogBox)
+	{
+		if (!Data.NpcLine.IsEmpty())
+		{
+			if (NpcLineText)
+			{
+				NpcLineText->SetText(FText::FromString(Data.NpcLine));
+			}
+			NpcDialogBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			NpcDialogBox->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
 }
 
 void UClcVendorHUD::BuildDefaultLayout()
@@ -261,6 +278,38 @@ void UClcVendorHUD::BuildDefaultLayout()
 		HintsSlot->SetAlignment(FVector2D(0.5f, 1.0f));
 		HintsSlot->SetPosition(FVector2D(0.0f, -16.0f));
 		HintsSlot->SetAutoSize(true);
+	}
+
+	// ============================================================
+	// NPC 对话气泡（底部居中，RPG 风格；不说话时整组折叠）
+	// ============================================================
+	{
+		USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("NpcBox"));
+		Box->SetWidthOverride(600.0f);
+
+		NpcDialogBox = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NpcDialogBox"));
+		NpcDialogBox->SetPadding(FMargin(20.0f, 14.0f));
+		NpcDialogBox->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.06f, 0.92f));
+
+		NpcLineText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("NpcLineText"));
+		{
+			FSlateFontInfo Font = NpcLineText->GetFont();
+			Font.Size = 18;
+			NpcLineText->SetFont(Font);
+			NpcLineText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.95f, 0.82f)));
+			NpcLineText->SetJustification(ETextJustify::Center);
+			NpcLineText->SetAutoWrapText(true);
+		}
+		NpcDialogBox->SetContent(NpcLineText);
+		Box->SetContent(NpcDialogBox);
+
+		UCanvasPanelSlot* NpcSlot = RootCanvas->AddChildToCanvas(Box);
+		NpcSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+		NpcSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		NpcSlot->SetPosition(FVector2D(0.0f, -80.0f));
+		NpcSlot->SetAutoSize(true);
+
+		NpcDialogBox->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 

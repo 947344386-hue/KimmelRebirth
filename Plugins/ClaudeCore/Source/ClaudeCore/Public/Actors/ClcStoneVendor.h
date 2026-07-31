@@ -271,6 +271,28 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|Haggle")
 	void OnNpcHaggleCancel();
 
+	// ---- 高价值 NPC 反馈事件（C++ 自动调用，空实现=无动作；BP 可覆写加音效/特效） ----
+
+	/** 石头上台——priceTrend: 1=涨 0=持平 -1=跌；openStatus: 0=未开 1=纯杂 2=见玉；isLocked: 是否锁价石 */
+	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|NPC")
+	void OnNpcStonePlaced(int32 PriceTrend, int32 OpenStatus, bool bIsLocked);
+
+	/** 石头上台失败（Spawn/Init 失败） */
+	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|NPC")
+	void OnNpcStonePlaceFailed();
+
+	/** 售出完成——priceTrend 同上台语义，按最终成交价判 */
+	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|NPC")
+	void OnNpcSold(int32 PriceTrend, bool bSoldAll);
+
+	/** 进入出售模式 */
+	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|NPC")
+	void OnNpcEnterSellMode();
+
+	/** 退出出售模式——bSoldAll: 是否因售空退出 */
+	UFUNCTION(BlueprintNativeEvent, Category = "ClcVendor|Events|NPC")
+	void OnNpcExitSellMode(bool bSoldAll);
+
 private:
 	// ---- 状态机 ----
 
@@ -304,6 +326,18 @@ private:
 
 	UPROPERTY()
 	UClcVendorHUD* HUDWidget = nullptr;
+
+	/** NPC 当前台词——高价值事件点填入，PushVendorHUDData 写入 Data.NpcLine 并累积停留计时 */
+	FString PendingNpcLine;
+
+	/** 当前台词已停留时间（秒），>= NpcLineMinDuration 后 NpcLine 置空隐藏对话框 */
+	float NpcLineElapsed = 0.0f;
+
+	/** 填入新台词并重置停留计时（有词立即刷掉旧词） */
+	void SetNpcLine(const FString& Line);
+
+	/** 每帧 Tick 台词停留计时，到期自动隐藏对话框 */
+	void TickNpcLine(float DeltaTime);
 
 	float HUDPushTimer = 0.0f;
 

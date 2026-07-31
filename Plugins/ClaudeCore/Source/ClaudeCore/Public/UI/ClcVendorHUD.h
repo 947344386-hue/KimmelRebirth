@@ -8,6 +8,7 @@
 
 class AClcStoneVendor;
 class UButton;
+class UBorder;
 class UCanvasPanelSlot;
 class UTextBlock;
 
@@ -83,6 +84,12 @@ struct CLAUDECORE_API FClcVendorHUDData
 
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Interaction")
 	FString OperationHints = TEXT("WASD 旋转 | R 复位 | 右键 放大\nB 换石 | Enter 售出 | Esc 退出");
+
+	// ── NPC 台词 ──
+
+	/** NPC 当前台词——vendor 在高价值事件点填入对应文案，定时推送后 HUD 刷新显示 */
+	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|NPC")
+	FString NpcLine;
 };
 
 /**
@@ -156,6 +163,12 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "VendorHUD")
 	TObjectPtr<UButton> SellButton;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "VendorHUD")
+	TObjectPtr<UTextBlock> NpcLineText;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "VendorHUD")
+	TObjectPtr<UBorder> NpcDialogBox;
 
 private:
 	UFUNCTION()

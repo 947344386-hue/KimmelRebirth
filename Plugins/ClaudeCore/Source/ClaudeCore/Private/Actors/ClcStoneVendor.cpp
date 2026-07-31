@@ -11,6 +11,7 @@
 #include "Components/ArrowComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimMontage.h"
 #include "TimerManager.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -32,6 +33,26 @@
 
 namespace
 {
+	constexpr float NpcAnimBlendTime = 0.3f;
+	const FName NpcAnimSlotName(TEXT("DefaultSlot"));
+
+	/** 从 FText 模板取字符串，替换 {0}=石名 {1}=价格 */
+	FString FormatNpcLine(const FText& Template, const FString& StoneName, int32 Price)
+	{
+		FString S = Template.ToString();
+		S.ReplaceInline(TEXT("{0}"), *StoneName);
+		S.ReplaceInline(TEXT("{1}"), *FString::FromInt(Price));
+		return S;
+	}
+
+	/** 仅替换石名（{0}），用于无价格场景（未开窗/纯杂等） */
+	FString FormatNpcLineNameOnly(const FText& Template, const FString& StoneName)
+	{
+		FString S = Template.ToString();
+		S.ReplaceInline(TEXT("{0}"), *StoneName);
+		return S;
+	}
+
 	UClcLogToastSubsystem* GetLogToast(const TWeakObjectPtr<APlayerController>& PC)
 	{
 		if (!PC.IsValid()) return nullptr;
@@ -156,6 +177,9 @@ void AClcStoneVendor::Tick(float DeltaTime)
 
 	// 补光平滑过渡——放所有 early return 之前，保证进/出展示都能过渡
 	TickFillLight(DeltaTime);
+
+	// NPC 台词停留计时——到期自动隐藏对话框
+	TickNpcLine(DeltaTime);
 
 	// Inactive：检测进入按键
 	if (CurrentState == EClcVendorState::Inactive && PlayerInRange.IsValid())
@@ -350,6 +374,27 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 	// 通知蓝图（音效/特效/动画）
 	OnStoneSold(ActiveStoneData, Price);
 
+	// NPC 反馈：售出完成
+	{
+		const int32 SoldTrend = (Price > ActiveStoneData.Internal.PurchasePrice) ? 1
+			: (Price < ActiveStoneData.Internal.PurchasePrice) ? -1 : 0;
+		const bool bSoldAll = (CachedBackpack && CachedBackpack->GetStones().Num() == 0);
+
+		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+		{
+			if (bSoldAll)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcSoldAllLine, ActiveStoneData.DisplayName, Price);
+			else if (SoldTrend > 0)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcSoldProfitLine, ActiveStoneData.DisplayName, Price);
+			else if (SoldTrend < 0)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcSoldLossLine, ActiveStoneData.DisplayName, Price);
+			else
+				PendingNpcLine = FormatNpcLine(Cfg->NpcSoldEvenLine, ActiveStoneData.DisplayName, Price);
+		}
+
+		OnNpcSold(SoldTrend, bSoldAll);
+	}
+
 	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
 	{
 		TArray<FStringFormatArg> SoldArgs;
@@ -425,7 +470,12 @@ void AClcStoneVendor::EnterSellMode()
 
 	CurrentState = EClcVendorState::AwaitingStone;
 
-	// 开窗模式隐藏小白点（切相机避免碍事）
+	// NPC 反馈：进入出售模式
+	OnNpcEnterSellMode();
+	if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+	{
+		PendingNpcLine = Cfg->NpcEnterModeLine.ToString();
+	}
 	if (InteractionIndicator) InteractionIndicator->bHidden = true;
 
 	OnEnterSellMode(); // 切相机 + 锁输入（_Implementation）
@@ -452,6 +502,12 @@ void AClcStoneVendor::EnterSellMode()
 	}
 }
 
+void AClcStoneVendor::SetNpcLine(const FString& Line)
+{
+	PendingNpcLine = Line;
+	NpcLineElapsed = 0.0f;
+}
+
 void AClcStoneVendor::ExitSellMode()
 {
 	// 关闭背包
@@ -470,7 +526,8 @@ void AClcStoneVendor::ExitSellMode()
 	}
 
 	// 台上有石 → 放回背包
-	if (CurrentState == EClcVendorState::StoneOnBench)
+	const bool bExitingWithStone = (CurrentState == EClcVendorState::StoneOnBench);
+	if (bExitingWithStone)
 	{
 		RemoveStoneFromVendor();
 	}
@@ -486,6 +543,13 @@ void AClcStoneVendor::ExitSellMode()
 	if (InteractionIndicator) InteractionIndicator->bHidden = false;
 
 	OnExitSellMode(); // 恢复相机 + 输入（_Implementation）
+
+	// NPC 反馈：退出出售模式（主动离开；售空退出时已在 OnNpcSold 中处理）
+	OnNpcExitSellMode(/*bSoldAll=*/false);
+	if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+	{
+		PendingNpcLine = Cfg->NpcExitModeLine.ToString();
+	}
 
 	SetVendorCursor(false);
 
@@ -532,6 +596,11 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	if (!OpeningStone)
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] Failed to spawn OpeningStone!"));
+		OnNpcStonePlaceFailed();
+		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+		{
+			PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+		}
 		return;
 	}
 
@@ -544,6 +613,11 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] OpeningStone Initialize failed!"));
 		OpeningStone->Destroy();
 		OpeningStone = nullptr;
+		OnNpcStonePlaceFailed();
+		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+		{
+			PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+		}
 		return;
 	}
 
@@ -551,6 +625,48 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	bBackpackWasOpen = CachedBackpack->IsBackpackOpen();
 
 	CurrentState = EClcVendorState::StoneOnBench;
+
+	// NPC 反馈：石头上台（判断涨跌+开窗状态）
+	{
+		int32 PriceTrend = 0;
+		int32 OpenStatus = 0; // 0=未开 1=纯杂 2=见玉
+		if (ActiveStoneData.OpenedGreenArea > 0.0f)
+			OpenStatus = 2;
+		else if (ActiveStoneData.OpenedBlackArea > 0.0f)
+			OpenStatus = 1;
+
+		int32 SalePrice = 0;
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+			{
+				SalePrice = Market->CalculateSalePrice(ActiveStoneData);
+				if (SalePrice > ActiveStoneData.Internal.PurchasePrice)
+					PriceTrend = 1;
+				else if (SalePrice < ActiveStoneData.Internal.PurchasePrice)
+					PriceTrend = -1;
+			}
+		}
+
+		// 选台词
+		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+		{
+			if (ActiveStoneData.bHaggleResolved)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcStoneLockedLine, ActiveStoneData.DisplayName, ActiveStoneData.HaggleLockedPrice);
+			else if (PriceTrend > 0)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcStoneProfitLine, ActiveStoneData.DisplayName, SalePrice);
+			else if (PriceTrend < 0)
+				PendingNpcLine = FormatNpcLine(Cfg->NpcStoneLossLine, ActiveStoneData.DisplayName, SalePrice);
+			else if (OpenStatus == 0)
+				PendingNpcLine = FormatNpcLineNameOnly(Cfg->NpcStoneUnopenedLine, ActiveStoneData.DisplayName);
+			else if (OpenStatus == 1)
+				PendingNpcLine = FormatNpcLineNameOnly(Cfg->NpcStoneNoJadeLine, ActiveStoneData.DisplayName);
+			else
+				PendingNpcLine = FormatNpcLineNameOnly(Cfg->NpcStoneJadeLine, ActiveStoneData.DisplayName);
+		}
+
+		OnNpcStonePlaced(PriceTrend, OpenStatus, ActiveStoneData.bHaggleResolved);
+	}
 
 	// 立即刷一帧 HUD
 	PushVendorHUDData();
@@ -898,7 +1014,28 @@ void AClcStoneVendor::PushVendorHUDData()
 		Data.bBackpackOpen = CachedBackpack->IsBackpackOpen();
 	}
 
+	Data.NpcLine = PendingNpcLine;
 	HUDWidget->RefreshData(Data);
+	PendingNpcLine.Empty();
+}
+
+namespace
+{
+	constexpr float NpcLineMinDuration = 2.0f;
+}
+
+void AClcStoneVendor::TickNpcLine(float DeltaTime)
+{
+	if (NpcLineElapsed < NpcLineMinDuration)
+	{
+		NpcLineElapsed += DeltaTime;
+		if (NpcLineElapsed >= NpcLineMinDuration && HUDWidget)
+		{
+			FClcVendorHUDData Data;
+			Data.NpcLine.Empty();
+			HUDWidget->RefreshData(Data);
+		}
+	}
 }
 
 // ============================================================
@@ -1096,7 +1233,7 @@ void AClcStoneVendor::SetupNpcFromConfig()
 	NpcMesh->SetSkeletalMesh(Cfg->NpcSkeletalMesh);
 	if (Cfg->NpcIdleAnim)
 	{
-		NpcMesh->PlayAnimation(Cfg->NpcIdleAnim, true);
+		PlayNpcAnim(Cfg->NpcIdleAnim, true);
 	}
 
 	// 装好网格体后把脚贴到地面
@@ -1130,16 +1267,21 @@ void AClcStoneVendor::PlayNpcAnim(UAnimSequence* Anim, bool bLoop)
 {
 	if (!NpcMesh || !Anim) return;
 
-	NpcMesh->PlayAnimation(Anim, bLoop);
+	GetWorldTimerManager().ClearTimer(NpcReturnIdleTimer);
+
+	UAnimMontage* Montage = UAnimMontage::CreateSlotAnimationAsDynamicMontage(
+		Anim, NpcAnimSlotName, NpcAnimBlendTime, NpcAnimBlendTime);
+	if (!Montage) return;
+
+	NpcMesh->PlayAnimation(Montage, bLoop);
 
 	if (!bLoop)
 	{
-		// 非循环状态动画播完自动回 Idle
-		GetWorldTimerManager().ClearTimer(NpcReturnIdleTimer);
 		const float Len = Anim->GetPlayLength();
 		if (Len > 0.0f)
 		{
-			GetWorldTimerManager().SetTimer(NpcReturnIdleTimer, this, &AClcStoneVendor::ReturnToNpcIdle, Len + 0.05f, false);
+			const float ReturnDelay = FMath::Max(0.01f, Len - NpcAnimBlendTime);
+			GetWorldTimerManager().SetTimer(NpcReturnIdleTimer, this, &AClcStoneVendor::ReturnToNpcIdle, ReturnDelay, false);
 		}
 	}
 }
@@ -1194,3 +1336,75 @@ void AClcStoneVendor::OnNpcHaggleCancel_Implementation()
 		PlayNpcAnim(Cfg->NpcCancelAnim, false);
 	}
 }
+
+// ============================================================
+// 高价值 NPC 反馈事件（C++ 默认实现——从 DA 取对应动画播放；BP 可覆写加音效/特效）
+// ============================================================
+
+void AClcStoneVendor::OnNpcStonePlaced_Implementation(int32 PriceTrend, int32 OpenStatus, bool bIsLocked)
+{
+	UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr;
+	if (!Cfg) return;
+
+	// 按优先级选动画：锁价 → 涨跌 → 开窗状态 → 通用
+	UAnimSequence* Anim = nullptr;
+	if (bIsLocked)
+	{
+		Anim = Cfg->NpcStonePlacedAnim; // 锁价石走通用
+	}
+	else if (PriceTrend > 0)
+	{
+		Anim = Cfg->NpcStoneProfitAnim;
+	}
+	else if (PriceTrend < 0)
+	{
+		Anim = Cfg->NpcStoneLossAnim;
+	}
+
+	if (!Anim)
+	{
+		if (OpenStatus == 0)
+			Anim = Cfg->NpcStoneUnopenedAnim;
+		else if (OpenStatus == 1)
+			Anim = Cfg->NpcStoneNoJadeAnim;
+		else if (OpenStatus == 2)
+			Anim = Cfg->NpcStoneJadeAnim;
+	}
+
+	if (!Anim) Anim = Cfg->NpcStonePlacedAnim;
+	PlayNpcAnim(Anim, false);
+}
+
+void AClcStoneVendor::OnNpcStonePlaceFailed_Implementation()
+{
+	if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+	{
+		PlayNpcAnim(Cfg->NpcStonePlacedFailedAnim, false);
+	}
+}
+
+void AClcStoneVendor::OnNpcSold_Implementation(int32 PriceTrend, bool bSoldAll)
+{
+	UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr;
+	if (!Cfg) return;
+
+	PlayNpcAnim(bSoldAll ? Cfg->NpcSoldAllAnim : Cfg->NpcSoldAnim, false);
+}
+
+void AClcStoneVendor::OnNpcEnterSellMode_Implementation()
+{
+	if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+	{
+		PlayNpcAnim(Cfg->NpcEnterModeAnim, false);
+	}
+}
+
+void AClcStoneVendor::OnNpcExitSellMode_Implementation(bool bSoldAll)
+{
+	if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+	{
+		// 退出/送客用同一动画，bSoldAll 可未来分叉
+		PlayNpcAnim(Cfg->NpcExitModeAnim, false);
+	}
+}
+

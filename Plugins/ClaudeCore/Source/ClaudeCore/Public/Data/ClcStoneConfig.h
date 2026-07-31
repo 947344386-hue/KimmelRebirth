@@ -66,20 +66,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Generation")
 	TArray<FClcOriginGradeBonus> OriginGradeBonuses;
 
-	/** 绿面积比例的随机范围 [Min, Max] */
+	/** 缺陷覆盖率目标范围 [Min,Max]——占比是好坏的主区分。最好~Min(5%)，最差~Max(85%) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Generation")
-	FVector2D GreenRatioRange = FVector2D(0.05f, 0.7f);
-
-	/** 黑（杂裂）面积比例的随机范围 [Min, Max] */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Generation")
-	FVector2D BlackRatioRange = FVector2D(0.0f, 0.4f);
-
-	/** 大块连续绿占绿面积比例的随机范围 [Min, Max] */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Generation")
-	FVector2D LargestPatchRatioRange = FVector2D(0.3f, 0.95f);
+	FVector2D CrackCoverageRange = FVector2D(0.05f, 0.85f);
 
 	// ---- 定价参数 ----
 	// 系数按 SA≈16000（半径 40cm 球 ×0.8）标定。若改 Mesh 尺寸需同步重标定。
+	// 连续暴击阈值/系数已内化为算法常量（见 ClcStoneMarketSubsystem.cpp），不再暴露。
 
 	/** 单位面积玉肉基础单价 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
@@ -89,26 +82,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float UnopenedFloorDiscountFactor = 0.1f;
 
-
-	/** 单位面积杂裂惩罚扣分 */
+	/** 单位面积缺陷惩罚扣分（有机缺陷体模型下唯一惩罚项，缺陷越密价值越低） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float PenaltyPerUnitBlack = 2.0f;
+	float PenaltyPerUnitCrack = 5.0f;
 
-	/** 大块绿暴击系数 */
+	/** 净外推赌价系数——把已开区域净价值密度外推到未开区域的强度。
+	 *  越大越刺激（富窗吹高、穷窗砸低都更猛）；全开时赌价=0，回收价恒=理论价值。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float ContinuityBonusFactor = 2.0f;
-
-	/** 大块连续绿面积阈值（超过该面积才触发暴击） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float ContinuityAreaThreshold = 800.0f;
-
-	/** 赌价激活的最小开窗比例（>= 该值才计算剩余赌价） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float GamblingRThreshold = 0.5f;
-
-	/** 剩余赌价系数 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float GamblingKCoefficient = 0.4f;
+	float GamblingKCoefficient = 0.8f;
 
 	/** 隐藏溢价系数（购买标价时，理论价值乘以该系数打入标价） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")

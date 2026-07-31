@@ -236,20 +236,45 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 	// ---- 右键长按 FOV 放大（独立于工具，纯视觉拉近，不碰开窗/手电筒） ----
 	UpdateAimZoom(DeltaTime);
 
-	// ---- WASD 旋转 ----
+	// ---- WASD 旋转（相机相对：W/S 绕相机 X 轴上下翻，A/D 绕相机 Y 轴左右转） ----
 	const float RotAmount = OpeningStone->GetRotationSpeed() * DeltaTime * RotationInputScale;
 
-	float DeltaPitch = 0.0f;
-	float DeltaYaw = 0.0f;
+	float DeltaPitch = 0.0f; // 绕相机 X 轴（右）→ W/S 上下翻转
+	float DeltaYaw   = 0.0f; // 绕相机 Y 轴（上）→ A/D 左右旋转
 
 	if (CachedPC->IsInputKeyDown(EKeys::W)) DeltaPitch -= RotAmount;
 	if (CachedPC->IsInputKeyDown(EKeys::S)) DeltaPitch += RotAmount;
-	if (CachedPC->IsInputKeyDown(EKeys::A)) DeltaYaw -= RotAmount;
-	if (CachedPC->IsInputKeyDown(EKeys::D)) DeltaYaw += RotAmount;
+	if (CachedPC->IsInputKeyDown(EKeys::A)) DeltaYaw   -= RotAmount;
+	if (CachedPC->IsInputKeyDown(EKeys::D)) DeltaYaw   += RotAmount;
 
 	if (!FMath::IsNearlyZero(DeltaPitch) || !FMath::IsNearlyZero(DeltaYaw))
 	{
-		OpeningStone->AddRotationInput(DeltaPitch, DeltaYaw);
+		bResetRotationPending = false; // 用户手动旋转 → 取消复位
+		OpeningStone->AddRotationInput(DeltaPitch, DeltaYaw,
+			WorkCamera->GetRightVector(), WorkCamera->GetUpVector());
+	}
+
+	// ---- R 键旋转复位 ----
+	{
+		const bool bRDown = CachedPC->IsInputKeyDown(ResetRotationKey);
+		if (bRDown && !bRKeyPrev)
+		{
+			bRKeyPrev = true;
+			bResetRotationPending = true;
+		}
+		else if (!bRDown)
+		{
+			bRKeyPrev = false;
+		}
+	}
+
+	// 复位 Tick（每帧平滑追初始朝向）
+	if (bResetRotationPending && OpeningStone)
+	{
+		if (OpeningStone->ResetRotation(DeltaTime, ResetRotationSpeed))
+		{
+			bResetRotationPending = false;
+		}
 	}
 
 	// ---- T 键循环切换工具 ----
@@ -765,6 +790,20 @@ bool AClcJadeWorkbench::OnInteract(AActor* Interactor)
 
 void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 {
+	// 锁价石头不能上工作台开窗——飘 tips 拦截，背包保持打开让玩家选别的
+	if (CachedCarrier)
+	{
+		TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
+		if (AllStones.IsValidIndex(StoneIndex) && AllStones[StoneIndex].bHaggleResolved)
+		{
+			if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+			{
+				LT->AddLog(TEXT("这块石头已锁价，不能上工作台开窗（到回收台 Enter 出手）"), 2.5f, FLinearColor(1.0f, 0.5f, 0.2f));
+			}
+			return;
+		}
+	}
+
 	// AwaitingStone 状态：首次选石
 	if (CurrentState == EClcWorkbenchState::AwaitingStone)
 	{
@@ -887,10 +926,7 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 
 	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
 	{
-		LT->AddLog(FString::Printf(TEXT("上台：%s（绿%.0f%% 黑%.0f%%）"),
-			*ActiveStoneData.DisplayName,
-			ActiveStoneData.Internal.GreenRatio * 100.0f,
-			ActiveStoneData.Internal.BlackRatio * 100.0f),
+		LT->AddLog(FString::Printf(TEXT("上台：%s"), *ActiveStoneData.DisplayName),
 			2.0f, FLinearColor::White);
 	}
 }
@@ -964,6 +1000,8 @@ void AClcJadeWorkbench::OnEnterOpeningMode_Implementation()
 			PC->SetIgnoreMoveInput(true);
 			PC->SetIgnoreLookInput(true);
 		}
+		// 暂时隐藏玩家角色，避免其站位阻挡工作台相机/产生碰撞
+		PlayerInRange->SetActorHiddenInGame(true);
 	}
 }
 
@@ -973,6 +1011,16 @@ void AClcJadeWorkbench::OnExitOpeningMode_Implementation()
 	{
 		CachedPC->SetIgnoreMoveInput(false);
 		CachedPC->SetIgnoreLookInput(false);
+	}
+
+	// 恢复玩家角色显示（优先用缓存的 PC 取 Pawn，兜底 PlayerInRange）
+	if (APawn* MyPawn = CachedPC.IsValid() ? CachedPC->GetPawn() : nullptr)
+	{
+		MyPawn->SetActorHiddenInGame(false);
+	}
+	else if (PlayerInRange.IsValid())
+	{
+		PlayerInRange->SetActorHiddenInGame(false);
 	}
 }
 
@@ -1050,8 +1098,8 @@ void AClcJadeWorkbench::PushHUDData()
 		Data.ShellName = UClcShellTextureConfig::GetShellName(I.ShellTypeIndex).ToString();
 
 		// 开窗进度
-		float OpenedR, GreenR, BlackR;
-		OpeningStone->GetOpeningProgress(OpenedR, GreenR, BlackR);
+		float OpenedR, GreenR, BlackR, ImpurityR, CrackR;
+		OpeningStone->GetOpeningProgress(OpenedR, GreenR, BlackR, ImpurityR, CrackR);
 		Data.OpenedRatio = OpenedR;
 		Data.SurfaceArea = I.SurfaceArea;
 		Data.GreenArea   = GreenR * I.SurfaceArea;
@@ -1090,8 +1138,8 @@ void AClcJadeWorkbench::PushHUDData()
 
 	// ── 操作提示——按当前工具模式给不同文案 ──
 	Data.OperationHints = (CurrentToolMode == EClcToolMode::Flashlight)
-		? TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | 右键 放大\nB 背包 | Esc 退出")
-		: TEXT("左键 开窗 | -/= 笔刷大小 | T 切手电筒\nWASD 旋转 | 右键 放大\nB 背包 | Esc 退出");
+		? TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出")
+		: TEXT("左键 开窗 | -/= 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
 
 	HUDWidget->RefreshData(Data);
 }

@@ -20,21 +20,37 @@ struct CLAUDECORE_API FClcStoneOpeningResult
 	UPROPERTY(BlueprintReadOnly, Category = "Opening")
 	float AreaFraction = 0.0f;
 
-	/** 本次是否暴露了新的绿色像素 */
+	/** 本次是否暴露了新的玉肉像素 */
 	UPROPERTY(BlueprintReadOnly, Category = "Opening")
 	bool bHitGreen = false;
 
-	/** 本次是否暴露了新的杂裂像素 */
+	/** 本次是否暴露了新的杂质像素 */
 	UPROPERTY(BlueprintReadOnly, Category = "Opening")
-	bool bHitBlack = false;
+	bool bHitImpurity = false;
 
-	/** 本次新暴露的绿色面积占比 */
+	/** 本次是否暴露了新的裂纹像素 */
+	UPROPERTY(BlueprintReadOnly, Category = "Opening")
+	bool bHitCrack = false;
+
+	/** 本次新暴露的玉肉面积占比 */
 	UPROPERTY(BlueprintReadOnly, Category = "Opening")
 	float NewGreenFraction = 0.0f;
 
-	/** 本次新暴露的杂裂面积占比 */
+	/** 本次新暴露的杂质面积占比 */
+	UPROPERTY(BlueprintReadOnly, Category = "Opening")
+	float NewImpurityFraction = 0.0f;
+
+	/** 本次新暴露的裂纹面积占比 */
+	UPROPERTY(BlueprintReadOnly, Category = "Opening")
+	float NewCrackFraction = 0.0f;
+
+	/** 本次新暴露的杂裂（杂质+裂纹）合计占比——兼容旧字段 */
 	UPROPERTY(BlueprintReadOnly, Category = "Opening")
 	float NewBlackFraction = 0.0f;
+
+	/** 旧字段：本次是否暴露新的杂裂（杂质或裂纹） */
+	UPROPERTY(BlueprintReadOnly, Category = "Opening")
+	bool bHitBlack = false;
 };
 
 /**
@@ -115,9 +131,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetExposedGreenRatio() const;
 
-	/** 获取已暴露杂裂面积比例（0~1，相对总像素）——重载恢复后也有效 */
+	/** 获取已暴露杂质面积比例（0~1，相对总像素） */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
-	float GetExposedBlackRatio() const;
+	float GetExposedImpurityRatio() const;
+
+	/** 获取已暴露裂纹面积比例（0~1，相对总像素） */
+	UFUNCTION(BlueprintCallable, Category = "Opening")
+	float GetExposedCrackRatio() const;
 
 	/** 计算当前已开窗绿色像素的最大连通域像素数（4连通 BFS，每 0.3s 调一次性能无忧） */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
@@ -143,10 +163,16 @@ private:
 	/** 已开窗像素数（>=128 阈值），增量维护避免每次 GetOpenedRatio 全量遍历 */
 	int32 OpenedPixelCount = 0;
 
-	/** 已开窗像素中绿色像素数——与 OpenedPixelCount 对称，GrindAtUV 增量、RestoreMaskFromData 全量重算 */
+	/** 已开窗像素中绿色（玉肉）像素数——与 OpenedPixelCount 对称，GrindAtUV 增量、RestoreMaskFromData 全量重算 */
 	int32 OpenedGreenPixelCount = 0;
 
-	/** 已开窗像素中杂裂像素数——同上 */
+	/** 已开窗像素中杂质像素数——同上 */
+	int32 OpenedImpurityPixelCount = 0;
+
+	/** 已开窗像素中裂纹像素数——同上 */
+	int32 OpenedCrackPixelCount = 0;
+
+	/** 已开窗像素中杂裂（杂质+裂纹）合计像素数——兼容旧字段 */
 	int32 OpenedBlackPixelCount = 0;
 
 	// ---- GPU 资源 ----

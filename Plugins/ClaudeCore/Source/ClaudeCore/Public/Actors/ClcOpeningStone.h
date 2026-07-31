@@ -34,9 +34,16 @@ public:
 
 	// ---- 旋转 ----
 
-	/** 累加旋转输入（由工作台 Tick 转发 WASD） */
+	/** 累加旋转输入（由工作台 Tick 转发 WASD）。
+	 *  CameraRight/CameraUp 为工作台 WorkCamera 的右/上向量，
+	 *  确保旋转始终以屏幕为基准：W/S 绕相机 Y 轴（左右），A/D 绕相机 X 轴（上下）。 */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
-	void AddRotationInput(float DeltaPitch, float DeltaYaw);
+	void AddRotationInput(float DeltaPitch, float DeltaYaw, const FVector& CameraRight, const FVector& CameraUp);
+
+	/** 平滑旋转回初始朝向，返回 true 表示已到位。
+	 *  由工作台在 R 键按下后每帧调用，直到返回 true。 */
+	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
+	bool ResetRotation(float DeltaTime, float InterpSpeed);
 
 	// ---- 打磨（委托——由 AClcOpeningTool 调用） ----
 
@@ -48,11 +55,20 @@ public:
 
 	/** 获取当前开窗进度，用于退出时写回 FClcStoneRuntimeData */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
-	void GetOpeningProgress(float& OutOpenedRatio, float& OutOpenedGreenRatio, float& OutOpenedBlackRatio) const;
+	void GetOpeningProgress(float& OutOpenedRatio, float& OutOpenedGreenRatio, float& OutOpenedBlackRatio,
+		float& OutOpenedImpurityRatio, float& OutOpenedCrackRatio) const;
 
 	/** 获取当前石头的运行时数据（含已更新的开窗信息） */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	bool GetStoneData(FClcStoneRuntimeData& OutData) const;
+
+	/** 标记石头已讨价还价结算，锁定最终售价（写回内部数据；锁定后禁止开窗/再讨价） */
+	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
+	void MarkHaggleResolved(int32 LockedPrice);
+
+	/** 该石头是否已讨价还价锁定（开窗/再讨价时据此门禁） */
+	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
+	bool IsHaggleResolved() const;
 
 	// ---- 查询（供 Tool 类使用） ----
 
@@ -130,9 +146,18 @@ private:
 	/** 累计开窗面积（UV 比例 × 表面积） */
 	float AccumulatedOpenedRatio = 0.0f;
 
-	/** 累计暴露的绿色面积比例 */
+	/** 累计暴露的玉肉面积比例 */
 	float AccumulatedGreenRatio = 0.0f;
 
-	/** 累计暴露的黑色面积比例 */
+	/** 累计暴露的杂质面积比例 */
+	float AccumulatedImpurityRatio = 0.0f;
+
+	/** 累计暴露的裂纹面积比例 */
+	float AccumulatedCrackRatio = 0.0f;
+
+	/** 累计暴露的黑色（杂质+裂纹）面积比例——兼容旧字段 */
 	float AccumulatedBlackRatio = 0.0f;
+
+	/** 石头放置时的初始旋转（Mesh 世界四元数，用于 ResetRotation） */
+	FQuat InitialMeshRotation;
 };

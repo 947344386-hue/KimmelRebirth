@@ -58,4 +58,10 @@ public:
 	/** 商人气泡文字池配置（9 状态文字池） */
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Merchant")
 	FString MerchantBubbleConfigPath = TEXT("/Game/JadeBetting/Data/DA_MerchantBubbleConfig");
+
+	// ---- 讨价还价 QTE ----
+
+	/** 讨价还价 QTE 配置（上浮档位/每键窗口/文案模板） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Haggle", meta=(ToolTip="讨价还价 QTE 配置 DataAsset 路径"))
+	FString HaggleConfigPath = TEXT("/Game/JadeBetting/Data/DA_HaggleConfig");
 };

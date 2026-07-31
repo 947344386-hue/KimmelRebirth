@@ -128,6 +128,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FKey ToolSwitchKey = FKey("T");
 
+	/** 旋转复位键（平滑回到石头初始朝向） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
+	FKey ResetRotationKey = FKey("R");
+
+	/** 旋转复位平滑速度（越大越快，8≈0.15秒到位） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "30.0"))
+	float ResetRotationSpeed = 8.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FText InteractionPrompt = FText::FromString(TEXT("Press [F] to use Workbench"));
 
@@ -263,6 +271,10 @@ private:
 	// ---- 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
 	bool bExitKeyPrev = false;
 	bool bTKeyPrev = false;
+	bool bRKeyPrev = false;
+
+	/** R 键旋转复位激活中（每帧 Tick 平滑追初始朝向） */
+	bool bResetRotationPending = false;
 
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;

@@ -111,14 +111,19 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	OpeningMaskComp->ApplyToMaterial(StoneMID);
 
 	// ---- 5. 初始化累计统计 ----
-	// 有存档时从恢复的遮罩重建绿/黑暴露比例，无存档时为 0
+	// 有存档时从恢复的遮罩重建玉/杂质/裂暴露比例，无存档时为 0
 	AccumulatedOpenedRatio = 0.0f;
 	AccumulatedGreenRatio = 0.0f;
+	AccumulatedImpurityRatio = 0.0f;
+	AccumulatedCrackRatio = 0.0f;
 	AccumulatedBlackRatio = 0.0f;
 	if (StoneData.SavedMaskBuffer.Num() > 0 && OpeningMaskComp)
 	{
 		AccumulatedGreenRatio = OpeningMaskComp->GetExposedGreenRatio();
-		AccumulatedBlackRatio = OpeningMaskComp->GetExposedBlackRatio();
+		AccumulatedOpenedRatio = OpeningMaskComp->GetOpenedRatio();
+		AccumulatedImpurityRatio = OpeningMaskComp->GetExposedImpurityRatio();
+		AccumulatedCrackRatio = OpeningMaskComp->GetExposedCrackRatio();
+		AccumulatedBlackRatio = AccumulatedImpurityRatio + AccumulatedCrackRatio;
 		// 已开到过绿 → 种水已暴露，HUD 直接显示种水信息（避免重载后回退显示皮壳）
 		if (AccumulatedGreenRatio > 0.0f)
 		{
@@ -129,6 +134,9 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 
 	bInitialized = true;
 
+	// 记录初始旋转（用于 R 键复位）
+	InitialMeshRotation = StoneMesh->GetComponentQuat();
+
 	return true;
 }
 
@@ -136,15 +144,27 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 // 旋转
 // ============================================================
 
-void AClcOpeningStone::AddRotationInput(float DeltaPitch, float DeltaYaw)
+void AClcOpeningStone::AddRotationInput(float DeltaPitch, float DeltaYaw, const FVector& CameraRight, const FVector& CameraUp)
 {
 	if (!bInitialized) return;
 
-	// 世界空间四元数旋转——绕固定世界轴，彻底避免万向锁
+	// 相机相对旋转：W/S 绕相机 Y 轴（屏幕左右旋转），A/D 绕相机 X 轴（屏幕上下倾斜）
+	// 这样无论石头当前朝向如何，按键效果始终与屏幕方向一致
 	const FQuat CurrentQuat = StoneMesh->GetComponentQuat();
-	const FQuat PitchQuat(FVector::RightVector, FMath::DegreesToRadians(DeltaPitch));
-	const FQuat YawQuat(FVector::UpVector, FMath::DegreesToRadians(DeltaYaw));
+	const FQuat PitchQuat(CameraRight, FMath::DegreesToRadians(DeltaPitch));  // A/D → 绕相机右轴
+	const FQuat YawQuat(CameraUp, FMath::DegreesToRadians(DeltaYaw));         // W/S → 绕相机上轴
 	StoneMesh->SetWorldRotation(YawQuat * PitchQuat * CurrentQuat);
+}
+
+bool AClcOpeningStone::ResetRotation(float DeltaTime, float InterpSpeed)
+{
+	if (!bInitialized) return true;
+
+	const FQuat CurrentQuat = StoneMesh->GetComponentQuat();
+	const FQuat TargetQuat = FMath::QInterpTo(CurrentQuat, InitialMeshRotation, DeltaTime, InterpSpeed);
+	StoneMesh->SetWorldRotation(TargetQuat);
+
+	return CurrentQuat.Equals(InitialMeshRotation, 0.001f);
 }
 
 // ============================================================
@@ -155,10 +175,17 @@ bool AClcOpeningStone::GrindAtUV(float U, float V)
 {
 	if (!bInitialized || !OpeningMaskComp) return false;
 
+	// 已讨价还价锁定 → 禁止再开窗（价格已定，不能再改石头暴露）
+	if (CachedStoneData.bHaggleResolved)
+	{
+		return false;
+	}
+
 	FClcStoneOpeningResult Result = OpeningMaskComp->GrindAtUV(U, V);
 
-	AccumulatedOpenedRatio += Result.AreaFraction;
 	AccumulatedGreenRatio += Result.NewGreenFraction;
+	AccumulatedImpurityRatio += Result.NewImpurityFraction;
+	AccumulatedCrackRatio += Result.NewCrackFraction;
 	AccumulatedBlackRatio += Result.NewBlackFraction;
 
 	// 首次开到绿——种水暴露，通知 Workbench 立即刷新 HUD
@@ -175,7 +202,8 @@ bool AClcOpeningStone::GrindAtUV(float U, float V)
 // 存档
 // ============================================================
 
-void AClcOpeningStone::GetOpeningProgress(float& OutOpenedRatio, float& OutOpenedGreenRatio, float& OutOpenedBlackRatio) const
+void AClcOpeningStone::GetOpeningProgress(float& OutOpenedRatio, float& OutOpenedGreenRatio, float& OutOpenedBlackRatio,
+	float& OutOpenedImpurityRatio, float& OutOpenedCrackRatio) const
 {
 	if (OpeningMaskComp)
 	{
@@ -187,6 +215,8 @@ void AClcOpeningStone::GetOpeningProgress(float& OutOpenedRatio, float& OutOpene
 	}
 
 	OutOpenedGreenRatio = AccumulatedGreenRatio;
+	OutOpenedImpurityRatio = AccumulatedImpurityRatio;
+	OutOpenedCrackRatio = AccumulatedCrackRatio;
 	OutOpenedBlackRatio = AccumulatedBlackRatio;
 }
 
@@ -196,13 +226,15 @@ bool AClcOpeningStone::GetStoneData(FClcStoneRuntimeData& OutData) const
 
 	OutData = CachedStoneData;
 
-	float OpenedRatio, GreenRatio, BlackRatio;
-	GetOpeningProgress(OpenedRatio, GreenRatio, BlackRatio);
+	float OpenedRatio, GreenRatio, BlackRatio, ImpurityRatio, CrackRatio;
+	GetOpeningProgress(OpenedRatio, GreenRatio, BlackRatio, ImpurityRatio, CrackRatio);
 
 	const float SurfaceArea = CachedStoneData.Internal.SurfaceArea;
 
 	OutData.AccumulatedOpenedArea = OpenedRatio * SurfaceArea;
 	OutData.OpenedGreenArea = GreenRatio * SurfaceArea;
+	OutData.OpenedImpurityArea = ImpurityRatio * SurfaceArea;
+	OutData.OpenedCrackArea = CrackRatio * SurfaceArea;
 	OutData.OpenedBlackArea = BlackRatio * SurfaceArea;
 
 	// 最大绿色连通域——BFS 算真实连通面积（GreenRatio×SA = OpenedGreenArea，无连通性信息）
@@ -226,4 +258,22 @@ bool AClcOpeningStone::GetStoneData(FClcStoneRuntimeData& OutData) const
 	}
 
 	return true;
+}
+
+void AClcOpeningStone::MarkHaggleResolved(int32 LockedPrice)
+{
+	CachedStoneData.bHaggleResolved = true;
+	CachedStoneData.HaggleLockedPrice = LockedPrice;
+
+	// 名字加锁价标记（防重复追加）——让背包/tooltip/HUD/售出提示统一体现锁定概念
+	static const FString Suffix = TEXT("【已锁价】");
+	if (!CachedStoneData.DisplayName.EndsWith(*Suffix))
+	{
+		CachedStoneData.DisplayName += Suffix;
+	}
+}
+
+bool AClcOpeningStone::IsHaggleResolved() const
+{
+	return CachedStoneData.bHaggleResolved;
 }

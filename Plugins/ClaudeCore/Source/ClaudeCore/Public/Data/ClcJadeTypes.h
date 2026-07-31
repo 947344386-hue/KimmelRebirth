@@ -20,7 +20,38 @@ enum class EClcJadeGrade : uint8
 };
 
 /**
- * 石头表面材质分布图——每像素标记皮壳/绿玉/杂裂
+ * 玉肉结构原型——决定一块石头的“结构故事”：玉肉如何分布。
+ * 生成时按 Seed 选择，影响玉肉放置策略与最大连续块形态。
+ */
+UENUM(BlueprintType)
+enum class EClcJadeArchetype : uint8
+{
+	SingleCore = 0       UMETA(DisplayName = "单核满肉"),   //!< 单大块玉肉，最大连续块占比高
+	CoreWithSatellites = 1 UMETA(DisplayName = "主核卫星"), //!< 主体 + 少量卫星小块
+	BandedVein = 2       UMETA(DisplayName = "带状玉脉"),   //!< 拉长带状，方向性明显
+	OffCenter = 3        UMETA(DisplayName = "偏心核"),     //!< 单块偏置到一侧
+	ScatteredFlowers = 4 UMETA(DisplayName = "散花"),       //!< 多个小簇，最大连续块占比低
+	NearFull = 5         UMETA(DisplayName = "近满肉")      //!< 玉肉几乎填满，少量废肉/缺陷
+};
+
+/**
+ * 分布图逐像素的材质类别（四值）。取代旧的 0/1/2 三值语义：
+ * 全图不再“非绿即黑”，而是玉肉 / 杂质 / 裂纹 / 废肉四种独立场。
+ *
+ * 注意：开窗材质 M_StoneOpening 仍按双通道 TypeTex 混合（R=玉 / G=杂），
+ * 因此杂质/裂纹/废肉在视觉上都走 Junk PBR，靠“小簇 vs 细线 vs 大片”的
+ * 几何形态自然区分；价值与惩罚在 C++ 侧按四类分别统计。
+ */
+enum EClcDistVoxel : uint8
+{
+	HostWaste = 0,  //!< 废肉/底岩：中性，既非玉也非缺陷
+	JadeBody  = 1,  //!< 玉肉：大尺度连续，价值来源（沿用原绿色计数口径）
+	Impurity  = 2,  //!< 杂质：聚簇，轻度惩罚（沿用原杂裂计数口径）
+	Crack     = 3,  //!< 裂纹：细线网络，重度惩罚
+};
+
+/**
+ * 石头表面材质分布图——每像素标记玉肉/杂质/裂纹/废肉（EClcDistVoxel）
  * 分辨率 256×256，确定性算法从 Seed 生成
  */
 USTRUCT(BlueprintType)
@@ -30,7 +61,7 @@ struct CLAUDECORE_API FClcStoneDistributionMap
 
 	static constexpr int32 Resolution = 256;
 
-	/** 分布数据：Resolution*Resolution 字节，0=皮壳 1=绿玉 2=杂裂 */
+	/** 分布数据：Resolution*Resolution 字节，取值为 EClcDistVoxel（0=废肉 1=玉肉 2=杂质 3=裂纹） */
 	UPROPERTY()
 	TArray<uint8> Data;
 
@@ -43,20 +74,25 @@ struct CLAUDECORE_API FClcStoneDistributionMap
 		return Data[Y * Resolution + X];
 	}
 
-	/** 按归一化 UV（0-1）采样材质类型 */
-	uint8 SampleUV(float U, float V) const
+	/**
+	 * 确定性生成分布图（有机缺陷体模型）：
+	 * 默认整块是玉肉，再生成 DefectCount 个**连续不规则缺陷体**（像闪电/海星）把玉占掉。
+	 * TargetCoverage 是缺陷目标覆盖率（实际值由 Measure 实测，定价只认实测）。
+	 * 每个缺陷体的形态由其分到的体积决定：体积小→蛛网/闪电（细丝多方向分叉），
+	 * 体积大→团球伸出触手（粗核心+放射触手）。
+	 * OutActuals 写回玉/缺陷像素数与最大玉肉连通域像素数。
+	 */
+	struct FMeasureResult
 	{
-		const int32 X = FMath::Clamp(FMath::RoundToInt(U * (Resolution - 1)), 0, Resolution - 1);
-		const int32 Y = FMath::Clamp(FMath::RoundToInt(V * (Resolution - 1)), 0, Resolution - 1);
-		return Data[Y * Resolution + X];
-	}
+		int32 JadePixels = 0;
+		int32 CrackPixels = 0;
+		int32 LargestJadePatchPixels = 0;
+	};
+	static FClcStoneDistributionMap Generate(int32 Seed, int32 DefectCount,
+		float TargetCoverage, FMeasureResult& OutActuals);
 
-	bool IsGreen(int32 X, int32 Y) const { return GetPixel(X, Y) == 1; }
-	bool IsBlack(int32 X, int32 Y) const { return GetPixel(X, Y) == 2; }
-	bool IsShell(int32 X, int32 Y) const { return GetPixel(X, Y) == 0; }
-
-	/** 确定性生成分布图。OutActualLargestPatchRatio 返回实际测得的最大连续绿块占比 */
-	static FClcStoneDistributionMap Generate(int32 Seed, float GreenRatio, float BlackRatio, float& OutActualLargestPatchRatio);
+	/** 实测当前分布：各类像素数 + 最大玉肉连通域像素数（定价与自检的权威输入） */
+	FMeasureResult Measure() const;
 };
 
 /**
@@ -91,17 +127,36 @@ struct CLAUDECORE_API FClcStoneInternalData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	int32 WeightKg = 0;
 
-	/** 玉石绿色面积占全石表面积的比例 [0, 1] */
+	/** 玉肉（绿色）面积占全石表面积的比例 [0,1]——生成后由 Measure 写入实际值，定价权威输入 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float GreenRatio = 0.0f;
 
-	/** 杂裂黑色面积占全石表面积的比例 [0, 1]，GreenRatio + BlackRatio <= 1.0 */
+	/** 杂质面积占全石表面积的比例 [0,1]——聚簇缺陷，轻度惩罚（生成后实测） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float ImpurityRatio = 0.0f;
+
+	/** 裂纹面积占全石表面积的比例 [0,1]——细线网络，重度惩罚（生成后实测） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float CrackRatio = 0.0f;
+
+	/**
+	 * 杂裂（杂质+裂纹）合计占比 [0,1]，GreenRatio+BlackRatio<=1。
+	 * 保留字段供旧读取；实际语义=ImpurityRatio+CrackRatio，不再独立驱动定价。
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float BlackRatio = 0.0f;
 
-	/** 最大单块连续绿块占全石绿色面积的比例 [0, 1]，用于连续性判定 */
+	/** 最大单块连续玉肉占全石玉肉面积的比例 [0,1]——生成后实测，连续性判定权威输入 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float LargestGreenPatchRatio = 0.0f;
+
+	/** 玉肉结构原型（EClcJadeArchetype）——决定“结构故事”，生成时按 Seed 选定 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	uint8 JadeArchetype = 0;
+
+	/** 分布算法版本——前向兼容与确定性重建依据（当前=1） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	int32 DistAlgoVersion = 1;
 
 	/** 产地名称 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
@@ -144,11 +199,19 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float AccumulatedOpenedArea = 0.0f;
 
-	/** 已开窗中暴露的绿色面积 */
+	/** 已开窗中暴露的玉肉面积 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedGreenArea = 0.0f;
 
-	/** 已开窗中暴露的黑色面积 */
+	/** 已开窗中暴露的杂质面积（聚簇缺陷） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float OpenedImpurityArea = 0.0f;
+
+	/** 已开窗中暴露的裂纹面积（细线缺陷，重度惩罚） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float OpenedCrackArea = 0.0f;
+
+	/** 已开窗中暴露的杂裂（杂质+裂纹）合计面积——保留旧字段，=OpenedImpurityArea+OpenedCrackArea */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedBlackArea = 0.0f;
 
@@ -159,6 +222,14 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	/** 展示名（生成时随机分配，如"老坑沙皮 #42"） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	FString DisplayName;
+
+	/** 讨价还价锁定的售价（<0=未锁定；≥0=已锁价，按此售出，不再随开窗重算） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	int32 HaggleLockedPrice = -1;
+
+	/** 是否已讨价还价结算（锁定后不可再开窗/再讨价，玩家需手动确认售出） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	bool bHaggleResolved = false;
 
 
 	/** 遮罩 RT 像素缓冲区（256×256 字节），退出工作台时保存，再进入时恢复 */

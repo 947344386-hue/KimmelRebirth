@@ -50,7 +50,8 @@ void UClcOpeningMaskComponent::ResetMask()
 	MaskBuffer.Init(0, TotalPixels);
 	OpenedPixelCount = 0;
 	OpenedGreenPixelCount = 0;
-	OpenedBlackPixelCount = 0;
+	OpenedImpurityPixelCount = 0;
+	OpenedCrackPixelCount = 0;
 	UploadMaskToGPU();
 }
 
@@ -64,10 +65,11 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 	if (InData.SavedMaskBuffer.Num() == MaskResolution * MaskResolution)
 	{
 		MaskBuffer = InData.SavedMaskBuffer;
-		// 从存档重算已开窗像素数 + 绿/杂暴露量
+		// 从存档重算已开窗像素数 + 玉/杂质/裂暴露量
 		OpenedPixelCount = 0;
 		OpenedGreenPixelCount = 0;
-		OpenedBlackPixelCount = 0;
+		OpenedImpurityPixelCount = 0;
+		OpenedCrackPixelCount = 0;
 		for (int32 Idx = 0; Idx < MaskBuffer.Num(); ++Idx)
 		{
 			if (MaskBuffer[Idx] >= 128)
@@ -76,8 +78,9 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 				const int32 X = Idx % MaskResolution;
 				const int32 Y = Idx / MaskResolution;
 				const uint8 MatType = CachedDistribution.GetPixel(X, Y);
-				if (MatType == 1) ++OpenedGreenPixelCount;
-				else if (MatType == 2) ++OpenedBlackPixelCount;
+				if (MatType == JadeBody) ++OpenedGreenPixelCount;
+				else if (MatType == Impurity) ++OpenedImpurityPixelCount;
+				else if (MatType == Crack) ++OpenedCrackPixelCount;
 			}
 		}
 		EnsureMaskRT();
@@ -215,7 +218,7 @@ void UClcOpeningMaskComponent::EnsureRevealTexFromDistribution(const FClcStoneDi
 			const uint8 Val = Distribution.GetPixel(X, Y);
 			FColor& Pixel = Pixels[Y * Res + X];
 
-			if (Val == 1) // 绿玉
+			if (Val == JadeBody) // 玉肉
 			{
 				const float Noise = SampleNoise(X, Y);
 				const float MicroNoise = (CrackRng.FRand() - 0.5f) * 0.15f;
@@ -322,17 +325,15 @@ void UClcOpeningMaskComponent::EnsureTypeTexFromDistribution(const FClcStoneDist
 			const uint8 Val = Distribution.GetPixel(X, Y);
 			FColor& Pixel = Pixels[Y * Res + X];
 
-			if (Val == 1)       // 绿玉
+			// 材质 M_StoneOpening 按 R=玉 / G=杂 双通道混合 Jade/Junk PBR。
+			// 玉肉走 Jade；杂质/裂纹/废肉均走 Junk，靠“小簇 vs 细线 vs 大片”几何形态区分视觉。
+			if (Val == JadeBody)
 			{
-				Pixel = FColor(255, 0, 0, 255);   // R=255
+				Pixel = FColor(255, 0, 0, 255);   // R=255（玉）
 			}
-			else if (Val == 2)  // 杂裂
+			else // Impurity / Crack / HostWaste → Junk
 			{
-				Pixel = FColor(0, 255, 0, 255);   // G=255
-			}
-			else                // 皮壳(0)，理论上 Generate 后不存在，保险填黑
-			{
-				Pixel = FColor(0, 0, 0, 255);
+				Pixel = FColor(0, 255, 0, 255);   // G=255（杂）
 			}
 		}
 	}
@@ -454,9 +455,10 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 	const float RadiusPixels = BrushRadius * MaskResolution;
 	const int32 RadiusInt = FMath::CeilToInt(RadiusPixels);
 
-	// 统计笔刷范围内新暴露的绿/黑像素
+	// 统计笔刷范围内新暴露的玉/杂质/裂像素
 	int32 NewGreenPixels = 0;
-	int32 NewBlackPixels = 0;
+	int32 NewImpurityPixels = 0;
+	int32 NewCrackPixels = 0;
 
 	// 笔刷包围盒
 	const int32 X0 = FMath::Max(0, CX - RadiusInt);
@@ -504,8 +506,9 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 				// 跨过阈值（128=半透明），露出底层
 				++OpenedPixelCount;
 				const uint8 MatType = CachedDistribution.GetPixel(X, Y);
-				if (MatType == 1) { ++NewGreenPixels; ++OpenedGreenPixelCount; }
-				else if (MatType == 2) { ++NewBlackPixels; ++OpenedBlackPixelCount; }
+				if (MatType == JadeBody)        { ++NewGreenPixels;    ++OpenedGreenPixelCount; }
+				else if (MatType == Impurity)   { ++NewImpurityPixels; ++OpenedImpurityPixelCount; }
+				else if (MatType == Crack)      { ++NewCrackPixels;    ++OpenedCrackPixelCount; }
 			}
 
 			MaskBuffer[Idx] = static_cast<uint8>(NewVal);
@@ -516,10 +519,15 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 	UploadMaskToGPU();
 
 	const float PixelToFraction = 1.0f / static_cast<float>(MaskResolution * MaskResolution);
+	const int32 NewBlackPixels = NewImpurityPixels + NewCrackPixels;
 	Result.AreaFraction = FMath::Square(BrushRadius) * PI * 0.5f;
 	Result.bHitGreen = NewGreenPixels > 0;
+	Result.bHitImpurity = NewImpurityPixels > 0;
+	Result.bHitCrack = NewCrackPixels > 0;
 	Result.bHitBlack = NewBlackPixels > 0;
 	Result.NewGreenFraction = NewGreenPixels * PixelToFraction;
+	Result.NewImpurityFraction = NewImpurityPixels * PixelToFraction;
+	Result.NewCrackFraction = NewCrackPixels * PixelToFraction;
 	Result.NewBlackFraction = NewBlackPixels * PixelToFraction;
 
 	return Result;
@@ -571,11 +579,18 @@ float UClcOpeningMaskComponent::GetExposedGreenRatio() const
 	return static_cast<float>(OpenedGreenPixelCount) / static_cast<float>(TotalPixels);
 }
 
-float UClcOpeningMaskComponent::GetExposedBlackRatio() const
+float UClcOpeningMaskComponent::GetExposedImpurityRatio() const
 {
 	const int32 TotalPixels = MaskResolution * MaskResolution;
 	if (TotalPixels == 0) return 0.0f;
-	return static_cast<float>(OpenedBlackPixelCount) / static_cast<float>(TotalPixels);
+	return static_cast<float>(OpenedImpurityPixelCount) / static_cast<float>(TotalPixels);
+}
+
+float UClcOpeningMaskComponent::GetExposedCrackRatio() const
+{
+	const int32 TotalPixels = MaskResolution * MaskResolution;
+	if (TotalPixels == 0) return 0.0f;
+	return static_cast<float>(OpenedCrackPixelCount) / static_cast<float>(TotalPixels);
 }
 
 // ============================================================
@@ -601,8 +616,8 @@ int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
 		const int32 SX = StartIdx % Res;
 		const int32 SY = StartIdx / Res;
 
-		// 必须是已开窗(>=128)且绿色(Distribution==1)
-		if (MaskBuffer[StartIdx] < 128 || CachedDistribution.GetPixel(SX, SY) != 1)
+		// 必须是已开窗(>=128)且玉肉(CachedDistribution==JadeBody)
+		if (MaskBuffer[StartIdx] < 128 || CachedDistribution.GetPixel(SX, SY) != JadeBody)
 		{
 			Visited[StartIdx] = true;
 			continue;
@@ -639,7 +654,7 @@ int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
 				const int32 NX = NIdx % Res;
 				const int32 NY = NIdx / Res;
 
-				if (MaskBuffer[NIdx] < 128 || CachedDistribution.GetPixel(NX, NY) != 1)
+				if (MaskBuffer[NIdx] < 128 || CachedDistribution.GetPixel(NX, NY) != JadeBody)
 				{
 					Visited[NIdx] = true;
 					continue;

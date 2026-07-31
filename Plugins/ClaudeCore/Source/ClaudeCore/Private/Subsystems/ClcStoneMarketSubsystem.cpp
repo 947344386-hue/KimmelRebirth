@@ -13,6 +13,10 @@
 
 namespace
 {
+	// ---- 连续暴击（算法内部常量，已从 DA 移除，按 SA≈16000 标定）----
+	static constexpr float ContinuityAreaThreshold = 800.0f;  // 单块连续玉肉超过此面积触发暴击（约 SA 5%）
+	static constexpr float ContinuityBonusFactor = 2.0f;      // 暴击倍率：达标大块面积按此系数计价（2.0=翻倍）
+
 	// DA_StoneConfig 未配置 GradeRollWeights 时的内置默认——豆40/糯30/冰20/玻10
 	// 避免 RollGrade 在空 Map 时静默 fallback 全豆种
 	const TMap<EClcJadeGrade, float>& GetDefaultGradeRollWeights()
@@ -194,7 +198,7 @@ FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOut
 	// 1b. 皮壳类型——独立随机，和 Mesh / 分布无关
 	Data.ShellTypeIndex = ShellTextureConfig ? ShellTextureConfig->GetRandomShellIndex() : 0;
 
-	// 2. 种水（带软关联）
+	// 2. 种水（独立维度：仅作单位面积玉肉的价值系数，与杂玉比例无关）
 	Data.Grade = RollGrade(Random, Data.Origin);
 
 	// 2b. 商人吹卖黑话：按真实种水+欺骗倾向 roll 声称档，从黑话池取 2 条拼成 ClaimedPitch
@@ -233,17 +237,31 @@ FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOut
 		}
 	}
 
-	// 3. 绿/黑/大块连续比例
-	RollRatios(Random, Data.GreenRatio, Data.BlackRatio, Data.LargestGreenPatchRatio);
-
-	// 4. 表面积（由Actor创建时实际计算，这里给个估算值稍后覆盖）
+	// 3. 表面积（由Actor创建时实际计算，这里给个估算值稍后覆盖）
 	Data.SurfaceArea = 1000.0f; // 占位，创建Mesh后重新计算
 
-	// 5. Phase 2：生成 UV 空间材质分布图（绿玉/杂裂），实测最大连续绿块比例覆盖预估
+	// 4. 有机缺陷体模型：默认整块是玉，生成 2-5 个连续不规则缺陷体（蛛网/团球触手）。杂玉占比与种水独立。
 	{
-		float ActualLargestPatch = 0.0f;
-		Data.DistributionMap = FClcStoneDistributionMap::Generate(Seed, Data.GreenRatio, Data.BlackRatio, ActualLargestPatch);
-		Data.LargestGreenPatchRatio = ActualLargestPatch;
+		// 杂玉占比：独立随机（与种水无关），5%~85% 宽随机——占比即"玉多还是杂多"
+		const float TargetCoverage = Random.FRandRange(
+			StoneConfig->CrackCoverageRange.X, StoneConfig->CrackCoverageRange.Y);
+		// 缺陷块数量随占比上升（2→5）
+		const int32 DefectCount = FMath::Clamp(2 + FMath::RoundToInt(TargetCoverage * 4.0f), 2, 5);
+
+		FClcStoneDistributionMap::FMeasureResult Actuals;
+		Data.DistributionMap = FClcStoneDistributionMap::Generate(
+			Seed, DefectCount, TargetCoverage, Actuals);
+
+		const int32 Total = FClcStoneDistributionMap::Resolution * FClcStoneDistributionMap::Resolution;
+		const float InvTotal = Total > 0 ? 1.0f / static_cast<float>(Total) : 0.0f;
+		// 实测权威：有机缺陷体模型下 玉 + 缺陷 = 全图
+		Data.CrackRatio    = Actuals.CrackPixels * InvTotal;
+		Data.GreenRatio    = Actuals.JadePixels  * InvTotal; // = 1 - 缺陷
+		Data.ImpurityRatio = 0.0f;
+		Data.BlackRatio    = Data.CrackRatio;                 // 兼容旧字段
+		Data.LargestGreenPatchRatio = (Actuals.JadePixels > 0)
+			? static_cast<float>(Actuals.LargestJadePatchPixels) / static_cast<float>(Actuals.JadePixels)
+			: 0.0f;
 	}
 
 	// 6. 理论价值和购买标价
@@ -310,21 +328,6 @@ EClcJadeGrade UClcStoneMarketSubsystem::RollGrade(FRandomStream& Random, const F
 	return WeightedTable.Last().Key;
 }
 
-void UClcStoneMarketSubsystem::RollRatios(FRandomStream& Random, float& OutGreen, float& OutBlack, float& OutLargestPatch) const
-{
-	if (!StoneConfig)
-	{
-		OutGreen = 0.3f; OutBlack = 0.1f; OutLargestPatch = 0.6f;
-		return;
-	}
-
-	OutGreen = Random.FRandRange(StoneConfig->GreenRatioRange.X, StoneConfig->GreenRatioRange.Y);
-	// 黑面积上限不超过 (1 - 绿面积) 且不超过配置上限
-	const float MaxBlack = FMath::Min(1.0f - OutGreen, StoneConfig->BlackRatioRange.Y);
-	OutBlack = Random.FRandRange(StoneConfig->BlackRatioRange.X, MaxBlack);
-	OutLargestPatch = Random.FRandRange(StoneConfig->LargestPatchRatioRange.X, StoneConfig->LargestPatchRatioRange.Y);
-}
-
 FString UClcStoneMarketSubsystem::GenerateDisplayName(const FClcStoneInternalData& StoneData) const
 {
 	return BuildProductName(StoneData.ClaimedPitch);
@@ -338,21 +341,21 @@ float UClcStoneMarketSubsystem::CalculateTheoreticalValue(const FClcStoneInterna
 {
 	if (!StoneConfig) return 0.0f;
 
-	// 面积
-	const float S_green = Data.SurfaceArea * Data.GreenRatio;
-	const float S_largest = S_green * Data.LargestGreenPatchRatio;
-	const float S_threshold = StoneConfig->ContinuityAreaThreshold;
-	const float C_continuity = StoneConfig->ContinuityBonusFactor;
+	// 玉肉（用实测占比）
+	const float S_jade = Data.SurfaceArea * Data.GreenRatio;
+	const float S_largest = S_jade * Data.LargestGreenPatchRatio;
+	const float S_threshold = ContinuityAreaThreshold;
+	const float C_continuity = ContinuityBonusFactor;
 
-	// 基础价值
+	// 基础价值（含大块连续暴击）
 	float V_exposed;
 	if (S_largest > S_threshold)
 	{
-		V_exposed = ((S_green - S_largest) + S_largest * C_continuity) * StoneConfig->PricePerUnitArea;
+		V_exposed = ((S_jade - S_largest) + S_largest * C_continuity) * StoneConfig->PricePerUnitArea;
 	}
 	else
 	{
-		V_exposed = S_green * StoneConfig->PricePerUnitArea;
+		V_exposed = S_jade * StoneConfig->PricePerUnitArea;
 	}
 
 	// 种水
@@ -363,9 +366,9 @@ float UClcStoneMarketSubsystem::CalculateTheoreticalValue(const FClcStoneInterna
 	const float C_sw = GradeMult ? *GradeMult : 1.0f;
 	const float V_weighted = V_exposed * C_sw;
 
-	// 杂裂惩罚
-	const float S_black = Data.SurfaceArea * Data.BlackRatio;
-	const float V_penalty = S_black * StoneConfig->PenaltyPerUnitBlack;
+	// 杂裂统一惩罚（裂纹切割模型：缺陷=裂纹，越密越碎价值越低）
+	const float V_penalty =
+		Data.SurfaceArea * (Data.ImpurityRatio + Data.CrackRatio) * StoneConfig->PenaltyPerUnitCrack;
 
 	return FMath::Max(0.0f, V_weighted - V_penalty);
 }
@@ -387,16 +390,15 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 		return FMath::RoundToInt(I.TheoreticalValue * StoneConfig->UnopenedFloorDiscountFactor);
 	}
 
-	// ---- 已暴露基础价值 ----
+	// ---- 已暴露基础价值（玉肉） ----
 	const float S_green = StoneData.OpenedGreenArea;
-	const float S_black = StoneData.OpenedBlackArea;
 	const float S_largest = StoneData.LargestExposedGreenPatch;
-	const float S_threshold = StoneConfig->ContinuityAreaThreshold;
+	const float S_threshold = ContinuityAreaThreshold;
 
 	float V_exposed;
 	if (S_largest > S_threshold)
 	{
-		V_exposed = ((S_green - S_largest) + S_largest * StoneConfig->ContinuityBonusFactor) * StoneConfig->PricePerUnitArea;
+		V_exposed = ((S_green - S_largest) + S_largest * ContinuityBonusFactor) * StoneConfig->PricePerUnitArea;
 	}
 	else
 	{
@@ -411,22 +413,24 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 	const float C_sw = GradeMult ? *GradeMult : 1.0f;
 	const float V_weighted = V_exposed * C_sw;
 
-	// 杂裂惩罚
-	const float V_penalty = S_black * StoneConfig->PenaltyPerUnitBlack;
+	// 杂裂统一惩罚（裂纹切割模型，与理论价同源，保证全开收敛）
+	const float V_penalty =
+		(StoneData.OpenedImpurityArea + StoneData.OpenedCrackArea) * StoneConfig->PenaltyPerUnitCrack;
 
-	// 剩余赌价（边界B）
-	float V_gambling = 0.0f;
-	const float R_opened = S_total > 0.0f ? (S_opened / S_total) : 0.0f;
-	const bool bCondition = (R_opened > StoneConfig->GamblingRThreshold) ||
-		(S_largest > StoneConfig->ContinuityAreaThreshold);
-
-	if (bCondition)
-	{
-		V_gambling = V_weighted * (S_unopened / S_total) * StoneConfig->GamblingKCoefficient;
-	}
-
-	const float V_final = FMath::Max(0.0f, V_weighted - V_penalty + V_gambling);
+	// 净外推赌价：把已开区域的净价值密度对称外推到未开区域，从第一窗就激活。
+	// 富窗净价值高→正赌价（吹高）；穷窗净价值低/负→负赌价（快速走低）。
+	// 全开时 S_unopened=0 → 赌价=0 → 回收价=净价值=理论价值（收敛不变）。
+	const float V_net = V_weighted - V_penalty;
+	const float V_gambling = V_net * (S_unopened / S_total) * StoneConfig->GamblingKCoefficient;
+	const float V_final = FMath::Max(0.0f, V_net + V_gambling);
 	return FMath::RoundToInt(V_final);
+}
+
+int32 UClcStoneMarketSubsystem::CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess) const
+{
+	// 对称赔率：成功上浮 / 失败下折同等比例；失败不低于 0。
+	const float Mult = bSuccess ? (1.0f + Ratio) : (1.0f - Ratio);
+	return FMath::Max(0, FMath::RoundToInt(static_cast<float>(BasePrice) * Mult));
 }
 
 int32 UClcStoneMarketSubsystem::CalculatePurchasePrice(const FClcStoneInternalData& Data) const
@@ -451,8 +455,8 @@ FClcStoneTooltipInfo UClcStoneMarketSubsystem::BuildTooltipInfo(const FClcStoneR
 	Info.Origin = StoneData.Internal.Origin;
 	Info.PurchasePrice = StoneData.Internal.PurchasePrice;
 
-	// 当前回收价（随开窗进度实时算）
-	Info.CurrentValue = CalculateSalePrice(StoneData);
+	// 当前回收价：已讨价锁定用锁价，否则随开窗进度实时算
+	Info.CurrentValue = StoneData.bHaggleResolved ? StoneData.HaggleLockedPrice : CalculateSalePrice(StoneData);
 
 	// 开到玉判定：已暴露绿色面积 > 0
 	Info.bOpenedToJade = (StoneData.OpenedGreenArea > 0.0f);
@@ -472,4 +476,65 @@ FClcStoneTooltipInfo UClcStoneMarketSubsystem::BuildTooltipInfo(const FClcStoneR
 	}
 
 	return Info;
+}
+
+void UClcStoneMarketSubsystem::DebugValidateGeneration(int32 Count)
+{
+	const int32 N = FMath::Max(1, Count);
+	UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMarket][Validate] === 分布算法收敛自检 开始，N=%d ==="), N);
+
+	int32 ConvergedCount = 0;
+	int32 MaxDelta = 0;
+	int32 WorstSeed = 0;
+	float AvgJade = 0.0f, AvgCrack = 0.0f, AvgPatch = 0.0f;
+
+	for (int32 i = 0; i < N; ++i)
+	{
+		bool bOK = false;
+		FClcStoneInternalData Data = GenerateStoneInternal(bOK, 0.5f);
+		if (!bOK) continue;
+
+		AvgJade  += Data.GreenRatio;
+		AvgCrack += Data.CrackRatio;
+		AvgPatch += Data.LargestGreenPatchRatio;
+
+		// 模拟“全开”：所有玉肉/杂质/裂纹都暴露
+		FClcStoneRuntimeData RT;
+		RT.Internal = Data;
+		const float SA = Data.SurfaceArea;
+		RT.AccumulatedOpenedArea = SA;
+		RT.OpenedGreenArea    = SA * Data.GreenRatio;
+		RT.OpenedImpurityArea = SA * Data.ImpurityRatio;
+		RT.OpenedCrackArea    = SA * Data.CrackRatio;
+		RT.OpenedBlackArea    = RT.OpenedImpurityArea + RT.OpenedCrackArea;
+		RT.LargestExposedGreenPatch = SA * Data.GreenRatio * Data.LargestGreenPatchRatio;
+
+		const int32 SaleFull = CalculateSalePrice(RT);
+		const int32 Theo = FMath::RoundToInt(Data.TheoreticalValue);
+		const int32 Delta = FMath::Abs(SaleFull - Theo);
+
+		FString GradeName = TEXT("?");
+		if (const UEnum* E = StaticEnum<EClcJadeGrade>())
+		{
+			GradeName = E->GetDisplayNameTextByValue(static_cast<int32>(Data.Grade)).ToString();
+		}
+
+		UE_LOG(LogClaudeCore, Warning,
+			TEXT("[Validate] Seed=%d [%s] | 玉=%.1f%% 裂=%.1f%% 最大连续玉=%.0f%% | 全开售价=%d 理论=%d Δ=%d"),
+			Data.Seed, *GradeName,
+			Data.GreenRatio * 100.0f, Data.CrackRatio * 100.0f,
+			Data.LargestGreenPatchRatio * 100.0f,
+			SaleFull, Theo, Delta);
+
+		if (Delta <= 1) ++ConvergedCount; // 四舍五入容差
+		if (Delta > MaxDelta) { MaxDelta = Delta; WorstSeed = Data.Seed; }
+	}
+
+	UE_LOG(LogClaudeCore, Warning,
+		TEXT("[ClcMarket][Validate] 平均：玉=%.1f%% 裂=%.1f%% 最大连续玉=%.0f%%"),
+		AvgJade * 100.0f / N, AvgCrack * 100.0f / N, AvgPatch * 100.0f / N);
+	UE_LOG(LogClaudeCore, Warning,
+		TEXT("[ClcMarket][Validate] 收敛 %d/%d（全开售价==理论值，Δ≤1）；最大Δ=%d @Seed=%d"),
+		ConvergedCount, N, MaxDelta, WorstSeed);
+	UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMarket][Validate] === 自检结束 ==="));
 }

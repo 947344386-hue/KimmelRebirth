@@ -42,6 +42,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	int32 CalculateSalePrice(const FClcStoneRuntimeData& StoneData) const;
 
+	/**
+	 * 讨价还价最终价——基于参考价按对称赔率结算。
+	 * 成功 → BasePrice × (1 + Ratio)；失败 → BasePrice × (1 - Ratio)。
+	 * 集中价格数学，避免在 vendor/widget 里复制乘法。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
+	int32 CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess) const;
+
 	/** 注册摊位 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	void RegisterStall(AClcStoneStall* Stall);
@@ -83,12 +91,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ClcMarket")
 	FClcStoneTooltipInfo BuildTooltipInfo(const FClcStoneRuntimeData& StoneData) const;
 
+	/**
+	 * 调试用：生成 Count 块石头，打印每块目标 vs 实际（玉/杂质/裂）占比、最大玉肉块占比，
+	 * 并模拟全开校验 CalculateSalePrice(全开) ≈ CalculateTheoreticalValue（容差内）。
+	 * 用于验证分布算法的统计收敛。PIE/编辑器任意调用一次看输出日志。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMarket|Debug")
+	void DebugValidateGeneration(int32 Count = 20);
+
 private:
 	/** 掷种水档位——带产地软关联 */
 	EClcJadeGrade RollGrade(FRandomStream& Random, const FString& Origin) const;
-
-	/** 生成绿/黑比例和最大连续块比例 */
-	void RollRatios(FRandomStream& Random, float& OutGreen, float& OutBlack, float& OutLargestPatch) const;
 
 	// ---- 配置引用 ----
 	UPROPERTY()

@@ -29,19 +29,6 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 
-namespace
-{
-	UClcLogToastSubsystem* GetLogToast(const TWeakObjectPtr<APlayerController>& PC)
-	{
-		if (!PC.IsValid()) return nullptr;
-		if (ULocalPlayer* LP = PC->GetLocalPlayer())
-		{
-			return LP->GetSubsystem<UClcLogToastSubsystem>();
-		}
-		return nullptr;
-	}
-}
-
 AClcJadeWorkbench::AClcJadeWorkbench()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -629,7 +616,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	if (CachedCarrier->GetStones().Num() == 0)
 	{
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcWorkbench] Player has no stones."));
-		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
 			LT->AddLog(TEXT("背包空，无可开窗的石头"), 2.0f, FLinearColor::Yellow);
 		}
@@ -652,7 +639,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	// 缓存基础 FOV，右键放大基于此值缩放
 	if (WorkCamera) BaseFOV = WorkCamera->FieldOfView;
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		LT->AddLog(TEXT("进入开窗模式——选择一块石头"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 	}
@@ -796,7 +783,7 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 		TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
 		if (AllStones.IsValidIndex(StoneIndex) && AllStones[StoneIndex].bHaggleResolved)
 		{
-			if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 			{
 				LT->AddLog(TEXT("这块石头已锁价，不能上工作台开窗（到回收台 Enter 出手）"), 2.5f, FLinearColor(1.0f, 0.5f, 0.2f));
 			}
@@ -924,7 +911,7 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	// 蓝图通知
 	OnStonePlaced(ActiveStoneData.Internal);
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		LT->AddLog(FString::Printf(TEXT("上台：%s"), *ActiveStoneData.DisplayName),
 			2.0f, FLinearColor::White);

@@ -91,3 +91,14 @@ private:
 	/** 内部移除：从 Entries 删 + 广播 OnLogRemoved */
 	void RemoveLogInternal(int32 LogId);
 };
+
+/** 便捷获取 LogToast 子系统（供各 Actor 使用） */
+inline UClcLogToastSubsystem* ClcGetLogToast(const TWeakObjectPtr<APlayerController>& PC)
+{
+	if (!PC.IsValid()) return nullptr;
+	if (ULocalPlayer* LP = PC->GetLocalPlayer())
+	{
+		return LP->GetSubsystem<UClcLogToastSubsystem>();
+	}
+	return nullptr;
+}

@@ -53,16 +53,7 @@ namespace
 		return S;
 	}
 
-	UClcLogToastSubsystem* GetLogToast(const TWeakObjectPtr<APlayerController>& PC)
-	{
-		if (!PC.IsValid()) return nullptr;
-		if (ULocalPlayer* LP = PC->GetLocalPlayer())
-		{
-			return LP->GetSubsystem<UClcLogToastSubsystem>();
-		}
-		return nullptr;
 	}
-}
 
 AClcStoneVendor::AClcStoneVendor()
 {
@@ -395,7 +386,7 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 		OnNpcSold(SoldTrend, bSoldAll);
 	}
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		TArray<FStringFormatArg> SoldArgs;
 		SoldArgs.Add(FStringFormatArg(ActiveStoneData.DisplayName));
@@ -408,7 +399,7 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 	// 背包空 → 自动退出；有货 → 回选石（开背包选下一块）
 	if (CachedBackpack && CachedBackpack->GetStones().Num() == 0)
 	{
-		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
 			LT->AddLog(SoldEmptyExitTip.ToString(), 2.0f, FLinearColor::Yellow);
 		}
@@ -427,7 +418,7 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 		// 刷一帧 awaiting 态 HUD（bCanSell=false）
 		PushVendorHUDData();
 
-		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
 			LT->AddLog(SoldHasMoreTip.ToString(), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 		}
@@ -461,7 +452,7 @@ void AClcStoneVendor::EnterSellMode()
 	// 背包空 → 拒绝
 	if (CachedBackpack->GetStones().Num() == 0)
 	{
-		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
 			LT->AddLog(EmptyTip.ToString(), 2.0f, FLinearColor::Yellow);
 		}
@@ -496,7 +487,7 @@ void AClcStoneVendor::EnterSellMode()
 	CreateVendorHUD();
 	PushVendorHUDData();
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		LT->AddLog(EnterTip.ToString(), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 	}
@@ -553,7 +544,7 @@ void AClcStoneVendor::ExitSellMode()
 
 	SetVendorCursor(false);
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		LT->AddLog(ExitTip.ToString(), 2.0f, FLinearColor::White);
 	}
@@ -672,7 +663,7 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	PushVendorHUDData();
 	HUDPushTimer = HUDPushInterval;
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		TArray<FStringFormatArg> PlacedArgs;
 		PlacedArgs.Add(FStringFormatArg(ActiveStoneData.DisplayName));
@@ -682,7 +673,7 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	// 锁价石上台：额外提示玩家直接出手
 	if (ActiveStoneData.bHaggleResolved)
 	{
-		if (UClcLogToastSubsystem* LT2 = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT2 = ClcGetLogToast(CachedPC))
 		{
 			LT2->AddLog(TEXT("【锁价石】Enter 直接出手，不可再讨价"), 2.5f, FLinearColor(1.0f, 0.85f, 0.2f));
 		}
@@ -847,7 +838,7 @@ void AClcStoneVendor::OnBackpackStoneSelected(int32 StoneIndex)
 			CachedBackpack->ToggleBackpack();
 		}
 
-		if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
 			TArray<FStringFormatArg> SwapArgs;
 			SwapArgs.Add(FStringFormatArg(ActiveStoneData.DisplayName));
@@ -1211,7 +1202,7 @@ void AClcStoneVendor::LockHagglePriceAndReturn(int32 LockedPrice)
 	// 立即刷新 HUD 显示锁价
 	PushVendorHUDData();
 
-	if (UClcLogToastSubsystem* LT = GetLogToast(CachedPC))
+	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
 		TArray<FStringFormatArg> Args;
 		Args.Add(FStringFormatArg(LockedPrice));

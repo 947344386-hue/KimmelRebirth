@@ -4,6 +4,10 @@
 #include "ClcLog.h"
 #include "Components/StaticMeshComponent.h"
 #include "Actors/ClcOpeningStone.h"
+#include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/LocalPlayer.h"
 
 AClcStoneTool::AClcStoneTool()
 {
@@ -53,10 +57,49 @@ void AClcStoneTool::Initialize(AClcOpeningStone* Stone)
 		return;
 	}
 	TargetStone = Stone;
-	CurrentDurability = MaxDurability;
+
+	// 注册本工具的最大耐久（BP 可配），并读取持久化耐久
+	if (ToolType != EClcRepairableTool::None)
+	{
+		if (UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld()))
+		{
+			DuraSys->InitTool(ToolType, MaxDurability);
+			CurrentDurability = DuraSys->GetDurability(ToolType);
+		}
+		else
+		{
+			CurrentDurability = MaxDurability;
+		}
+	}
+	else
+	{
+		CurrentDurability = MaxDurability;
+	}
 }
 
 void AClcStoneTool::ConsumeDurability(float Amount)
 {
 	CurrentDurability = FMath::Max(0.0f, CurrentDurability - Amount);
+
+	// 写回持久化子系统
+	if (ToolType != EClcRepairableTool::None)
+	{
+		if (UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld()))
+		{
+			DuraSys->SetDurability(ToolType, CurrentDurability);
+		}
+	}
+}
+
+void AClcStoneTool::RestoreFullDurability()
+{
+	CurrentDurability = MaxDurability;
+
+	if (ToolType != EClcRepairableTool::None)
+	{
+		if (UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld()))
+		{
+			DuraSys->SetDurability(ToolType, MaxDurability);
+		}
+	}
 }

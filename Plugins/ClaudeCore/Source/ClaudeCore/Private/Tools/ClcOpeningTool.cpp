@@ -81,15 +81,27 @@ void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 	}
 }
 
-void AClcOpeningTool::AdjustBrushRadius(float Delta)
+int32 AClcOpeningTool::AdjustBrushRadius(float Delta)
 {
-	if (!TargetStone) return;
+	if (!TargetStone) return 0;
 	UClcOpeningMaskComponent* MaskComp = TargetStone->GetOpeningMask();
-	if (!MaskComp) return;
-	float NewRadius = MaskComp->BrushRadius + Delta;
+	if (!MaskComp) return 0;
+
+	const float OldRadius = MaskComp->BrushRadius;
+	float NewRadius = OldRadius + Delta;
 	NewRadius = FMath::Clamp(NewRadius, BrushRadiusMin, BrushRadiusMax);
 	MaskComp->BrushRadius = NewRadius;
 	UpdatePreviewDecal();
+
+	if (NewRadius <= BrushRadiusMin + KINDA_SMALL_NUMBER && Delta < 0.0f)
+	{
+		return -1; // 已到达下限
+	}
+	if (NewRadius >= BrushRadiusMax - KINDA_SMALL_NUMBER && Delta > 0.0f)
+	{
+		return 1; // 已到达上限
+	}
+	return 0;
 }
 
 void AClcOpeningTool::UpdatePreviewDecal()

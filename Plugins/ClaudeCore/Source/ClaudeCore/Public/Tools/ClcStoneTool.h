@@ -9,6 +9,16 @@
 class AClcOpeningStone;
 class UStaticMeshComponent;
 
+/** 可修复的工具类型（Bitmask，支持多选） */
+UENUM(BlueprintType, meta = (Bitmask, UseEnumValuesAsMaskValuesInEditor = "true"))
+enum class EClcRepairableTool : uint8
+{
+	None       = 0   UMETA(Hidden),
+	Opener     = 1   UMETA(DisplayName = "开窗器"),
+	Flashlight = 2   UMETA(DisplayName = "手电筒"),
+};
+ENUM_CLASS_FLAGS(EClcRepairableTool)
+
 /** Workbench 每帧做完鼠标 LineTrace 后传给工具的上下文 */
 USTRUCT(BlueprintType)
 struct FClcToolTraceInfo
@@ -114,6 +124,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcTool")
 	float GetMaxDurability() const { return MaxDurability; }
 
+	/** 设置工具类型——由 Workbench Spawn 后调用，用于耐久持久化 */
+	void SetToolType(EClcRepairableTool InType) { ToolType = InType; }
+
+	/** 获取工具类型 */
+	EClcRepairableTool GetToolType() const { return ToolType; }
+
+	/** 恢复满耐久（由修理站调用） */
+	UFUNCTION(BlueprintCallable, Category = "ClcTool")
+	void RestoreFullDurability();
+
 protected:
 	/** 消耗耐久（自动 Clamp 到 0） */
 	void ConsumeDurability(float Amount);
@@ -141,6 +161,9 @@ protected:
 
 	/** 当前耐久度（运行时从 MaxDurability 开始递减） */
 	float CurrentDurability = 100.0f;
+
+	/** 工具类型（Workbench Spawn 后设置，用于耐久持久化） */
+	EClcRepairableTool ToolType = EClcRepairableTool::None;
 
 	/** OnUpdate 设定的目标位姿（Tick 里平滑追过去） */
 	FVector TargetLocation = FVector::ZeroVector;

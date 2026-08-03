@@ -37,9 +37,10 @@ public:
 	virtual void OnUpdate(const FClcToolTraceInfo& TraceInfo) override;
 	virtual void OnLeftClick(bool bPressed) override;
 
-	/** 增减开窗半径（由工作台 -/= 按键转发调用，正=增大，负=缩小） */
+	/** 增减开窗半径（鼠标滚轮驱动，正=增大，负=缩小）。
+	 *  @return 0=正常调整，-1=已到达下限，1=已到达上限 */
 	UFUNCTION(BlueprintCallable, Category = "OpeningTool")
-	void AdjustBrushRadius(float Delta);
+	int32 AdjustBrushRadius(float Delta);
 
 	// ---- 配置：笔刷尺寸 ----
 

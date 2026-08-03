@@ -278,20 +278,41 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	// ---- -/= 键调整开窗笔刷半径 ----
+	// ---- 鼠标滚轮调整开窗笔刷半径 ----
 	if (AClcOpeningTool* OpeningTool = Cast<AClcOpeningTool>(CurrentTool))
 	{
-		const bool bMinusDown = CachedPC->IsInputKeyDown(EKeys::Hyphen);
-		const bool bEqualsDown = CachedPC->IsInputKeyDown(EKeys::Equals);
-		// 连续按住式调整：每帧按比例叠加，短按也能触发，长按持续变化
-		const float BrushSpeed = 5.0f; // 每秒约 5 次 BrushIncrementPerPress 的量
-		if (bMinusDown)
+		float WheelDelta = 0.0f;
+		if (CachedPC->WasInputKeyJustPressed(EKeys::MouseScrollUp))
 		{
-			OpeningTool->AdjustBrushRadius(-OpeningTool->BrushIncrementPerPress * BrushSpeed * DeltaTime);
+			WheelDelta = 1.0f;
 		}
-		if (bEqualsDown)
+		else if (CachedPC->WasInputKeyJustPressed(EKeys::MouseScrollDown))
 		{
-			OpeningTool->AdjustBrushRadius(OpeningTool->BrushIncrementPerPress * BrushSpeed * DeltaTime);
+			WheelDelta = -1.0f;
+		}
+
+		if (!FMath::IsNearlyZero(WheelDelta))
+		{
+			const float Amount = OpeningTool->BrushIncrementPerPress * WheelDelta;
+			const int32 ClampResult = OpeningTool->AdjustBrushRadius(Amount);
+
+			// 到达边界 → 飘 Toast 告知玩家
+			if (ClampResult != 0 && CachedPC.IsValid())
+			{
+				const double Now = FPlatformTime::Seconds();
+				if (Now - LastBrushBoundaryToastTime > BrushBoundaryToastCD)
+				{
+					LastBrushBoundaryToastTime = Now;
+					if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
+					{
+						Toast->AddLog(
+							ClampResult < 0
+								? TEXT("Already at minimum radius")
+								: TEXT("Already at maximum radius"),
+							1.5f);
+					}
+				}
+			}
 		}
 	}
 
@@ -449,6 +470,16 @@ void AClcJadeWorkbench::SpawnCurrentTool()
 
 	if (CurrentTool)
 	{
+		// 设置工具类型（用于耐久持久化）
+		switch (CurrentToolMode)
+		{
+		case EClcToolMode::Opener:
+			CurrentTool->SetToolType(EClcRepairableTool::Opener);
+			break;
+		case EClcToolMode::Flashlight:
+			CurrentTool->SetToolType(EClcRepairableTool::Flashlight);
+			break;
+		}
 		CurrentTool->Initialize(OpeningStone);
 		CurrentTool->OnActivated();
 	}
@@ -1126,7 +1157,7 @@ void AClcJadeWorkbench::PushHUDData()
 	// ── 操作提示——按当前工具模式给不同文案 ──
 	Data.OperationHints = (CurrentToolMode == EClcToolMode::Flashlight)
 		? TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出")
-		: TEXT("左键 开窗 | -/= 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		: TEXT("左键 开窗 | 滚轮 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
 
 	HUDWidget->RefreshData(Data);
 }

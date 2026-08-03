@@ -276,6 +276,10 @@ private:
 	/** R 键旋转复位激活中（每帧 Tick 平滑追初始朝向） */
 	bool bResetRotationPending = false;
 
+	/** 笔刷边界 Toast 冷却（防止滚轮到底时刷屏） */
+	double LastBrushBoundaryToastTime = 0.0;
+	static constexpr double BrushBoundaryToastCD = 1.5;
+
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;
 

@@ -819,9 +819,8 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 			CurrentTalkState = ETalkState::Enter;
 			RefreshTalkBubble();
 
-			// 进入商人话术范围——一次性飘字提示瞄准石料按 E 购入
+			// 进入商人话术范围——一次性飘字提示瞄准石料按 E 购入（per-instance CD）
 			{
-				static double LastEnterToastTime = 0.0;
 				const double Now = FPlatformTime::Seconds();
 				if (Now - LastEnterToastTime > 3.0)
 				{

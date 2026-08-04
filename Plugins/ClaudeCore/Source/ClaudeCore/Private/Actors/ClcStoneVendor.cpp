@@ -1005,9 +1005,15 @@ void AClcStoneVendor::PushVendorHUDData()
 		Data.bBackpackOpen = CachedBackpack->IsBackpackOpen();
 	}
 
+	// 新台词出现时（与上次推送不同且非空）重置最小显示计时，使每条台词独立享受 ~2s 停留。
+	if (!PendingNpcLine.IsEmpty() && PendingNpcLine != LastPushedNpcLine)
+	{
+		NpcLineElapsed = 0.0f;
+	}
+	LastPushedNpcLine = PendingNpcLine;
 	Data.NpcLine = PendingNpcLine;
 	HUDWidget->RefreshData(Data);
-	PendingNpcLine.Empty();
+	// 不在此清空 PendingNpcLine——由 TickNpcLine 在 NpcLineMinDuration 到期后统一清空，避免 0.3s 周期推送秒清台词。
 }
 
 namespace
@@ -1020,11 +1026,12 @@ void AClcStoneVendor::TickNpcLine(float DeltaTime)
 	if (NpcLineElapsed < NpcLineMinDuration)
 	{
 		NpcLineElapsed += DeltaTime;
-		if (NpcLineElapsed >= NpcLineMinDuration && HUDWidget)
+		// 到期清空待显示台词——下一次 PushVendorHUDData 会把空台词推到 HUD 并保留其他字段
+		// （售价/金币等），不再发 default 结构体清空整屏。
+		if (NpcLineElapsed >= NpcLineMinDuration)
 		{
-			FClcVendorHUDData Data;
-			Data.NpcLine.Empty();
-			HUDWidget->RefreshData(Data);
+			PendingNpcLine.Empty();
+			LastPushedNpcLine.Empty();
 		}
 	}
 }

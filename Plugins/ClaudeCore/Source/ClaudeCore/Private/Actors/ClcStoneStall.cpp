@@ -240,6 +240,10 @@ void AClcStoneStall::SpawnStones()
 	}
 	SpawnedStones.Empty();
 
+	// 新一批石头：清空历史售价基线
+	SumBoughtStoneValues = 0.0f;
+	BoughtStoneCount = 0;
+
 	if (!MarketSubsystem) return;
 
 	UClcStallConfig* StallCfg = MarketSubsystem->GetStallConfig();
@@ -360,29 +364,45 @@ void AClcStoneStall::NotifyStoneRemoved(AClcStone* Stone)
 {
 	if (!IsValid(Stone)) return;
 
-	// 在移除前算购买结果：这块的价值 vs 全摊平均（含这块）
+	// 算购买结果：这块的价值 vs 比较基线。
+	// 修复：原来均值把被买走的这块也算进去，摊位只剩这一块时均值=自身 → 恒判 TookGood（哪怕废石）。
 	const float StoneValue = Stone->GetStoneData().Internal.TheoreticalValue;
-	float TotalValue = 0.0f;
-	int32 Count = 0;
+
+	// 基线优先取「其余仍在摊位的石头」均值（玩家挑走的是否比剩下的好）。
+	float OthersTotal = 0.0f;
+	int32 OthersCount = 0;
 	for (AClcStone* S : SpawnedStones)
 	{
-		if (IsValid(S))
+		if (S != Stone && IsValid(S))
 		{
-			TotalValue += S->GetStoneData().Internal.TheoreticalValue;
-			Count++;
+			OthersTotal += S->GetStoneData().Internal.TheoreticalValue;
+			++OthersCount;
 		}
 	}
-	const float AvgValue = (Count > 0) ? (TotalValue / static_cast<float>(Count)) : StoneValue;
 
-	EClcPurchaseOutcome Outcome;
-	if (StoneValue >= AvgValue)
+	float Baseline;
+	if (OthersCount > 0)
 	{
-		Outcome = EClcPurchaseOutcome::TookGood;
+		Baseline = OthersTotal / static_cast<float>(OthersCount);
+	}
+	else if (BoughtStoneCount > 0)
+	{
+		// 摊位只剩这最后一块：没有剩下的可比，改用「此前已售出石头」的均值作基线。
+		Baseline = SumBoughtStoneValues / static_cast<float>(BoughtStoneCount);
 	}
 	else
 	{
-		Outcome = EClcPurchaseOutcome::TookBad;
+		// 单石摊位、首次购买、无任何历史：无基线可比，维持原行为（不冤枉好货）。
+		Baseline = StoneValue;
 	}
+
+	const EClcPurchaseOutcome Outcome = (StoneValue >= Baseline)
+		? EClcPurchaseOutcome::TookGood
+		: EClcPurchaseOutcome::TookBad;
+
+	// 记入历史，供后续「最后一块」比较使用。
+	SumBoughtStoneValues += StoneValue;
+	++BoughtStoneCount;
 
 	// 从数组移除——修复原来 RemoveFromStall 直接 Destroy 不通知的悬挂指针问题
 	SpawnedStones.Remove(Stone);

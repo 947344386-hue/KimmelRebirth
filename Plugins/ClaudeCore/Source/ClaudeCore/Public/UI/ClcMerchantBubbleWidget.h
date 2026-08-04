@@ -50,4 +50,7 @@ private:
 	TWeakObjectPtr<USceneComponent> AnchorComponent;
 	FVector AnchorLocalOffset = FVector::ZeroVector;
 	FClcMerchantUISimulatedPerspectiveSettings SimulatedPerspective;
+
+	/** 背包打开时把气泡 Y 钳到此视口高度比例以下（避免被背包面板遮住）；<=0 关闭 */
+	float BackpackOpenClampYFraction = 0.42f;
 };

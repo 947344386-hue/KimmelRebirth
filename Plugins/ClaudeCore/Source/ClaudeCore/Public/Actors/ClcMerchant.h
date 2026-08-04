@@ -131,6 +131,9 @@ private:
 	/** 购买反馈保留期间继续跟踪瞄准目标，但不允许 Aim/Enter 覆盖 Purchase 文本 */
 	float PurchaseFeedbackTimer = 0.0f;
 
+	/** 进入话术范围一次性飘字的 per-instance 防抖计时——与 Workbench/Vendor/RepairStation 一致，避免多商人共享 CD 丢提示 */
+	double LastEnterToastTime = 0.0;
+
 	// ---- 嘴上话术 / 气泡状态 ----
 	bool bEagleEyeActive = false;
 	/** 鹰眼残留倒计时（秒）——per-merchant 独立；到点 RefreshEagleEyeWidget 销毁 widget */

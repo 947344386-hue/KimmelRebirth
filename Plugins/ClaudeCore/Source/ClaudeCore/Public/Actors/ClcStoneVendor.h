@@ -330,6 +330,9 @@ private:
 	/** NPC 当前台词——高价值事件点填入，PushVendorHUDData 写入 Data.NpcLine 并累积停留计时 */
 	FString PendingNpcLine;
 
+	/** 上一次推到 HUD 的台词文本——用于在 PushVendorHUDData 中检测新台词出现并重置停留计时 */
+	FString LastPushedNpcLine;
+
 	/** 当前台词已停留时间（秒），>= NpcLineMinDuration 后 NpcLine 置空隐藏对话框 */
 	float NpcLineElapsed = 0.0f;
 

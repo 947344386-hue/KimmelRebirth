@@ -256,7 +256,7 @@ void UClcHaggleComponent::Resolve(EClcHaggleOutcome Outcome)
 	}
 	else if (UClcStoneMarketSubsystem* Market = GetMarket())
 	{
-		ResolvedFinalPrice = Market->CalculateHagglePrice(ReferencePrice, AppliedRatio, bSuccess);
+		ResolvedFinalPrice = Market->CalculateHagglePrice(ReferencePrice, AppliedRatio, bSuccess, Config->bSymmetricFailure);
 	}
 	else
 	{

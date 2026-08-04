@@ -72,6 +72,12 @@ public:
         return ShellEntries.Num() > 0 ? FMath::RandRange(0, ShellEntries.Num() - 1) : 0;
     }
 
+    /** 随机一个皮壳索引（确定性版——用传入 FRandomStream，保证同 Seed 重建石头时皮壳类型可复现） */
+    int32 GetRandomShellIndex(const FRandomStream& RNG) const
+    {
+        return ShellEntries.Num() > 0 ? RNG.RandRange(0, ShellEntries.Num() - 1) : 0;
+    }
+
     /** 按索引查皮壳名称，BP 中直接调用（结果缓存，避免重复 LoadObject） */
     UFUNCTION(BlueprintCallable, Category = "Shell")
     static FName GetShellName(int32 ShellTypeIndex)

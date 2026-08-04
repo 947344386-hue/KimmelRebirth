@@ -48,7 +48,7 @@ public:
 	 * 集中价格数学，避免在 vendor/widget 里复制乘法。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
-	int32 CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess) const;
+	int32 CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess, bool bSymmetricFailure = true) const;
 
 	/** 注册摊位 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")

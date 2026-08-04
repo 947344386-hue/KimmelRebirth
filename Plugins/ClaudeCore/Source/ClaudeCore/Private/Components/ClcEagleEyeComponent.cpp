@@ -166,153 +166,289 @@ void UClcEagleEyeComponent::StartOrRestartXRayScan(const FVector& Center)
 
 	const float Radius = FMath::Max(0.0f, Config->ScanRadius);
 	const float RadiusSq = FMath::Square(Radius);
+	TArray<AActor*> SeeThroughTargets;
+	TArray<AActor*> OccludedTargets;
 
-	// XRay 三角扫描材质——默认 ScanFX 的 MI_ScanFX_TriangleScanner，可在 DA_EagleEyeConfig 换成自定义 MI
-	static const TCHAR* DefaultXRayMaterialPath =
-		TEXT("/Game/ScanFX/Materials/Instances/MI_ScanFX_TriangleScanner.MI_ScanFX_TriangleScanner");
-	UMaterialInterface* ScanMaterial = Config->XRayScanMaterial.IsNull()
-		? nullptr : Config->XRayScanMaterial.LoadSynchronous();
-	if (!ScanMaterial)
+	if (Config->ResponseRules.IsEmpty())
 	{
-		ScanMaterial = LoadObject<UMaterialInterface>(nullptr, DefaultXRayMaterialPath);
-	}
-	if (!ScanMaterial)
-	{
-		if (!bLoggedXRayMaterialWarning)
+		for (TActorIterator<AClcMerchant> It(World); It; ++It)
 		{
-			bLoggedXRayMaterialWarning = true;
-			UE_LOG(LogClaudeCore, Warning,
-				TEXT("[ClcEagleEye] XRay scan material not found (configured=%s, default=%s)"),
-				*Config->XRayScanMaterial.ToString(), DefaultXRayMaterialPath);
+			AClcMerchant* Merchant = *It;
+			if (!IsValid(Merchant) || Merchant->IsActorBeingDestroyed() || Merchant->IsHidden()) continue;
+			if (FVector::DistSquared(Merchant->GetActorLocation(), Center) > RadiusSq) continue;
+			SeeThroughTargets.Add(Merchant);
 		}
-		return;
 	}
-	XRayScanMID = UMaterialInstanceDynamic::Create(ScanMaterial, this);
-	if (!XRayScanMID) return;
-
-	float MinZ = FLT_MAX;
-	float MaxZ = -FLT_MAX;
-
-	// 范围内商人 clone 一份 Mesh 并应用扫描 MID（只扫商人，不扫原石）
-	for (TActorIterator<AClcMerchant> It(World); It; ++It)
+	else
 	{
-		AClcMerchant* Merchant = *It;
-		if (!IsValid(Merchant) || Merchant->IsActorBeingDestroyed()) continue;
-		if (FVector::DistSquared(Merchant->GetActorLocation(), Center) > RadiusSq) continue;
-		CloneXRayMeshes(Merchant, MinZ, MaxZ);
+		TSet<AActor*> ProcessedActors;
+		for (const FClcEagleEyeResponseRule& Rule : Config->ResponseRules)
+		{
+			UClass* ActorClass = Rule.ActorClass.Get();
+			if (!ActorClass) continue;
+
+			for (TActorIterator<AActor> It(World, ActorClass); It; ++It)
+			{
+				AActor* TargetActor = *It;
+				if (ProcessedActors.Contains(TargetActor)) continue;
+				ProcessedActors.Add(TargetActor);
+				if (!IsValid(TargetActor) || TargetActor->IsActorBeingDestroyed() || TargetActor->IsHidden()) continue;
+				if (FVector::DistSquared(TargetActor->GetActorLocation(), Center) > RadiusSq) continue;
+
+				const EClcEagleEyeResponseMode Mode = ResolveResponseMode(TargetActor, Rule.Mode);
+				if (Mode == EClcEagleEyeResponseMode::SeeThrough)
+				{
+					SeeThroughTargets.Add(TargetActor);
+				}
+				else
+				{
+					OccludedTargets.Add(TargetActor);
+				}
+			}
+		}
 	}
 
-	if (XRayCloneComponents.Num() == 0 || MinZ == FLT_MAX)
+	static const TCHAR* DefaultSeeThroughMaterialPath =
+		TEXT("/Game/ScanFX/Materials/Instances/MI_ScanFX_TriangleScanner.MI_ScanFX_TriangleScanner");
+
+	auto CreateScanMID = [this](const TSoftObjectPtr<UMaterialInterface>& MaterialRef,
+		const TCHAR* FallbackPath, bool& bLoggedWarning, const TCHAR* Label) -> UMaterialInstanceDynamic*
+	{
+		UMaterialInterface* ScanMaterial = MaterialRef.IsNull() ? nullptr : MaterialRef.LoadSynchronous();
+		if (!ScanMaterial && FallbackPath)
+		{
+			ScanMaterial = LoadObject<UMaterialInterface>(nullptr, FallbackPath);
+		}
+		if (!ScanMaterial)
+		{
+			if (!bLoggedWarning)
+			{
+				bLoggedWarning = true;
+				UE_LOG(LogClaudeCore, Warning,
+					TEXT("[ClcEagleEye] %s scan material not found (configured=%s)"),
+					Label, *MaterialRef.ToString());
+			}
+			return nullptr;
+		}
+		return UMaterialInstanceDynamic::Create(ScanMaterial, this);
+	};
+
+	if (!SeeThroughTargets.IsEmpty())
+	{
+		SeeThroughScanMID = CreateScanMID(Config->XRayScanMaterial, DefaultSeeThroughMaterialPath,
+			bLoggedSeeThroughMaterialWarning, TEXT("See-through"));
+	}
+	if (!OccludedTargets.IsEmpty())
+	{
+		OccludedScanMID = CreateScanMID(Config->OccludedScanMaterial, nullptr,
+			bLoggedOccludedMaterialWarning, TEXT("Occluded"));
+	}
+
+	float SeeThroughMinZ = FLT_MAX;
+	float SeeThroughMaxZ = -FLT_MAX;
+	float OccludedMinZ = FLT_MAX;
+	float OccludedMaxZ = -FLT_MAX;
+	int32 SeeThroughCloneCount = 0;
+	int32 OccludedCloneCount = 0;
+
+	if (SeeThroughScanMID)
+	{
+		for (AActor* TargetActor : SeeThroughTargets)
+		{
+			CloneXRayMeshes(TargetActor, SeeThroughScanMID, SeeThroughMinZ, SeeThroughMaxZ,
+				SeeThroughCloneCount);
+		}
+	}
+	if (OccludedScanMID)
+	{
+		for (AActor* TargetActor : OccludedTargets)
+		{
+			CloneXRayMeshes(TargetActor, OccludedScanMID, OccludedMinZ, OccludedMaxZ,
+				OccludedCloneCount);
+		}
+	}
+
+	auto ShowScanResultToast = [this](int32 SeeThroughCount, int32 OccludedCount)
+	{
+		APawn* Pawn = Cast<APawn>(GetOwner());
+		APlayerController* PC = Pawn ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+		UClcLogToastSubsystem* LogToast = PC ? ClcGetLogToast(PC) : nullptr;
+		if (!LogToast) return;
+
+		FString Message;
+		FLinearColor Color = FLinearColor(0.1f, 0.85f, 1.0f);
+		if (SeeThroughCount > 0 && OccludedCount > 0)
+		{
+			Message = FString::Printf(TEXT("鹰眼洞察：已看穿 %d 个目标，另有 %d 个目标无法看穿"),
+				SeeThroughCount, OccludedCount);
+		}
+		else if (SeeThroughCount > 0)
+		{
+			Message = FString::Printf(TEXT("鹰眼洞察：已看穿 %d 个目标"), SeeThroughCount);
+		}
+		else if (OccludedCount > 0)
+		{
+			Message = FString::Printf(TEXT("鹰眼洞察：%d 个目标无法看穿"), OccludedCount);
+			Color = FLinearColor::Yellow;
+		}
+		else
+		{
+			Message = TEXT("鹰眼扫描：附近未发现可洞察目标");
+			Color = FLinearColor::Yellow;
+		}
+
+		LogToast->AddLog(Message, 2.5f, Color);
+	};
+
+	// 按唯一 Actor 计数（每个 Actor 可能含多个 Mesh 组件，每个 Mesh 产生一个 clone）——
+	// 飘字口径：有至少一个 clone 的 Actor 数，而非 clone 组件数。
+	{
+		TSet<AActor*> SeeThroughSet(SeeThroughTargets);
+		TSet<AActor*> OccludedSet(OccludedTargets);
+		TSet<AActor*> SeeThroughActors, OccludedActors;
+		for (const TObjectPtr<UMeshComponent>& Comp : XRayCloneComponents)
+		{
+			if (!IsValid(Comp)) continue;
+			AActor* Owner = Comp->GetOwner();
+			if (!Owner) continue;
+			if (SeeThroughSet.Contains(Owner))
+				SeeThroughActors.Add(Owner);
+			else if (OccludedSet.Contains(Owner))
+				OccludedActors.Add(Owner);
+		}
+		ShowScanResultToast(SeeThroughActors.Num(), OccludedActors.Num());
+	}
+	if (XRayCloneComponents.IsEmpty())
 	{
 		DestroyActiveXRayScan();
 		return;
 	}
 
+	if (SeeThroughCloneCount > 0 && SeeThroughMinZ != FLT_MAX)
+	{
+		SeeThroughBottomZ = SeeThroughMinZ;
+		SeeThroughTopZ = SeeThroughMaxZ;
+	}
+	else
+	{
+		SeeThroughScanMID = nullptr;
+	}
+
+	if (OccludedCloneCount > 0 && OccludedMinZ != FLT_MAX)
+	{
+		OccludedBottomZ = OccludedMinZ;
+		OccludedTopZ = OccludedMaxZ;
+	}
+	else
+	{
+		OccludedScanMID = nullptr;
+	}
+
 	XRayScanCenter = Center;
-	XRayBottomZ = MinZ;
-	XRayTopZ = MaxZ;
 	XRayScanDuration = FMath::Max(0.01f, Config->ScanDuration);
 	XRayScanTimer = 0.0f;
 	bXRayActive = true;
 
-	// 扫描盒要覆盖整个扫描区域——材质默认 ScanBoxSize=300cm 只覆盖玩家近处，
-	// 范围内远处的商人会落在盒外而不显示。ScanBoxSize 的 XY 用 ScanRadius*2，
-	// 无论材质把 Size 当半尺寸还是全尺寸，都能覆盖整个扫描半径范围。
 	const float ScanBoxXY = FMath::Max(Config->ScanRadius * 2.0f, 600.0f);
 	constexpr float ScanBoxHalfZ = 40.0f;
-	XRayScanMID->SetVectorParameterValue(
-		FName(TEXT("Scan Box Size")),
-		FLinearColor(ScanBoxXY, ScanBoxXY, ScanBoxHalfZ, 1.0f));
+	auto ConfigureScanBox = [ScanBoxXY, ScanBoxHalfZ](UMaterialInstanceDynamic* ScanMID)
+	{
+		if (!ScanMID) return;
+		ScanMID->SetVectorParameterValue(
+			FName(TEXT("Scan Box Size")),
+			FLinearColor(ScanBoxXY, ScanBoxXY, ScanBoxHalfZ, 1.0f));
+	};
+	ConfigureScanBox(SeeThroughScanMID);
+	ConfigureScanBox(OccludedScanMID);
 
 	UE_LOG(LogClaudeCore, Log,
-		TEXT("[ClcEagleEye] XRay scan started: clones=%d, bottomZ=%.1f, topZ=%.1f, duration=%.2f"),
-		XRayCloneComponents.Num(), XRayBottomZ, XRayTopZ, XRayScanDuration);
-
-	// 诊断：扫描材质关键参数默认值（判断是否 ScanBoxSize/Opacity 默认导致不可见）
-	{
-		FLinearColor DefBoxSize(ForceInit), DefBoxOrigin(ForceInit);
-		float DefOpacity = -1.f, DefFalloff = -1.f;
-		XRayScanMID->GetVectorParameterValue(FName(TEXT("Scan Box Size")), DefBoxSize);
-		XRayScanMID->GetVectorParameterValue(FName(TEXT("Scan Box Origin")), DefBoxOrigin);
-		XRayScanMID->GetScalarParameterValue(FName(TEXT("Opacity")), DefOpacity);
-		XRayScanMID->GetScalarParameterValue(FName(TEXT("Scan Edge Falloff")), DefFalloff);
-		UE_LOG(LogClaudeCore, Log,
-			TEXT("[ClcEagleEye] XRay MID defaults: ScanBoxSize=(%.2f,%.2f,%.2f,%.2f), ScanBoxOrigin=(%.2f,%.2f,%.2f,%.2f), Opacity=%.3f, ScanEdgeFalloff=%.3f"),
-			DefBoxSize.R, DefBoxSize.G, DefBoxSize.B, DefBoxSize.A,
-			DefBoxOrigin.R, DefBoxOrigin.G, DefBoxOrigin.B, DefBoxOrigin.A,
-			DefOpacity, DefFalloff);
-	}
-	// 诊断：第一个 clone mesh 渲染摘要
-	if (XRayCloneComponents.Num() > 0)
-	{
-		if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(XRayCloneComponents[0]))
-		{
-			UStaticMesh* M = SMC->GetStaticMesh();
-			UE_LOG(LogClaudeCore, Log,
-				TEXT("[ClcEagleEye] XRay clone[0]: mesh=%s, naniteDisallowed=%d, materials=%d, hiddenInGame=%d, bounds=%s"),
-				M ? *M->GetName() : TEXT("null"),
-				(int32)SMC->IsDisallowNanite(),
-				SMC->GetNumMaterials(),
-				(int32)SMC->bHiddenInGame,
-				*SMC->Bounds.ToString());
-		}
-	}
+		TEXT("[ClcEagleEye] Mesh scan started: seeThroughActors=%d, seeThroughClones=%d, occludedActors=%d, occludedClones=%d, duration=%.2f"),
+		SeeThroughTargets.Num(), SeeThroughCloneCount, OccludedTargets.Num(), OccludedCloneCount, XRayScanDuration);
 }
 
-void UClcEagleEyeComponent::CloneXRayMeshes(AActor* TargetActor, float& OutMinZ, float& OutMaxZ)
+EClcEagleEyeResponseMode UClcEagleEyeComponent::ResolveResponseMode(const AActor* TargetActor,
+	EClcEagleEyeResponseMode DefaultMode) const
 {
-	if (!TargetActor || !XRayScanMID) return;
+	if (!TargetActor) return DefaultMode;
 
-	// Static Mesh clone
+	static const FName SeeThroughTag(TEXT("EagleEyeSeeThrough"));
+	static const FName OccludedTag(TEXT("EagleEyeOccluded"));
+	const bool bSeeThroughOverride = TargetActor->ActorHasTag(SeeThroughTag);
+	const bool bOccludedOverride = TargetActor->ActorHasTag(OccludedTag);
+
+	if (bSeeThroughOverride && bOccludedOverride)
+	{
+		UE_LOG(LogClaudeCore, Warning,
+			TEXT("[ClcEagleEye] Actor %s has both response tags; EagleEyeOccluded takes precedence."),
+			*TargetActor->GetName());
+		return EClcEagleEyeResponseMode::Occluded;
+	}
+	if (bOccludedOverride) return EClcEagleEyeResponseMode::Occluded;
+	if (bSeeThroughOverride) return EClcEagleEyeResponseMode::SeeThrough;
+	return DefaultMode;
+}
+
+void UClcEagleEyeComponent::CloneXRayMeshes(AActor* TargetActor, UMaterialInstanceDynamic* TargetMID,
+	float& OutMinZ, float& OutMaxZ, int32& OutCloneCount)
+{
+	if (!IsValid(TargetActor) || !TargetMID) return;
+
 	TArray<UStaticMeshComponent*> StaticComps;
 	TargetActor->GetComponents<UStaticMeshComponent>(StaticComps, false);
 	for (UStaticMeshComponent* SourceMesh : StaticComps)
 	{
-		if (!SourceMesh || !SourceMesh->GetStaticMesh()) continue;
+		if (!IsValid(SourceMesh) || !SourceMesh->GetStaticMesh() || !SourceMesh->IsRegistered()
+			|| !SourceMesh->IsVisible() || SourceMesh->bHiddenInGame)
+		{
+			continue;
+		}
 
-		UStaticMeshComponent* Clone = NewObject<UStaticMeshComponent>(TargetActor);
+		UStaticMeshComponent* Clone = NewObject<UStaticMeshComponent>(TargetActor, NAME_None, RF_Transient);
 		Clone->SetStaticMesh(SourceMesh->GetStaticMesh());
-		// 复制体从出生即禁 Nanite——Translucent 扫描材质在 Nanite 下会被渲染器拒绝
 		Clone->bDisallowNanite = true;
 		Clone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Clone->SetGenerateOverlapEvents(false);
 		Clone->CastShadow = false;
 		const int32 NumMats = SourceMesh->GetNumMaterials();
-		for (int32 i = 0; i < NumMats; ++i)
+		for (int32 Index = 0; Index < NumMats; ++Index)
 		{
-			Clone->SetMaterial(i, XRayScanMID);
+			Clone->SetMaterial(Index, TargetMID);
 		}
 		Clone->AttachToComponent(SourceMesh, FAttachmentTransformRules::SnapToTargetIncludingScale);
 		Clone->RegisterComponent();
 		XRayCloneComponents.Add(Clone);
+		++OutCloneCount;
 
 		const FBoxSphereBounds Bounds = SourceMesh->Bounds;
 		OutMinZ = FMath::Min(OutMinZ, Bounds.Origin.Z - Bounds.BoxExtent.Z);
 		OutMaxZ = FMath::Max(OutMaxZ, Bounds.Origin.Z + Bounds.BoxExtent.Z);
 	}
 
-	// Skeletal Mesh clone
 	TArray<USkeletalMeshComponent*> SkelComps;
 	TargetActor->GetComponents<USkeletalMeshComponent>(SkelComps, false);
 	for (USkeletalMeshComponent* SourceMesh : SkelComps)
 	{
-		if (!SourceMesh || !SourceMesh->GetSkeletalMeshAsset()) continue;
+		if (!IsValid(SourceMesh) || !SourceMesh->GetSkeletalMeshAsset() || !SourceMesh->IsRegistered()
+			|| !SourceMesh->IsVisible() || SourceMesh->bHiddenInGame)
+		{
+			continue;
+		}
 
-		USkeletalMeshComponent* Clone = NewObject<USkeletalMeshComponent>(TargetActor);
+		USkeletalMeshComponent* Clone = NewObject<USkeletalMeshComponent>(TargetActor, NAME_None, RF_Transient);
 		Clone->SetSkeletalMesh(SourceMesh->GetSkeletalMeshAsset());
-		// clone 作为源骨骼的姿态跟随者，镜像源动画，避免 t-pose
 		Clone->SetLeaderPoseComponent(SourceMesh);
 		Clone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Clone->SetGenerateOverlapEvents(false);
 		Clone->CastShadow = false;
 		const int32 NumMats = SourceMesh->GetNumMaterials();
-		for (int32 i = 0; i < NumMats; ++i)
+		for (int32 Index = 0; Index < NumMats; ++Index)
 		{
-			Clone->SetMaterial(i, XRayScanMID);
+			Clone->SetMaterial(Index, TargetMID);
 		}
 		Clone->AttachToComponent(SourceMesh, FAttachmentTransformRules::SnapToTargetIncludingScale);
 		Clone->RegisterComponent();
 		XRayCloneComponents.Add(Clone);
+		++OutCloneCount;
 
 		const FBoxSphereBounds Bounds = SourceMesh->Bounds;
 		OutMinZ = FMath::Min(OutMinZ, Bounds.Origin.Z - Bounds.BoxExtent.Z);
@@ -324,13 +460,14 @@ void UClcEagleEyeComponent::DestroyActiveXRayScan()
 {
 	for (TObjectPtr<UMeshComponent>& Comp : XRayCloneComponents)
 	{
-		if (Comp)
+		if (IsValid(Comp))
 		{
 			Comp->DestroyComponent();
 		}
 	}
 	XRayCloneComponents.Empty();
-	XRayScanMID = nullptr;
+	SeeThroughScanMID = nullptr;
+	OccludedScanMID = nullptr;
 	bXRayActive = false;
 	XRayScanTimer = 0.0f;
 }
@@ -389,7 +526,6 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 	const FVector Center = Owner->GetActorLocation();
 	const float RadiusSq = FMath::Square(FMath::Max(0.0f, Config->ScanRadius));
 
-	int32 InRangeMerchantCount = 0;
 	if (MarketSubsystem)
 	{
 		for (const auto& StallPtr : MarketSubsystem->GetStalls())
@@ -402,7 +538,6 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 
 			if (FVector::DistSquared(Merchant->GetActorLocation(), Center) <= RadiusSq)
 			{
-				++InRangeMerchantCount;
 				Merchant->ShowBubble(FMath::Max(0.0f, Config->ActiveDuration));
 			}
 		}
@@ -410,21 +545,6 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 
 	StartOrRestartScanPulse(Center);
 	StartOrRestartXRayScan(Center);
-
-	// 范围内没有商人 → 飘字告知玩家鹰眼并非失效，只是无可洞察目标
-	if (InRangeMerchantCount == 0)
-	{
-		if (APawn* Pawn = Cast<APawn>(Owner))
-		{
-			if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
-			{
-				if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
-				{
-					LT->AddLog(TEXT("附近没有可洞察的商人"), 2.0f, FLinearColor::Yellow);
-				}
-			}
-		}
-	}
 
 	CooldownTimer = FMath::Max(0.0f, Config->CooldownDuration);
 	bCoolingDown = CooldownTimer > 0.0f;
@@ -483,17 +603,27 @@ void UClcEagleEyeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 
-	if (bXRayActive && XRayScanMID)
+	if (bXRayActive && (SeeThroughScanMID || OccludedScanMID))
 	{
 		XRayScanTimer += DeltaTime;
 		float Alpha = XRayScanDuration > 0.0f ? XRayScanTimer / XRayScanDuration : 1.0f;
 		if (Alpha >= 1.0f) Alpha = 1.0f;
 
-		// 扫描盒原点 Z 从底扫到顶；XY 固定在按 Q 的中心，材质按 Box Origin+Size 渲染三角网格
-		const float Z = FMath::Lerp(XRayBottomZ, XRayTopZ, Alpha);
-		XRayScanMID->SetVectorParameterValue(
-			FName(TEXT("Scan Box Origin")),
-			FLinearColor(XRayScanCenter.X, XRayScanCenter.Y, Z, 1.0f));
+		if (SeeThroughScanMID)
+		{
+			const float Z = FMath::Lerp(SeeThroughBottomZ, SeeThroughTopZ, Alpha);
+			SeeThroughScanMID->SetVectorParameterValue(
+				FName(TEXT("Scan Box Origin")),
+				FLinearColor(XRayScanCenter.X, XRayScanCenter.Y, Z, 1.0f));
+		}
+
+		if (OccludedScanMID)
+		{
+			const float Z = FMath::Lerp(OccludedTopZ, OccludedBottomZ, Alpha);
+			OccludedScanMID->SetVectorParameterValue(
+				FName(TEXT("Scan Box Origin")),
+				FLinearColor(XRayScanCenter.X, XRayScanCenter.Y, Z, 1.0f));
+		}
 
 		if (Alpha >= 1.0f)
 		{

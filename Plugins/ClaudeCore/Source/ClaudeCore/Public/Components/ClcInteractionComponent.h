@@ -89,4 +89,10 @@ private:
 
 	/** 按键提示句柄：选中可购买原石时注册 E，取消选中时注销 */
 	int32 InteractPromptHandle = 0;
+
+	/** 交互物缓存——避免每帧 GetAllActorsWithInterface + 每物 FindComponentByClass（关卡变大后 CPU/GC 压力大）。
+	 *  每秒重建一次，其余 tick 直接复用弱引用；新生成交互物最多 1 秒后纳入（静态摊位场景可接受）。 */
+	TArray<TWeakObjectPtr<AActor>> CachedInteractables;
+	TArray<TWeakObjectPtr<UClcInteractionIndicator>> CachedIndicators;
+	double InteractableCacheRebuildTime = 0.0;
 };

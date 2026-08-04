@@ -133,7 +133,7 @@ void UClcVendorHUD::BuildDefaultLayout()
 	// ============================================================
 	{
 		USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("LeftBox"));
-		Box->SetWidthOverride(260.0f);
+		Box->SetMinDesiredWidth(260.0f); // 最小 260，名字更长时卡片自动变宽
 
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LeftCard"));
 		Card->SetPadding(FMargin(12.0f));
@@ -189,7 +189,7 @@ void UClcVendorHUD::BuildDefaultLayout()
 	// ============================================================
 	{
 		USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("RightBox"));
-		Box->SetWidthOverride(240.0f);
+		Box->SetMinDesiredWidth(240.0f); // 最小 240，价格数字更长时卡片自动变宽
 
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("RightCard"));
 		Card->SetPadding(FMargin(12.0f));

@@ -119,8 +119,20 @@ void UClcInteractionComponent::UpdateInteraction()
 	CurrentLookedAtActor = LookedAt;
 
 	// ---- 2. 收集附近交互物，按各自 InteractionRadius 判 in-range，驱动各 Indicator 态 ----
-	TArray<AActor*> Candidates;
-	UGameplayStatics::GetAllActorsWithInterface(GetWorld(), UClcInteractable::StaticClass(), Candidates);
+	// 交互物缓存每秒重建一次（GetAllActorsWithInterface + FindComponentByClass 较重），其余 tick 复用。
+	if (FPlatformTime::Seconds() - InteractableCacheRebuildTime >= 1.0)
+	{
+		InteractableCacheRebuildTime = FPlatformTime::Seconds();
+		CachedInteractables.Reset();
+		CachedIndicators.Reset();
+		TArray<AActor*> Found;
+		UGameplayStatics::GetAllActorsWithInterface(GetWorld(), UClcInteractable::StaticClass(), Found);
+		for (AActor* A : Found)
+		{
+			CachedInteractables.Add(A);
+			CachedIndicators.Add(A->FindComponentByClass<UClcInteractionIndicator>());
+		}
+	}
 
 	const FVector PawnLoc = Pawn->GetActorLocation();
 
@@ -128,9 +140,11 @@ void UClcInteractionComponent::UpdateInteraction()
 	AActor* AimSelected = nullptr;       // aim 模式命中且 in-range（准星优先）
 	AActor* ProximitySelected = nullptr; // proximity 委托 true（准星次选）
 
-	for (AActor* A : Candidates)
+	for (int32 Ci = 0; Ci < CachedInteractables.Num(); ++Ci)
 	{
-		UClcInteractionIndicator* Ind = A->FindComponentByClass<UClcInteractionIndicator>();
+		AActor* A = CachedInteractables[Ci].Get();
+		if (!A) continue;
+		UClcInteractionIndicator* Ind = CachedIndicators[Ci].Get();
 		const float Dist = FVector::Dist(PawnLoc, A->GetActorLocation());
 		const float Radius = Ind ? Ind->InteractionRadius : 0.0f;
 

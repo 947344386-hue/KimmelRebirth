@@ -5,6 +5,8 @@
 #include "Components/SceneComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/LocalPlayer.h"
+#include "Subsystems/ClcBackpackSubsystem.h"
 
 void UClcMerchantBubbleWidget::SetAnchor(USceneComponent* InAnchorComponent, const FVector& InLocalOffset)
 {
@@ -91,5 +93,19 @@ void UClcMerchantBubbleWidget::UpdateScreenPosition()
 	{
 		SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
+
+	// 背包打开时面板会盖住中下部——把气泡 Y 钳到屏幕上半区，避免被遮
+	if (BackpackOpenClampYFraction > 0.0f && PC->GetLocalPlayer())
+	{
+		if (UClcBackpackSubsystem* BP = PC->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>())
+		{
+			if (BP->IsBackpackOpen())
+			{
+				const float MaxY = static_cast<float>(ViewportY) * BackpackOpenClampYFraction;
+				ScreenPos.Y = FMath::Min(ScreenPos.Y, MaxY);
+			}
+		}
+	}
+
 	SetPositionInViewport(ScreenPos);
 }

@@ -920,6 +920,14 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	if (!OpeningStone)
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] Failed to spawn OpeningStone!"));
+		// 回滚：石头已从背包移除，Spawn 失败时归还，避免玩家资产丢失
+		if (CachedCarrierObj.IsValid())
+		{
+			if (UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
+			{
+				BP->AddStone(ActiveStoneData);
+			}
+		}
 		return;
 	}
 
@@ -934,6 +942,14 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] OpeningStone Initialize failed!"));
 		OpeningStone->Destroy();
 		OpeningStone = nullptr;
+		// 回滚：石头已从背包移除，初始化失败时归还，避免玩家资产丢失
+		if (CachedCarrierObj.IsValid())
+		{
+			if (UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
+			{
+				BP->AddStone(ActiveStoneData);
+			}
+		}
 		return;
 	}
 

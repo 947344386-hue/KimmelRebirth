@@ -82,6 +82,10 @@ private:
 	UPROPERTY()
 	TArray<AClcStone*> SpawnedStones;
 
+	/** 已售出石头的累计真实理论价值 + 数量——供摊位只剩最后一块时作比较基线 */
+	float SumBoughtStoneValues = 0.0f;
+	int32 BoughtStoneCount = 0;
+
 	UPROPERTY()
 	AClcMerchant* SpawnedMerchant = nullptr;
 

@@ -6,7 +6,31 @@
 #include "Engine/DataAsset.h"
 #include "ClcEagleEyeConfig.generated.h"
 
+class AActor;
 class UMaterialInterface;
+
+/** 鹰眼响应类型 */
+UENUM(BlueprintType)
+enum class EClcEagleEyeResponseMode : uint8
+{
+	SeeThrough UMETA(DisplayName = "可看穿（下→上）"),
+	Occluded   UMETA(DisplayName = "不可看穿（上→下）")
+};
+
+/** 一类 Actor 的鹰眼默认响应规则；Actor Tag 可覆盖单个实例。 */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcEagleEyeResponseRule
+{
+	GENERATED_BODY()
+
+	/** 响应该规则的 Actor 类（包含其子类）；更具体的类应排在数组前面。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay", meta = (AllowAbstract = "false"))
+	TSubclassOf<AActor> ActorClass;
+
+	/** 默认响应类型；单个实例可用 EagleEyeSeeThrough / EagleEyeOccluded Actor Tag 覆盖。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
+	EClcEagleEyeResponseMode Mode = EClcEagleEyeResponseMode::Occluded;
+};
 
 /**
  * 鹰眼能力配置
@@ -37,11 +61,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|Scan Visual", meta = (ClampMin = "0.0"))
 	float ScanDuration = 2.0f;
 
-	/** 是否启用鹰眼 XRay 扫描层（clone 范围内商人的 Mesh 并叠加三角扫描材质） */
+	/** 是否启用鹰眼 Mesh 扫描层 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
 	bool bEnableXRayScan = true;
 
-	/** XRay 三角扫描材质。留空=用 ScanFX 的 MI_ScanFX_TriangleScanner；改颜色可复制该 MI 调 Vector 参数后指向新 MI */
+	/** 响应 Actor 规则。数组顺序即匹配优先级；留空时兼容旧行为，仅扫描商人且可看穿。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay", meta = (TitleProperty = "ActorClass"))
+	TArray<FClcEagleEyeResponseRule> ResponseRules;
+
+	/** 可看穿扫描材质（下→上）。留空时使用 ScanFX 的 MI_ScanFX_TriangleScanner。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
 	TSoftObjectPtr<UMaterialInterface> XRayScanMaterial;
+
+	/** 不可看穿扫描材质（上→下）。材质须支持 Scan Box Origin / Size 参数并启用深度测试。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "EagleEye|XRay")
+	TSoftObjectPtr<UMaterialInterface> OccludedScanMaterial;
 };

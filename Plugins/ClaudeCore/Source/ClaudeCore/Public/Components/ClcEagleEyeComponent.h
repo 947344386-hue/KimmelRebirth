@@ -9,11 +9,13 @@
 class UClcEagleEyeConfig;
 class UClcStoneMarketSubsystem;
 class UPostProcessComponent;
+class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UMeshComponent;
 class AActor;
 class AClcStoneStall;
 class AClcMerchant;
+enum class EClcEagleEyeResponseMode : uint8;
 
 /**
  * 鹰眼能力——挂在 Character 上，按技能键激活。
@@ -58,7 +60,10 @@ private:
 	bool CanRunLocalXRay() const;
 	void StartOrRestartXRayScan(const FVector& Center);
 	void DestroyActiveXRayScan();
-	void CloneXRayMeshes(AActor* TargetActor, float& OutMinZ, float& OutMaxZ);
+	EClcEagleEyeResponseMode ResolveResponseMode(const AActor* TargetActor,
+		EClcEagleEyeResponseMode DefaultMode) const;
+	void CloneXRayMeshes(AActor* TargetActor, UMaterialInstanceDynamic* TargetMID,
+		float& OutMinZ, float& OutMaxZ, int32& OutCloneCount);
 	bool IsInExclusiveFlow() const;
 
 	// ---- 配置 ----
@@ -83,9 +88,12 @@ private:
 	bool bScanActive = false;
 	float ScanEndTimer = 0.0f;
 
-	// ---- XRay 扫描层（自实现：clone 目标 Mesh + 共享 ScanMID 驱动扫描盒原点 Z 从底扫到顶）----
+	// ---- Mesh 扫描层：可看穿下→上，不可看穿上→下 ----
 	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> XRayScanMID;
+	TObjectPtr<UMaterialInstanceDynamic> SeeThroughScanMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OccludedScanMID;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMeshComponent>> XRayCloneComponents;
@@ -93,10 +101,13 @@ private:
 	bool bXRayActive = false;
 	float XRayScanTimer = 0.0f;
 	float XRayScanDuration = 0.0f;
-	float XRayBottomZ = 0.0f;
-	float XRayTopZ = 0.0f;
+	float SeeThroughBottomZ = 0.0f;
+	float SeeThroughTopZ = 0.0f;
+	float OccludedBottomZ = 0.0f;
+	float OccludedTopZ = 0.0f;
 	FVector XRayScanCenter = FVector::ZeroVector;
-	bool bLoggedXRayMaterialWarning = false;
+	bool bLoggedSeeThroughMaterialWarning = false;
+	bool bLoggedOccludedMaterialWarning = false;
 
 	/** 按键提示句柄：常驻 Q（鹰眼），TickComponent 首帧 PC 就绪后注册，EndPlay 注销 */
 	int32 EagleEyePromptHandle = 0;

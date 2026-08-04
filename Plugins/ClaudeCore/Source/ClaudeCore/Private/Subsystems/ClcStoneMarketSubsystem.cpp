@@ -195,8 +195,8 @@ FClcStoneInternalData UClcStoneMarketSubsystem::GenerateStoneInternal(bool& bOut
 	Data.Origin = StoneConfig->Origins[OriginIndex];
 	Data.Seed = Seed;
 
-	// 1b. 皮壳类型——独立随机，和 Mesh / 分布无关
-	Data.ShellTypeIndex = ShellTextureConfig ? ShellTextureConfig->GetRandomShellIndex() : 0;
+	// 1b. 皮壳类型——走 Seed 流（确定性），和 Mesh / 分布无关；同 Seed 重建可复现
+	Data.ShellTypeIndex = ShellTextureConfig ? ShellTextureConfig->GetRandomShellIndex(Random) : 0;
 
 	// 2. 种水（独立维度：仅作单位面积玉肉的价值系数，与杂玉比例无关）
 	Data.Grade = RollGrade(Random, Data.Origin);
@@ -426,10 +426,10 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 	return FMath::RoundToInt(V_final);
 }
 
-int32 UClcStoneMarketSubsystem::CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess) const
+int32 UClcStoneMarketSubsystem::CalculateHagglePrice(int32 BasePrice, float Ratio, bool bSuccess, bool bSymmetricFailure) const
 {
-	// 对称赔率：成功上浮 / 失败下折同等比例；失败不低于 0。
-	const float Mult = bSuccess ? (1.0f + Ratio) : (1.0f - Ratio);
+	// 成功上浮 Ratio；失败时 bSymmetricFailure=true 下折同等比例（对称赔率），false 则按原价（仅失去加价机会，不倒扣）。
+	const float Mult = bSuccess ? (1.0f + Ratio) : (bSymmetricFailure ? (1.0f - Ratio) : 1.0f);
 	return FMath::Max(0, FMath::RoundToInt(static_cast<float>(BasePrice) * Mult));
 }
 

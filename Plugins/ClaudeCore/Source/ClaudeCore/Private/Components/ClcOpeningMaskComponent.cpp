@@ -485,15 +485,17 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 			else
 			{
 				const float T = FMath::Clamp(Dist / RadiusPixels, 0.0f, 1.0f);
-				// Hardness 越大，过渡越陡
-				const float SoftStart = 1.0f - BrushHardness;
-				if (T <= SoftStart)
+				// BrushHardness=1→硬边（全强度到边缘）；=0→最柔和（中心到边缘全程衰减）。
+				// 全强度内圈 = [0, BrushHardness]；过渡区 = [BrushHardness, 1]，宽度 1-BrushHardness。
+				const float SoftStart = BrushHardness;
+				const float FadeSpan = 1.0f - BrushHardness;
+				if (FadeSpan <= KINDA_SMALL_NUMBER || T <= SoftStart)
 				{
 					Strength = 1.0f;
 				}
 				else
 				{
-					Strength = 1.0f - FMath::Square((T - SoftStart) / BrushHardness);
+					Strength = 1.0f - FMath::Square((T - SoftStart) / FadeSpan);
 				}
 			}
 
@@ -520,7 +522,7 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 
 	const float PixelToFraction = 1.0f / static_cast<float>(MaskResolution * MaskResolution);
 	const int32 NewBlackPixels = NewImpurityPixels + NewCrackPixels;
-	Result.AreaFraction = FMath::Square(BrushRadius) * PI * 0.5f;
+	Result.AreaFraction = FMath::Square(BrushRadius) * PI;
 	Result.bHitGreen = NewGreenPixels > 0;
 	Result.bHitImpurity = NewImpurityPixels > 0;
 	Result.bHitCrack = NewCrackPixels > 0;

@@ -170,6 +170,18 @@ bool AClcStone::OnInteract(AActor* Interactor)
 	UClcBackpackSubsystem* Backpack = LP->GetSubsystem<UClcBackpackSubsystem>();
 	if (!Backpack) return false;
 
+	// 背包已满 → 不扣钱、不入库，提示玩家
+	if (Backpack->GetStones().Num() >= UClcBackpackSubsystem::MAX_STONE_SLOTS)
+	{
+		if (UClcLogToastSubsystem* LT = LP->GetSubsystem<UClcLogToastSubsystem>())
+		{
+			LT->AddLog(FString::Printf(TEXT("背包已满（%d/%d），无法购入"),
+				Backpack->GetStones().Num(), UClcBackpackSubsystem::MAX_STONE_SLOTS),
+				2.0f, FLinearColor::Red);
+		}
+		return false;
+	}
+
 	if (!Backpack->SpendGold(RuntimeData.Internal.PurchasePrice))
 	{
 		if (UClcLogToastSubsystem* LT = LP->GetSubsystem<UClcLogToastSubsystem>())

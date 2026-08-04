@@ -126,4 +126,7 @@ private:
 
 	/** 按键提示句柄 */
 	int32 RepairPromptHandle = 0;
+
+	/** 进入范围飘字冷却（per-instance，防 overlap 抖动；不同修复台各自计时，回复类型不同时各飘各的） */
+	double LastEnterToastTime = 0.0;
 };

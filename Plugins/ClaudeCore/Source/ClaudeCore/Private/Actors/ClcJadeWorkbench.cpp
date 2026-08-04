@@ -571,6 +571,19 @@ void AClcJadeWorkbench::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedCom
 		{
 			PlayerInRange = Pawn;
 			CachePlayerRefs();
+			// 进入工作台范围——满足交互条件（背包有石头）才一次性飘字提示按 F 使用
+			if (CachedCarrier && CachedCarrier->GetStones().Num() > 0)
+			{
+				const double Now = FPlatformTime::Seconds();
+				if (Now - LastEnterToastTime > 3.0)
+				{
+					LastEnterToastTime = Now;
+					if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
+					{
+						LT->AddLog(TEXT("按 F 使用赌石工作台"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+					}
+				}
+			}
 			// 小白点由 InteractionIndicator 自动显示（范围+背包有石头→选中）
 			if (WorkbenchPromptHandle == 0 && CachedPC.IsValid())
 			{
@@ -700,6 +713,15 @@ void AClcJadeWorkbench::ExitOpeningMode()
 	if (CurrentState == EClcWorkbenchState::StoneOnBench)
 	{
 		RemoveStoneFromBench();
+
+		// 进度已保存回背包——一次性飘字消除"进度是否丢失"的疑虑
+		if (CachedPC.IsValid())
+		{
+			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
+			{
+				LT->AddLog(TEXT("开窗进度已保存"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+			}
+		}
 	}
 
 	// 恢复 FOV（右键放大可能改过）

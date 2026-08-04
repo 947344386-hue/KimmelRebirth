@@ -5,6 +5,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Actors/ClcOpeningStone.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/LocalPlayer.h"
@@ -87,6 +88,47 @@ void AClcStoneTool::ConsumeDurability(float Amount)
 		if (UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld()))
 		{
 			DuraSys->SetDurability(ToolType, CurrentDurability);
+		}
+	}
+
+	// 耐久耗尽/低耐久预警飘字（一次性）
+	CheckDurabilityAndNotify();
+}
+
+void AClcStoneTool::CheckDurabilityAndNotify()
+{
+	if (!GetWorld()) return;
+
+	// 已损坏 → 飘一次"耗尽"红字
+	if (IsBroken())
+	{
+		if (!bBrokenNotified)
+		{
+			bBrokenNotified = true;
+			bLowDurabilityNotified = true; // 坏了就别再飘低耐久
+			if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+			{
+				if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
+				{
+					const TCHAR* ToolName = (ToolType == EClcRepairableTool::Opener) ? TEXT("开窗器") : TEXT("手电筒");
+					LT->AddLog(FString::Printf(TEXT("%s耐久耗尽，需前往修理站修复"), ToolName), 2.5f, FLinearColor::Red);
+				}
+			}
+		}
+		return;
+	}
+
+	// 低耐久预警（一次性）
+	if (!bLowDurabilityNotified && GetDurabilityRatio() < LowDurabilityThreshold)
+	{
+		bLowDurabilityNotified = true;
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
+			{
+				const TCHAR* ToolName = (ToolType == EClcRepairableTool::Opener) ? TEXT("开窗器") : TEXT("手电筒");
+				LT->AddLog(FString::Printf(TEXT("%s耐久不足，即将耗尽"), ToolName), 2.0f, FLinearColor::Yellow);
+			}
 		}
 	}
 }

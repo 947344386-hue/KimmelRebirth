@@ -8,9 +8,12 @@
 #include "Data/ClcShellTextureConfig.h"
 #include "Data/ClcJadeTextureConfig.h"
 #include "ClcDeveloperSettings.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/LocalPlayer.h"
 
 AClcOpeningStone::AClcOpeningStone()
 {
@@ -188,11 +191,28 @@ bool AClcOpeningStone::GrindAtUV(float U, float V)
 	AccumulatedCrackRatio += Result.NewCrackFraction;
 	AccumulatedBlackRatio += Result.NewBlackFraction;
 
-	// 首次开到绿——种水暴露，通知 Workbench 立即刷新 HUD
+	// 首次开到绿——种水暴露，通知 Workbench 立即刷新 HUD + 飘字强化爽点
 	if (Result.bHitGreen && !bGradeRevealed)
 	{
 		bGradeRevealed = true;
 		bHUDDirty = true;
+
+		// 飘字"见绿"——赌石核心时刻
+		if (UWorld* W = GetWorld())
+		{
+			if (APlayerController* PC = W->GetFirstPlayerController())
+			{
+				if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
+				{
+					FString GradeName = TEXT("玉");
+					if (const UEnum* E = StaticEnum<EClcJadeGrade>())
+					{
+						GradeName = E->GetDisplayNameTextByValue(static_cast<int32>(CachedStoneData.Internal.Grade)).ToString();
+					}
+					LT->AddLog(FString::Printf(TEXT("见绿！种水初现：%s"), *GradeName), 2.5f, FLinearColor::Green);
+				}
+			}
+		}
 	}
 
 	return true;

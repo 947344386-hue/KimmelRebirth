@@ -138,6 +138,17 @@ protected:
 	/** 消耗耐久（自动 Clamp 到 0） */
 	void ConsumeDurability(float Amount);
 
+	/** 检查耐久状态并飘字提示——耐久耗尽飘一次红字，低于阈值飘一次黄字预警。
+	 *  两个一次性标志在每次 Spawn 重置：进工作台若工具已坏/低耐久会再提醒一次。 */
+	void CheckDurabilityAndNotify();
+
+	/** 耐久低预警阈值比例 */
+	static constexpr float LowDurabilityThreshold = 0.2f;
+
+	/** 一次性提示标志（防止同一工具实例重复飘字） */
+	bool bBrokenNotified = false;
+	bool bLowDurabilityNotified = false;
+
 	// ---- 组件 ----
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

@@ -286,6 +286,9 @@ private:
 	/** 按键提示句柄：进入范围注册 F（使用工作台），离开/EndPlay 注销 */
 	int32 WorkbenchPromptHandle = 0;
 
+	/** 进入范围飘字冷却（per-instance，防 overlap 抖动；多台工作台各自计时） */
+	double LastEnterToastTime = 0.0;
+
 	// ---- 工作台状态 ----
 
 	EClcWorkbenchState CurrentState = EClcWorkbenchState::Inactive;

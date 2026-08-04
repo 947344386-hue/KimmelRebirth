@@ -11,8 +11,10 @@
 #include "Data/ClcMerchantTalkConfig.h"
 #include "Data/ClcMerchantPersonality.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Data/ClcStallConfig.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "UI/ClcMerchantBubbleWidget.h"
 #include "UI/ClcMerchantEagleEyeWidget.h"
 #include "ClcDeveloperSettings.h"
@@ -816,6 +818,23 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 			PlayerInRange = Pawn;
 			CurrentTalkState = ETalkState::Enter;
 			RefreshTalkBubble();
+
+			// 进入商人话术范围——一次性飘字提示瞄准石料按 E 购入
+			{
+				static double LastEnterToastTime = 0.0;
+				const double Now = FPlatformTime::Seconds();
+				if (Now - LastEnterToastTime > 3.0)
+				{
+					LastEnterToastTime = Now;
+					if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
+					{
+						if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
+						{
+							LT->AddLog(TEXT("瞄准石料按 E 购入"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+						}
+					}
+				}
+			}
 		}
 	}
 }

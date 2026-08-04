@@ -1043,6 +1043,20 @@ void AClcStoneVendor::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp,
 			PlayerInRange = Pawn;
 			CachePlayerRefs();
 
+			// 进入回收台范围——满足交互条件（背包有石头）才一次性飘字
+			if (CachedBackpack && CachedBackpack->GetStones().Num() > 0)
+			{
+				const double Now = FPlatformTime::Seconds();
+				if (Now - LastEnterToastTime > 3.0)
+				{
+					LastEnterToastTime = Now;
+					if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
+					{
+						LT->AddLog(TEXT("按 F 与收石商谈判"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+					}
+				}
+			}
+
 			if (VendorPromptHandle == 0 && CachedPC.IsValid())
 			{
 				if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())

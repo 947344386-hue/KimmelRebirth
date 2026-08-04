@@ -53,14 +53,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
 	void AddGoldBP(int32 Amount) { AddGold(Amount); }
 
+	/** 背包槽位上限（外部判满用，如购买前检查） */
+	static constexpr int32 MAX_STONE_SLOTS = 200;
+
 private:
 	void ShowNotification(const FString& Message);
 	void DeferredRegisterBPrompt();
 
 	TArray<FClcStoneRuntimeData> Stones;
 	int32 Gold = 0;
-
-	static constexpr int32 MAX_STONE_SLOTS = 200;
 
 	UPROPERTY(Transient)
 	UClcBackpackWidget* BackpackWidget;

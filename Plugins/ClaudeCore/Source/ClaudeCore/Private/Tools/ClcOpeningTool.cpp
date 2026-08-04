@@ -48,6 +48,9 @@ void AClcOpeningTool::OnLeftClick(bool bPressed)
 
 void AClcOpeningTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 {
+	// 进入工作台时若耐久已耗尽（持久化值），一次性提示玩家前往修理
+	CheckDurabilityAndNotify();
+
 	if (!TargetStone) return;
 
 	const bool bWasTarget = bHasTarget;

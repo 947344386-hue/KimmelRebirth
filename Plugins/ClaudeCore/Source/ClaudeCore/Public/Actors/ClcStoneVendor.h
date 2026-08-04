@@ -360,6 +360,9 @@ private:
 	/** 按键提示句柄：进入范围注册 F（出售），离开/EndPlay 注销 */
 	int32 VendorPromptHandle = 0;
 
+	/** 进入范围飘字冷却（per-instance，防 overlap 抖动；多台回收台各自计时） */
+	double LastEnterToastTime = 0.0;
+
 	// ---- 内部流程 ----
 
 	void CachePlayerRefs();

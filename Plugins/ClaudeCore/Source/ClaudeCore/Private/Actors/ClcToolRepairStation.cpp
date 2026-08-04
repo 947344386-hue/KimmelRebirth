@@ -292,7 +292,20 @@ void AClcToolRepairStation::OnTriggerBeginOverlap(UPrimitiveComponent* Overlappe
 
 	bPlayerInRange = true;
 	CachedPC = Cast<APlayerController>(Pawn->GetController());
-	// 按键提示由 Tick 按 IsLookedAtByPlayer 动态维护，不在此处注册
+
+	// 进入修理站范围——满足交互条件（有工具需要修复）才一次性飘字提示按 F 修复工具
+	if (CachedPC.IsValid() && HasToolsNeedingRepair())
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastEnterToastTime > 3.0)
+		{
+			LastEnterToastTime = Now;
+			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
+			{
+				LT->AddLog(FString::Printf(TEXT("按 F 修复工具：%s"), *BuildToolNamesString()), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+			}
+		}
+	}
 }
 
 void AClcToolRepairStation::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,

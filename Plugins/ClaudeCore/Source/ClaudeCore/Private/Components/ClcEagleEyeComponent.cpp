@@ -6,6 +6,7 @@
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "ClcDeveloperSettings.h"
 #include "Actors/ClcStoneStall.h"
 #include "Actors/ClcMerchant.h"
@@ -388,6 +389,7 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 	const FVector Center = Owner->GetActorLocation();
 	const float RadiusSq = FMath::Square(FMath::Max(0.0f, Config->ScanRadius));
 
+	int32 InRangeMerchantCount = 0;
 	if (MarketSubsystem)
 	{
 		for (const auto& StallPtr : MarketSubsystem->GetStalls())
@@ -400,6 +402,7 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 
 			if (FVector::DistSquared(Merchant->GetActorLocation(), Center) <= RadiusSq)
 			{
+				++InRangeMerchantCount;
 				Merchant->ShowBubble(FMath::Max(0.0f, Config->ActiveDuration));
 			}
 		}
@@ -407,6 +410,21 @@ void UClcEagleEyeComponent::ActivateEagleEye()
 
 	StartOrRestartScanPulse(Center);
 	StartOrRestartXRayScan(Center);
+
+	// 范围内没有商人 → 飘字告知玩家鹰眼并非失效，只是无可洞察目标
+	if (InRangeMerchantCount == 0)
+	{
+		if (APawn* Pawn = Cast<APawn>(Owner))
+		{
+			if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
+			{
+				if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
+				{
+					LT->AddLog(TEXT("附近没有可洞察的商人"), 2.0f, FLinearColor::Yellow);
+				}
+			}
+		}
+	}
 
 	CooldownTimer = FMath::Max(0.0f, Config->CooldownDuration);
 	bCoolingDown = CooldownTimer > 0.0f;

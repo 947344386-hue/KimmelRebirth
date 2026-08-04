@@ -665,13 +665,6 @@ void AClcMerchant::ShowBubble(float Duration)
 	RefreshEagleEyeWidget();
 }
 
-void AClcMerchant::HideBubble()
-{
-	bEagleEyeActive = false;
-	EagleEyeTimer = 0.0f;
-	RefreshEagleEyeWidget();
-}
-
 void AClcMerchant::RefreshTalkBubble()
 {
 #if !UE_BUILD_SHIPPING

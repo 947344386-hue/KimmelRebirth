@@ -180,14 +180,6 @@ bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 	return true;
 }
 
-void UClcBackpackSubsystem::UpdateStoneData(int32 Index, const FClcStoneRuntimeData& UpdatedData)
-{
-	if (Stones.IsValidIndex(Index))
-	{
-		Stones[Index] = UpdatedData;
-	}
-}
-
 void UClcBackpackSubsystem::ShowNotification(const FString& Message)
 {
 	if (GEngine)

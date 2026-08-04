@@ -28,9 +28,6 @@ public:
 	virtual bool SpendGold(int32 Amount) override;
 
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
-	void UpdateStoneData(int32 Index, const FClcStoneRuntimeData& UpdatedData);
-
-	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
 	void ToggleBackpack();
 
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")

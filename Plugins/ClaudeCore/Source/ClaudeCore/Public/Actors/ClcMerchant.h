@@ -32,7 +32,7 @@ class APawn;
  * 口头气泡与鹰眼洞察使用独立 Widget，可在玩家处于话术范围内时同屏显示。
  * 鹰眼开启/结束只影响洞察 UI，不覆盖或销毁口头气泡。
  *
- * 生命周期：由 AClcStoneStall spawn + Initialize。鹰眼通过 ShowBubble/HideBubble 切鹰眼模式。
+ * 生命周期：由 AClcStoneStall spawn + Initialize。鹰眼通过 ShowBubble 切鹰眼模式。
  */
 UCLASS()
 class CLAUDECORE_API AClcMerchant : public AActor
@@ -51,14 +51,6 @@ public:
 	/** 鹰眼激活/刷新——刷新本商人残留计时（Duration 秒）并显示洞察 UI；范围外商人不被调，保留自己残留 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
 	void ShowBubble(float Duration);
-
-	/** 强制立即结束本商人鹰眼（不等残留计时）；新模型组件不再调，保留作强制清理入口 */
-	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
-	void HideBubble();
-
-	/** 当前是否显示任一商人 UI */
-	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")
-	bool IsBubbleVisible() const { return TalkBubbleWidget != nullptr || EagleEyeWidget != nullptr; }
 
 	/** 获取当前性格（可能为空） */
 	UFUNCTION(BlueprintCallable, Category = "ClcMerchant")

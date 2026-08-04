@@ -172,9 +172,6 @@ private:
 	/** 已开窗像素中裂纹像素数——同上 */
 	int32 OpenedCrackPixelCount = 0;
 
-	/** 已开窗像素中杂裂（杂质+裂纹）合计像素数——兼容旧字段 */
-	int32 OpenedBlackPixelCount = 0;
-
 	// ---- GPU 资源 ----
 
 	UPROPERTY()

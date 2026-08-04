@@ -20,21 +20,6 @@ enum class EClcJadeGrade : uint8
 };
 
 /**
- * 玉肉结构原型——决定一块石头的“结构故事”：玉肉如何分布。
- * 生成时按 Seed 选择，影响玉肉放置策略与最大连续块形态。
- */
-UENUM(BlueprintType)
-enum class EClcJadeArchetype : uint8
-{
-	SingleCore = 0       UMETA(DisplayName = "单核满肉"),   //!< 单大块玉肉，最大连续块占比高
-	CoreWithSatellites = 1 UMETA(DisplayName = "主核卫星"), //!< 主体 + 少量卫星小块
-	BandedVein = 2       UMETA(DisplayName = "带状玉脉"),   //!< 拉长带状，方向性明显
-	OffCenter = 3        UMETA(DisplayName = "偏心核"),     //!< 单块偏置到一侧
-	ScatteredFlowers = 4 UMETA(DisplayName = "散花"),       //!< 多个小簇，最大连续块占比低
-	NearFull = 5         UMETA(DisplayName = "近满肉")      //!< 玉肉几乎填满，少量废肉/缺陷
-};
-
-/**
  * 分布图逐像素的材质类别（四值）。取代旧的 0/1/2 三值语义：
  * 全图不再“非绿即黑”，而是玉肉 / 杂质 / 裂纹 / 废肉四种独立场。
  *
@@ -149,14 +134,6 @@ struct CLAUDECORE_API FClcStoneInternalData
 	/** 最大单块连续玉肉占全石玉肉面积的比例 [0,1]——生成后实测，连续性判定权威输入 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float LargestGreenPatchRatio = 0.0f;
-
-	/** 玉肉结构原型（EClcJadeArchetype）——决定“结构故事”，生成时按 Seed 选定 */
-	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
-	uint8 JadeArchetype = 0;
-
-	/** 分布算法版本——前向兼容与确定性重建依据（当前=1） */
-	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
-	int32 DistAlgoVersion = 1;
 
 	/** 产地名称 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")

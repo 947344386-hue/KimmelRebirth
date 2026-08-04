@@ -432,9 +432,6 @@ void ACombatCharacter::BeginPlay()
 	// initialize the camera
 	GetCameraBoom()->TargetArmLength = DefaultCameraDistance;
 
-	// save the relative transform for the mesh so we can reset the ragdoll later
-	MeshStartingTransform = GetMesh()->GetRelativeTransform();
-
 	// set the life bar color
 	LifeBarWidget->SetBarColor(LifeBarColor);
 

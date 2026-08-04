@@ -170,9 +170,6 @@ protected:
 	/** Character respawn timer */
 	FTimerHandle RespawnTimer;
 
-	/** Copy of the mesh's transform so we can reset it after ragdoll animations */
-	FTransform MeshStartingTransform;
-
 public:
 	
 	/** Constructor */

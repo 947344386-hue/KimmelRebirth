@@ -162,6 +162,10 @@ bool AClcToolRepairStation::HasToolsNeedingRepair() const
 	{
 		if (DuraSys->NeedsRepair(EClcRepairableTool::Flashlight)) return true;
 	}
+	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Combined))
+	{
+		if (DuraSys->NeedsRepair(EClcRepairableTool::Combined)) return true;
+	}
 	return false;
 }
 
@@ -249,6 +253,10 @@ FString AClcToolRepairStation::BuildToolNamesString() const
 	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Flashlight))
 	{
 		Names.Add(TEXT("手电筒"));
+	}
+	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Combined))
+	{
+		Names.Add(TEXT("手电开窗器"));
 	}
 	if (Names.IsEmpty())
 	{

@@ -744,7 +744,8 @@ void AClcMerchant::EnsureTalkBubbleWidget()
 	{
 		TalkBubbleWidget->SetAnchor(Mesh, Config->TalkBubbleAnchorOffset);
 		TalkBubbleWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
-		TalkBubbleWidget->AddToViewport(50);
+		TalkBubbleWidget->SetOffScreenSettings(Config->bEnableOffScreenIndicator, Config->OffScreenEdgeMargin, Config->OffScreenScale);
+		TalkBubbleWidget->AddToViewport(120); // 高于背包(100)，背包打开时不被面板盖住
 		TalkBubbleWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();
 	}
@@ -762,7 +763,8 @@ void AClcMerchant::EnsureEagleEyeWidget()
 	{
 		EagleEyeWidget->SetAnchor(Mesh, Config->EagleEyeAnchorOffset);
 		EagleEyeWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
-		EagleEyeWidget->AddToViewport(51);
+		// 鹰眼洞察不做离屏钳制——保持离屏即隐藏的旧行为（仅口头气泡有屏幕外指示器）
+		EagleEyeWidget->AddToViewport(121); // 同口头气泡，高于背包
 		EagleEyeWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();
 	}

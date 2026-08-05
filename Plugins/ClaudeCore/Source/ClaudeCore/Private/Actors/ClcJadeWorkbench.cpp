@@ -6,6 +6,7 @@
 #include "Tools/ClcStoneTool.h"
 #include "Tools/ClcOpeningTool.h"
 #include "Tools/ClcFlashlightTool.h"
+#include "Tools/ClcCombinedTool.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
@@ -19,6 +20,7 @@
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcWorkbenchHUD.h"
@@ -91,6 +93,7 @@ AClcJadeWorkbench::AClcJadeWorkbench()
 	// ---- 工具类默认值（用户可在 Workbench Details 中改为 BP 子类） ----
 	OpeningToolClass = AClcOpeningTool::StaticClass();
 	FlashlightToolClass = AClcFlashlightTool::StaticClass();
+	CombinedToolClass = AClcCombinedTool::StaticClass();
 }
 
 void AClcJadeWorkbench::BeginPlay()
@@ -264,13 +267,23 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	// ---- T 键循环切换工具 ----
+	// ---- T 键：组合工具=开关手电；否则循环切换开窗器/手电筒 ----
 	{
 		const bool bTDown = CachedPC->IsInputKeyDown(ToolSwitchKey);
 		if (bTDown && !bTKeyPrev)
 		{
 			bTKeyPrev = true;
-			CycleToolMode();
+			if (CurrentToolMode == EClcToolMode::Combined)
+			{
+				if (AClcCombinedTool* CT = Cast<AClcCombinedTool>(CurrentTool))
+				{
+					CT->ToggleLight();
+				}
+			}
+			else
+			{
+				CycleToolMode();
+			}
 		}
 		else if (!bTDown)
 		{
@@ -457,6 +470,9 @@ void AClcJadeWorkbench::SpawnCurrentTool()
 	case EClcToolMode::Flashlight:
 		ToolClass = FlashlightToolClass;
 		break;
+	case EClcToolMode::Combined:
+		ToolClass = CombinedToolClass;
+		break;
 	}
 
 	if (!ToolClass) return;
@@ -478,6 +494,9 @@ void AClcJadeWorkbench::SpawnCurrentTool()
 			break;
 		case EClcToolMode::Flashlight:
 			CurrentTool->SetToolType(EClcRepairableTool::Flashlight);
+			break;
+		case EClcToolMode::Combined:
+			CurrentTool->SetToolType(EClcRepairableTool::Combined);
 			break;
 		}
 		CurrentTool->Initialize(OpeningStone);
@@ -526,6 +545,15 @@ void AClcJadeWorkbench::UpdateFillLightTarget()
 	if (CurrentToolMode == EClcToolMode::Opener)
 	{
 		TargetFillLightIntensity = OpenerFillLightIntensity;
+		return;
+	}
+
+	// 组合工具：灯开→压暗让 X-ray 突出，灯关→同开窗器亮度看清打磨
+	if (CurrentToolMode == EClcToolMode::Combined)
+	{
+		const AClcCombinedTool* CT = Cast<AClcCombinedTool>(CurrentTool);
+		const bool bLightOn = CT && CT->IsLightOn();
+		TargetFillLightIntensity = bLightOn ? FlashlightActiveFillLightIntensity : OpenerFillLightIntensity;
 		return;
 	}
 
@@ -953,8 +981,10 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 		return;
 	}
 
-	// 生成默认工具（开窗器）
-	CurrentToolMode = EClcToolMode::Opener;
+	// 生成默认工具：拥有「手电开窗器」升级 → 组合工具；否则开窗器
+	UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld());
+	const bool bHasCombined = DuraSys && DuraSys->HasCombinedTool();
+	CurrentToolMode = bHasCombined ? EClcToolMode::Combined : EClcToolMode::Opener;
 	SpawnCurrentTool();
 
 	// 默认工具没走 SwitchToolMode，这里手动触发一次让 BP 刷新客户端表现
@@ -1179,12 +1209,21 @@ void AClcJadeWorkbench::PushHUDData()
 		Data.ToolDurability = CurrentTool->GetDurabilityRatio();
 
 		// 工具名——根据模式给中文
-		Data.ToolName = (CurrentToolMode == EClcToolMode::Flashlight) ? TEXT("手电筒") : TEXT("开窗器");
+		switch (CurrentToolMode)
+		{
+		case EClcToolMode::Flashlight: Data.ToolName = TEXT("手电筒"); break;
+		case EClcToolMode::Combined:   Data.ToolName = TEXT("手电开窗器"); break;
+		default:                       Data.ToolName = TEXT("开窗器"); break;
+		}
 
-		// 手电筒模式下查询灯是否开启
+		// 灯是否开启（手电筒或组合工具）
 		if (AClcFlashlightTool* FT = Cast<AClcFlashlightTool>(CurrentTool))
 		{
 			Data.bToolActive = FT->IsLightOn();
+		}
+		else if (AClcCombinedTool* CT = Cast<AClcCombinedTool>(CurrentTool))
+		{
+			Data.bToolActive = CT->IsLightOn();
 		}
 	}
 	else
@@ -1193,9 +1232,18 @@ void AClcJadeWorkbench::PushHUDData()
 	}
 
 	// ── 操作提示——按当前工具模式给不同文案 ──
-	Data.OperationHints = (CurrentToolMode == EClcToolMode::Flashlight)
-		? TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出")
-		: TEXT("左键 开窗 | 滚轮 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+	switch (CurrentToolMode)
+	{
+	case EClcToolMode::Flashlight:
+		Data.OperationHints = TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		break;
+	case EClcToolMode::Combined:
+		Data.OperationHints = TEXT("左键 开窗 | T 开/关手电 | 滚轮 笔刷大小\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		break;
+	default:
+		Data.OperationHints = TEXT("左键 开窗 | 滚轮 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		break;
+	}
 
 	HUDWidget->RefreshData(Data);
 }

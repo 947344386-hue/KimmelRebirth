@@ -49,9 +49,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void RestoreDurability(EClcRepairableTool ToolType);
 
-	/** 按位掩码批量恢复耐久（Bitmask：Opener=1|Flashlight=2） */
+	/** 按位掩码批量恢复耐久（Bitmask：Opener=1|Flashlight=2|Combined=4） */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void RestoreDurabilityMask(int32 Mask);
+
+	// ---- 升级所有权（运行时内存，与耐久同生命周期；跨工作台会话保持，不跨游戏重启） ----
+
+	/** 玩家是否拥有指定升级 */
+	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
+	bool OwnsUpgrade(EClcToolUpgrade Upgrade) const;
+
+	/** 授予升级；已拥有则返回 false 不重复授予 */
+	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
+	bool GrantUpgrade(EClcToolUpgrade Upgrade);
+
+	/** 便捷封装：是否拥有「手电开窗器」组合工具升级 */
+	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
+	bool HasCombinedTool() const { return OwnsUpgrade(EClcToolUpgrade::CombinedTool); }
 
 	/** 是否需要修复（耐久 < 最大值） */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
@@ -71,4 +85,7 @@ private:
 
 	/** 每种工具的最大耐久（由工具 Spawn 时注册，BP 可配） */
 	TMap<EClcRepairableTool, float> MaxDurabilityStore;
+
+	/** 已购买的升级集合 */
+	TSet<EClcToolUpgrade> OwnedUpgrades;
 };

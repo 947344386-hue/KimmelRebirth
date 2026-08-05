@@ -13,7 +13,8 @@ UENUM(BlueprintType)
 enum class EClcToolMode : uint8
 {
 	Opener     UMETA(DisplayName = "开窗器"),
-	Flashlight UMETA(DisplayName = "手电筒")
+	Flashlight UMETA(DisplayName = "手电筒"),
+	Combined   UMETA(DisplayName = "手电开窗器")
 };
 
 class USphereComponent;
@@ -193,6 +194,10 @@ protected:
 	/** 手电筒工具类——默认用 C++ 类，可改为 BP 子类覆写 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Tools")
 	TSubclassOf<AClcStoneTool> FlashlightToolClass;
+
+	/** 组合工具（手电开窗器）类——拥有升级后工作台改用此类 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Tools")
+	TSubclassOf<AClcStoneTool> CombinedToolClass;
 
 	// ---- HUD 蓝图槽位 ----
 

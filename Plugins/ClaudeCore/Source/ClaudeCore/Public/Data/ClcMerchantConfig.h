@@ -98,6 +98,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|Perspective")
 	FClcMerchantUISimulatedPerspectiveSettings UISimulatedPerspective;
 
+	// ---- 屏幕外指示器（Off-Screen Indicator） ----
+
+	/** 气泡离屏时是否钳到屏幕边缘并显示指向箭头（关闭=旧行为，离屏直接隐藏）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|OffScreen")
+	bool bEnableOffScreenIndicator = true;
+
+	/** 气泡外缘到屏幕边缘的像素留白——气泡完整保持在屏内，指向箭头落在此间隙的正中。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|OffScreen", meta = (ClampMin = "0.0"))
+	float OffScreenEdgeMargin = 60.f;
+
+	/** 离屏钳制时气泡的固定缩放（HUD 指示器需稳定可读，不随距离缩）；1.0=原始尺寸。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI|OffScreen", meta = (ClampMin = "0.1"))
+	float OffScreenScale = 1.0f;
+
 	// ---- 时序 ----
 
 	/** 动画切换 blend 时长（秒，0=瞬切） */

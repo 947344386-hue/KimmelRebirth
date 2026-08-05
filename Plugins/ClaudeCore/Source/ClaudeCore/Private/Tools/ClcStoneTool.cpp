@@ -10,6 +10,18 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/LocalPlayer.h"
 
+// 工具类型 → 中文名（耐久提示用）
+static const TCHAR* GetToolDisplayName(EClcRepairableTool Type)
+{
+	switch (Type)
+	{
+	case EClcRepairableTool::Opener:     return TEXT("开窗器");
+	case EClcRepairableTool::Flashlight: return TEXT("手电筒");
+	case EClcRepairableTool::Combined:   return TEXT("手电开窗器");
+	default:                             return TEXT("工具");
+	}
+}
+
 AClcStoneTool::AClcStoneTool()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -110,7 +122,7 @@ void AClcStoneTool::CheckDurabilityAndNotify()
 			{
 				if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
 				{
-					const TCHAR* ToolName = (ToolType == EClcRepairableTool::Opener) ? TEXT("开窗器") : TEXT("手电筒");
+					const TCHAR* ToolName = GetToolDisplayName(ToolType);
 					LT->AddLog(FString::Printf(TEXT("%s耐久耗尽，需前往修理站修复"), ToolName), 2.5f, FLinearColor::Red);
 				}
 			}
@@ -126,7 +138,7 @@ void AClcStoneTool::CheckDurabilityAndNotify()
 		{
 			if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
 			{
-				const TCHAR* ToolName = (ToolType == EClcRepairableTool::Opener) ? TEXT("开窗器") : TEXT("手电筒");
+				const TCHAR* ToolName = GetToolDisplayName(ToolType);
 				LT->AddLog(FString::Printf(TEXT("%s耐久不足，即将耗尽"), ToolName), 2.0f, FLinearColor::Yellow);
 			}
 		}

@@ -72,6 +72,25 @@ void UClcToolDurabilitySubsystem::RestoreDurabilityMask(int32 Mask)
 	{
 		RestoreDurability(EClcRepairableTool::Flashlight);
 	}
+	if (Mask & static_cast<int32>(EClcRepairableTool::Combined))
+	{
+		RestoreDurability(EClcRepairableTool::Combined);
+	}
+}
+
+bool UClcToolDurabilitySubsystem::OwnsUpgrade(EClcToolUpgrade Upgrade) const
+{
+	return OwnedUpgrades.Contains(Upgrade);
+}
+
+bool UClcToolDurabilitySubsystem::GrantUpgrade(EClcToolUpgrade Upgrade)
+{
+	if (OwnedUpgrades.Contains(Upgrade))
+	{
+		return false;
+	}
+	OwnedUpgrades.Add(Upgrade);
+	return true;
 }
 
 bool UClcToolDurabilitySubsystem::NeedsRepair(EClcRepairableTool ToolType) const

@@ -16,8 +16,38 @@ enum class EClcRepairableTool : uint8
 	None       = 0   UMETA(Hidden),
 	Opener     = 1   UMETA(DisplayName = "开窗器"),
 	Flashlight = 2   UMETA(DisplayName = "手电筒"),
+	Combined   = 4   UMETA(DisplayName = "手电开窗器"),
 };
 ENUM_CLASS_FLAGS(EClcRepairableTool)
+
+/**
+ * 可购买的升级类型（升级台商店的一项）。
+ * 后续新增升级在此扩展，升级台 Upgrades 数组与 UClcToolDurabilitySubsystem::OwnedUpgrades 均按此键索引。
+ */
+UENUM(BlueprintType)
+enum class EClcToolUpgrade : uint8
+{
+	CombinedTool UMETA(DisplayName = "手电开窗器"),
+};
+
+/** 升级台的一项商品（BP 可在 Upgrades 数组里增补） */
+USTRUCT(BlueprintType)
+struct FClcToolUpgradeItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
+	EClcToolUpgrade Type = EClcToolUpgrade::CombinedTool;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
+	FString Name = TEXT("手电开窗器");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
+	FString Description = TEXT("合并开窗器与手电筒，T 切换手电");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade", meta = (ClampMin = "0"))
+	int32 Cost = 2000;
+};
 
 /** Workbench 每帧做完鼠标 LineTrace 后传给工具的上下文 */
 USTRUCT(BlueprintType)

@@ -14,7 +14,9 @@ enum class EClcToolMode : uint8
 {
 	Opener     UMETA(DisplayName = "开窗器"),
 	Flashlight UMETA(DisplayName = "手电筒"),
-	Combined   UMETA(DisplayName = "手电开窗器")
+	Combined   UMETA(DisplayName = "手电开窗器"),
+	// 玩家离开工作台时触发，表示当前无工具——供蓝图做退出编排
+	None       UMETA(DisplayName = "无工具")
 };
 
 class USphereComponent;

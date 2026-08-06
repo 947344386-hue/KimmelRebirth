@@ -769,6 +769,10 @@ void AClcJadeWorkbench::ExitOpeningMode()
 
 	OnExitOpeningMode();
 
+	// 玩家离开工作台——当前无工具，通知蓝图做退出编排（隐藏工具 UI/特效等）
+	CurrentToolMode = EClcToolMode::None;
+	OnToolModeChanged(EClcToolMode::None);
+
 	// 恢复光标和输入模式
 	SetWorkbenchCursor(false);
 

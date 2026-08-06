@@ -15,13 +15,14 @@
 3. 启用 ClaudeCore 插件（Settings → Plugins → 重启编辑器）。
 4. 编译项目。
 5. **角色接线**：给玩家角色 BP 加 `ClcInteractionComponent`（屏幕中心准星自动加载 `/Game/JadeBetting/UI/WBP_Reticle`；`ReticleWidgetClass` 留空即用默认）。准星贴图 `T_ReticleRing`（外圈）+ `T_ReticleCross`（十字），同 DrawSize 叠放。
-6. **摆 Actor**：`BP_StoneStall`（生成石头+商人）、`BP_StoneVendor`（出售）、`BP_JadeWorkbench`（开窗）、`BP_ToolRepairStation`（修工具耐久）。
+6. **摆 Actor**：`BP_StoneStall`（生成石头+商人）、`BP_StoneVendor`（出售）、`BP_JadeWorkbench`（开窗）、`BP_ToolRepairStation`（修工具耐久）、`BP_ToolUpgradeStation`（花钱升级工具，如合并手电+开窗器）。
 
 ## 输入
 赌石交互走各 Actor 的 `FKey` 字段**直接轮询**（BP Details 可改键，不依赖 EnhancedInput IA）：
-- 工作台 `AClcJadeWorkbench`：F=进入开窗 / Esc=退出 / B=背包选石 / T=切工具 / **滚轮=笔刷大小** / 右键=FOV 放大
+- 工作台 `AClcJadeWorkbench`：F=进入开窗 / Esc=退出 / B=背包选石 / T=切工具（未升级）或 T=开关手电（升级组合工具后） / **滚轮=笔刷大小** / 右键=FOV 放大
 - 回收商 `AClcStoneVendor`：F=进入出售 / Esc=退出
 - 修理站 `AClcToolRepairStation`：F=支付金币修复配置的工具耐久（走近 + 摄像机瞄准触发）
+- 升级台 `AClcToolUpgradeStation`：F=打开升级列表，选中花钱购买升级（首个升级项=「手电开窗器」，合并开窗器与手电为一件工具）
 - 石头购买：BP 绑键调 `AClcStone::PurchaseStone`
 - 鹰眼：Q 调 `UClcEagleEyeComponent::ActivateEagleEye`
 - 角色移动/视角：用你项目自带输入
@@ -33,9 +34,10 @@
 - 市场/定价：`UClcStoneMarketSubsystem`（GameInstanceSubsystem）
 - 石头/摊位：`AClcStone`、`AClcStoneStall`
 - 背包：`UClcBackpackSubsystem`（LocalPlayerSubsystem，上限 200 格）
-- 工作台/开窗：`AClcJadeWorkbench`、`UClcOpeningMaskComponent`、`AClcOpeningTool`、`AClcFlashlightTool`
-- 工具耐久持久化：`UClcToolDurabilitySubsystem`（LocalPlayerSubsystem，跨工作台会话保存每种工具的耐久；max 由工具实例注册，BP 可配）
+- 工作台/开窗：`AClcJadeWorkbench`、`UClcOpeningMaskComponent`、`AClcOpeningTool`、`AClcFlashlightTool`、`AClcCombinedTool`（升级后合并工具，继承开窗器+叠加手电）
+- 工具耐久持久化：`UClcToolDurabilitySubsystem`（LocalPlayerSubsystem，跨工作台会话保存每种工具的耐久；max 由工具实例注册，BP 可配；还管升级所有权 `OwnedUpgrades`）
 - 工具修理站：`AClcToolRepairStation`（可放置 Actor，Bitmask 多选修复工具类型 + 金币消耗）
+- 工具升级台：`AClcToolUpgradeStation`（可放置 Actor，范围+瞄准按 F 弹升级列表菜单，花钱购买升级）
 - 商人/鹰眼：`AClcMerchant`、`UClcEagleEyeComponent`
 - 回收：`AClcStoneVendor`
 - 中心准星/交互收敛：`UClcInteractionComponent`、`UClcInteractionIndicator`、`IClcInteractable`

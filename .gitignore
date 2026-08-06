@@ -18,3 +18,6 @@ LocalDerivedDataCache/
 *.sln
 .vsconfig
 Plugins/VibeUE/
+
+# Per-user 编辑器设置（内容浏览器状态等，不应共享）
+Config/DefaultEditorPerProjectUserSettings.ini

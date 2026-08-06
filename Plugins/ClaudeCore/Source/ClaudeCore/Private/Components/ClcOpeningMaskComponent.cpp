@@ -297,7 +297,9 @@ void UClcOpeningMaskComponent::EnsureRevealTexFromDistribution(const FClcStoneDi
 
 	RevealTex->SRGB = true;
 	RevealTex->CompressionSettings = TC_Default;
+#if WITH_EDITORONLY_DATA
 	RevealTex->MipGenSettings = TMGS_NoMipmaps;
+#endif
 	RevealTex->UpdateResource();
 
 	RevealTex->AddToRoot();
@@ -380,7 +382,9 @@ void UClcOpeningMaskComponent::EnsureTypeTexFromDistribution(const FClcStoneDist
 	// mask 数据用线性空间 + Masks 压缩（4 通道独立）
 	TypeTex->SRGB = false;
 	TypeTex->CompressionSettings = TC_Masks;
+#if WITH_EDITORONLY_DATA
 	TypeTex->MipGenSettings = TMGS_NoMipmaps;
+#endif
 	TypeTex->UpdateResource();
 	TypeTex->AddToRoot();
 }

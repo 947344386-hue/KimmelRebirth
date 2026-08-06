@@ -143,22 +143,36 @@ FText AClcToolUpgradeStation::GetInteractionPrompt() const
 
 bool AClcToolUpgradeStation::OnInteract(AActor* Interactor)
 {
-	if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+	if (!CanOpenMenu())
 	{
-		if (!bMenuOpen)
-		{
-			OpenMenu();
-		}
-		return true;
+		return false;
 	}
-	return false;
+
+	OpenMenu();
+	return bMenuOpen;
 }
 
 // ---- 菜单 ----
 
+bool AClcToolUpgradeStation::CanOpenMenu() const
+{
+	if (bMenuOpen || !bPlayerInRange || !CachedPC.IsValid() || !IsLookedAtByPlayer())
+	{
+		return false;
+	}
+
+	const APlayerController* PC = CachedPC.Get();
+	const ULocalPlayer* LP = PC->GetLocalPlayer();
+	const UClcBackpackSubsystem* Backpack = LP ? LP->GetSubsystem<UClcBackpackSubsystem>() : nullptr;
+	return (!Backpack || !Backpack->IsBackpackOpen())
+		&& !PC->bShowMouseCursor
+		&& !PC->IsMoveInputIgnored()
+		&& !PC->IsLookInputIgnored();
+}
+
 void AClcToolUpgradeStation::OpenMenu()
 {
-	if (bMenuOpen || !CachedPC.IsValid()) return;
+	if (!CanOpenMenu()) return;
 
 	if (!MenuWidgetClass)
 	{
@@ -184,6 +198,7 @@ void AClcToolUpgradeStation::OpenMenu()
 	CachedPC->bShowMouseCursor = true;
 	CachedPC->SetIgnoreMoveInput(true);
 	CachedPC->SetIgnoreLookInput(true);
+	bOwnsInputState = true;
 
 	bMenuOpen = true;
 	OnUpgradeMenuOpened();
@@ -199,7 +214,7 @@ void AClcToolUpgradeStation::CloseMenu()
 		MenuWidget = nullptr;
 	}
 
-	if (CachedPC.IsValid())
+	if (CachedPC.IsValid() && bOwnsInputState)
 	{
 		UWidgetBlueprintLibrary::SetInputMode_GameOnly(CachedPC.Get());
 		CachedPC->bShowMouseCursor = false;
@@ -207,6 +222,7 @@ void AClcToolUpgradeStation::CloseMenu()
 		CachedPC->SetIgnoreLookInput(false);
 	}
 
+	bOwnsInputState = false;
 	bMenuOpen = false;
 	bEnterKeyPrev = false;
 	OnUpgradeMenuClosed();

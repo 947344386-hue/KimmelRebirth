@@ -10,7 +10,7 @@
  * 编辑器子系统——在工具栏添加中/英文切换按钮
  */
 UCLASS()
-class CLAUDECORE_API UClcEditorSubsystem : public UEditorSubsystem
+class CLAUDECOREEDITOR_API UClcEditorSubsystem : public UEditorSubsystem
 {
 	GENERATED_BODY()
 

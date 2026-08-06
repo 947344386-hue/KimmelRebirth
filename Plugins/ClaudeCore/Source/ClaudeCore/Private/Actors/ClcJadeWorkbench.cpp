@@ -357,6 +357,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 				const FVector RayEnd = RayOrigin + RayDir * 10000.0f;
 				FCollisionQueryParams QueryParams;
 				QueryParams.bTraceComplex = true;
+				QueryParams.bReturnFaceIndex = true;
 
 				if (GetWorld()->LineTraceSingleByChannel(
 					HitResult, RayOrigin, RayEnd,

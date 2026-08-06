@@ -51,15 +51,17 @@ float UClcToolDurabilitySubsystem::GetDurability(EClcRepairableTool ToolType) co
 void UClcToolDurabilitySubsystem::SetDurability(EClcRepairableTool ToolType, float Value)
 {
 	if (ToolType == EClcRepairableTool::None) return;
-	const float Clamped = FMath::Clamp(Value, 0.0f, GetMaxDurability(ToolType));
-	DurabilityStore.Add(ToolType, Clamped);
+	const float* MaxVal = MaxDurabilityStore.Find(ToolType);
+	if (!MaxVal) return;
+	DurabilityStore.Add(ToolType, FMath::Clamp(Value, 0.0f, *MaxVal));
 }
 
 void UClcToolDurabilitySubsystem::RestoreDurability(EClcRepairableTool ToolType)
 {
 	if (ToolType == EClcRepairableTool::None) return;
-	const float MaxVal = GetMaxDurability(ToolType);
-	DurabilityStore.Add(ToolType, MaxVal);
+	const float* MaxVal = MaxDurabilityStore.Find(ToolType);
+	if (!MaxVal) return;
+	DurabilityStore.Add(ToolType, *MaxVal);
 }
 
 void UClcToolDurabilitySubsystem::RestoreDurabilityMask(int32 Mask)
@@ -95,6 +97,7 @@ bool UClcToolDurabilitySubsystem::GrantUpgrade(EClcToolUpgrade Upgrade)
 
 bool UClcToolDurabilitySubsystem::NeedsRepair(EClcRepairableTool ToolType) const
 {
+	if (!MaxDurabilityStore.Contains(ToolType)) return false;
 	return GetDurability(ToolType) < GetMaxDurability(ToolType) - 0.01f;
 }
 

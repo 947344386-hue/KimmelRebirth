@@ -61,9 +61,12 @@ void UClcBackpackSubsystem::Deinitialize()
 {
 	if (BackpackPromptHandle != 0)
 	{
-		if (UClcKeyPromptSubsystem* KP = GetLocalPlayer()->GetSubsystem<UClcKeyPromptSubsystem>())
+		if (ULocalPlayer* LP = GetLocalPlayer())
 		{
-			KP->UnregisterKeyPrompt(BackpackPromptHandle);
+			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+			{
+				KP->UnregisterKeyPrompt(BackpackPromptHandle);
+			}
 		}
 		BackpackPromptHandle = 0;
 	}

@@ -92,6 +92,8 @@ protected:
 	void OnUpgradeFailed_NotEnoughGold(const FClcToolUpgradeItem& Item, int32 CurrentGold);
 
 private:
+	/** 当前输入状态是否允许打开升级菜单 */
+	bool CanOpenMenu() const;
 	/** 打开升级菜单 */
 	void OpenMenu();
 	/** 关闭升级菜单（恢复游戏输入） */
@@ -126,6 +128,7 @@ private:
 	UClcToolUpgradeMenuWidget* MenuWidget = nullptr;
 
 	bool bMenuOpen = false;
+	bool bOwnsInputState = false;
 
 	/** 按键边沿检测（自维护） */
 	bool bEnterKeyPrev = false;

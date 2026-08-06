@@ -1,10 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright ClaudeCore. All Rights Reserved.
 
 using UnrealBuildTool;
 
-public class ClaudeCore : ModuleRules
+public class ClaudeCoreEditor : ModuleRules
 {
-	public ClaudeCore(ReadOnlyTargetRules Target) : base(Target)
+	public ClaudeCoreEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -13,19 +13,15 @@ public class ClaudeCore : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"EnhancedInput",
-			"UMG",
-			"PhysicsCore",
-			"RenderCore",
-			"RHI",
-			"DeveloperSettings",
+			"EditorSubsystem",
+			"UnrealEd",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Slate",
 			"SlateCore",
-			"InputCore",
+			"ToolMenus",
 		});
 	}
 }

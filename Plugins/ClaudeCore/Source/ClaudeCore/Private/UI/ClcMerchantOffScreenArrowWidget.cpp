@@ -68,7 +68,9 @@ UTexture2D* UClcMerchantOffScreenArrowWidget::EnsureDefaultArrowTexture()
 	CachedArrowTexture = UTexture2D::CreateTransient(Size, Size, PF_B8G8R8A8);
 	if (!CachedArrowTexture) return nullptr;
 
+#if WITH_EDITORONLY_DATA
 	CachedArrowTexture->MipGenSettings = TMGS_NoMipmaps;
+#endif
 	CachedArrowTexture->SRGB = true;
 
 	FTexture2DMipMap& Mip = CachedArrowTexture->GetPlatformData()->Mips[0];

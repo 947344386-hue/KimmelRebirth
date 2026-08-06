@@ -41,11 +41,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	float GetDurability(EClcRepairableTool ToolType) const;
 
-	/** 写入工具当前耐久 */
+	/** 写入工具当前耐久；工具类型尚未注册时忽略 */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void SetDurability(EClcRepairableTool ToolType, float Value);
 
-	/** 恢复指定工具到满耐久（用注册的 MaxDurability） */
+	/** 恢复指定工具到满耐久；工具类型尚未注册时忽略 */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void RestoreDurability(EClcRepairableTool ToolType);
 

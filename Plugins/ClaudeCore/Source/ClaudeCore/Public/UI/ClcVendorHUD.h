@@ -85,6 +85,20 @@ struct CLAUDECORE_API FClcVendorHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Interaction")
 	FString OperationHints = TEXT("WASD 旋转 | R 复位 | 右键 放大\nB 换石 | Enter 售出 | Esc 退出");
 
+	// ── 解石展示 ──
+
+	/** 已解石暴露的总体积（cm³） */
+	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Cut")
+	float ExposedCutVolume = 0.0f;
+
+	/** 已解石暴露的玉肉体积（cm³） */
+	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Cut")
+	float ExposedJadeVolume = 0.0f;
+
+	/** 剩余未切体积（cm³） */
+	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Cut")
+	float RemainingVolume = 0.0f;
+
 	// ── NPC 台词 ──
 
 	/** NPC 当前台词——vendor 在高价值事件点填入对应文案，定时推送后 HUD 刷新显示 */

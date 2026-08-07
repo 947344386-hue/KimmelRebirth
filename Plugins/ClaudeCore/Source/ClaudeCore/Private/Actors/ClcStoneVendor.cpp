@@ -18,6 +18,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Actors/ClcOpeningStone.h"
+#include "Actors/ClcCuttingStone.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
@@ -231,7 +232,7 @@ void AClcStoneVendor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		ExitSellMode();
 	}
-	DestroyOpeningStone();
+	DestroyBenchStone();
 	DestroyVendorHUD();
 
 	if (InteractionIndicator)
@@ -282,10 +283,10 @@ bool AClcStoneVendor::OnInteract(AActor* Interactor)
 
 void AClcStoneVendor::RequestSell()
 {
-	if (CurrentState != EClcVendorState::StoneOnBench || !OpeningStone) return;
+	if (CurrentState != EClcVendorState::StoneOnBench || !BenchStone) return;
 
 	FClcStoneRuntimeData StoneRT;
-	const bool bHave = OpeningStone->GetStoneData(StoneRT);
+	const bool bHave = GetBenchStoneData(StoneRT);
 
 	// 已讨价锁定 → 直接按锁价售出（不再讨价）
 	if (bHave && StoneRT.bHaggleResolved)
@@ -320,7 +321,7 @@ void AClcStoneVendor::RequestSell()
 
 void AClcStoneVendor::CompleteSell()
 {
-	if (CurrentState != EClcVendorState::StoneOnBench || !OpeningStone) return;
+	if (CurrentState != EClcVendorState::StoneOnBench || !BenchStone) return;
 
 	UClcStoneMarketSubsystem* Market = nullptr;
 	if (UWorld* World = GetWorld())
@@ -338,17 +339,17 @@ void AClcStoneVendor::CompleteSell()
 
 	// 用台上石当前数据算参考价，再走统一售出
 	FClcStoneRuntimeData StoneRT;
-	OpeningStone->GetStoneData(StoneRT);
+	GetBenchStoneData(StoneRT);
 	CompleteSellWithPrice(Market->CalculateSalePrice(StoneRT));
 }
 
 void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 {
-	if (!OpeningStone) return;
+	if (!BenchStone) return;
 
-	// 读最新数据（vendor 不擦石，数据未变，保持链路一致）
+	// 读最新数据（vendor 不改造石头，数据未变，保持链路一致）
 	FClcStoneRuntimeData UpdatedData;
-	if (OpeningStone->GetStoneData(UpdatedData))
+	if (GetBenchStoneData(UpdatedData))
 	{
 		ActiveStoneData = UpdatedData;
 	}
@@ -360,7 +361,7 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 	}
 
 	// 销毁台上石头
-	DestroyOpeningStone();
+	DestroyBenchStone();
 
 	// 通知蓝图（音效/特效/动画）
 	OnStoneSold(ActiveStoneData, Price);
@@ -567,49 +568,124 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 
 	// 取出石头数据
 	ActiveStoneData = AllStones[StoneIndex];
+	BenchStonePhase = ActiveStoneData.Phase;
 
-	// 从背包移除（保持索引一致；石头此刻仅存于 OpeningStone + ActiveStoneData）
+	// 从背包移除（保持索引一致；石头此刻仅存于 BenchStone + ActiveStoneData）
 	CachedBackpack->RemoveStone(StoneIndex);
 
-	// Spawn AClcOpeningStone（不挂任何工具，纯展示已擦石状态）
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
 
 	const FTransform SpawnTransform = StoneSpawnPoint->GetComponentTransform();
+	bool bInitSuccess = false;
 
-	OpeningStone = GetWorld()->SpawnActor<AClcOpeningStone>(
-		AClcOpeningStone::StaticClass(),
-		SpawnTransform.GetLocation(),
-		SpawnTransform.Rotator(),
-		SpawnParams);
-
-	if (!OpeningStone)
+	// ---- Phase 分支：解石 → AClcCuttingStone；其他 → AClcOpeningStone ----
+	if (BenchStonePhase == EClcStonePhase::Cut)
 	{
-		UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] Failed to spawn OpeningStone!"));
-		OnNpcStonePlaceFailed();
-		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+		AClcCuttingStone* CuttingStone = GetWorld()->SpawnActor<AClcCuttingStone>(
+			AClcCuttingStone::StaticClass(),
+			SpawnTransform.GetLocation(),
+			SpawnTransform.Rotator(),
+			SpawnParams);
+
+		BenchStone = CuttingStone;
+		if (!CuttingStone)
 		{
-			PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+			UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] Failed to spawn CuttingStone!"));
+			OnNpcStonePlaceFailed();
+			if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+			{
+				PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+			}
+			return;
 		}
-		return;
+
+		CuttingStone->AttachToComponent(StoneSpawnPoint, FAttachmentTransformRules::KeepWorldTransform);
+
+		const float TargetCoverage = FMath::Max(ActiveStoneData.Internal.BlackRatio,
+			ActiveStoneData.Internal.ImpurityRatio + ActiveStoneData.Internal.CrackRatio);
+		const float ClampedCoverage = FMath::Clamp(
+			TargetCoverage > KINDA_SMALL_NUMBER ? TargetCoverage : FallbackDefectCoverage, 0.01f, 0.95f);
+		const int32 DefectCount = FMath::Clamp(2 + FMath::RoundToInt(ClampedCoverage * 4.0f), 2, 5);
+
+		if (!CuttingStone->Initialize(ActiveStoneData, DefectCount, ClampedCoverage,
+			VoxelResolution, ShellMaterialPath))
+		{
+			bInitSuccess = false;
+		}
+		else
+		{
+			BenchDisplayMesh = CuttingStone->GetDisplayMesh();
+			bInitSuccess = true;
+		}
+
+		if (!bInitSuccess)
+		{
+			UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] CuttingStone Initialize failed!"));
+			CuttingStone->Destroy();
+			BenchStone = nullptr;
+			BenchDisplayMesh.Reset();
+			OnNpcStonePlaceFailed();
+			if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+			{
+				PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+			}
+			return;
+		}
+	}
+	else
+	{
+		// Unworked / Windowed / HaggleResolved → 擦石台载体
+		AClcOpeningStone* OpStone = GetWorld()->SpawnActor<AClcOpeningStone>(
+			AClcOpeningStone::StaticClass(),
+			SpawnTransform.GetLocation(),
+			SpawnTransform.Rotator(),
+			SpawnParams);
+
+		BenchStone = OpStone;
+		if (!OpStone)
+		{
+			UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] Failed to spawn OpeningStone!"));
+			OnNpcStonePlaceFailed();
+			if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+			{
+				PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+			}
+			return;
+		}
+
+		OpStone->AttachToComponent(StoneSpawnPoint, FAttachmentTransformRules::KeepWorldTransform);
+
+		if (!OpStone->Initialize(ActiveStoneData, OpeningMaterialPath))
+		{
+			bInitSuccess = false;
+		}
+		else
+		{
+			BenchDisplayMesh = OpStone->GetStoneMesh();
+			bInitSuccess = true;
+		}
+
+		if (!bInitSuccess)
+		{
+			UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] OpeningStone Initialize failed!"));
+			OpStone->Destroy();
+			BenchStone = nullptr;
+			BenchDisplayMesh.Reset();
+			OnNpcStonePlaceFailed();
+			if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
+			{
+				PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
+			}
+			return;
+		}
 	}
 
-	// 挂到 StoneSpawnPoint，让石头跟随定位点
-	OpeningStone->AttachToComponent(StoneSpawnPoint, FAttachmentTransformRules::KeepWorldTransform);
-
-	// 初始化石头（加载 Mesh + 材质 + 还原已擦石遮罩）
-	if (!OpeningStone->Initialize(ActiveStoneData, OpeningMaterialPath))
+	// 记录初始旋转（出售台自管旋转展示）
+	if (BenchDisplayMesh.IsValid())
 	{
-		UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] OpeningStone Initialize failed!"));
-		OpeningStone->Destroy();
-		OpeningStone = nullptr;
-		OnNpcStonePlaceFailed();
-		if (UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr)
-		{
-			PendingNpcLine = Cfg->NpcStonePlaceFailedLine.ToString();
-		}
-		return;
+		BenchInitialRotation = BenchDisplayMesh->GetComponentQuat();
 	}
 
 	// 背包开闭状态监听初始化（B 键开关由全局 IA_Backpack 处理，这里只轮询响应）
@@ -682,11 +758,11 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 
 void AClcStoneVendor::RemoveStoneFromVendor()
 {
-	if (!OpeningStone) return;
+	if (!BenchStone) return;
 
 	// 读最新数据
 	FClcStoneRuntimeData UpdatedData;
-	if (OpeningStone->GetStoneData(UpdatedData))
+	if (GetBenchStoneData(UpdatedData))
 	{
 		ActiveStoneData = UpdatedData;
 	}
@@ -697,17 +773,80 @@ void AClcStoneVendor::RemoveStoneFromVendor()
 		CachedBackpack->AddStone(ActiveStoneData);
 	}
 
-	DestroyOpeningStone();
+	DestroyBenchStone();
 
 	ActiveStoneData = FClcStoneRuntimeData();
 }
 
-void AClcStoneVendor::DestroyOpeningStone()
+void AClcStoneVendor::DestroyBenchStone()
 {
-	if (OpeningStone)
+	if (BenchStone)
 	{
-		OpeningStone->Destroy();
-		OpeningStone = nullptr;
+		BenchStone->Destroy();
+		BenchStone = nullptr;
+	}
+	BenchDisplayMesh.Reset();
+	BenchStonePhase = EClcStonePhase::Unworked;
+}
+
+bool AClcStoneVendor::GetBenchStoneData(FClcStoneRuntimeData& OutData) const
+{
+	if (!BenchStone) return false;
+
+	// 按 Phase 分发——两种石头都实现了 GetStoneData
+	if (BenchStonePhase == EClcStonePhase::Cut)
+	{
+		if (AClcCuttingStone* CS = Cast<AClcCuttingStone>(BenchStone))
+		{
+			return CS->GetStoneData(OutData);
+		}
+	}
+	else
+	{
+		if (AClcOpeningStone* OS = Cast<AClcOpeningStone>(BenchStone))
+		{
+			return OS->GetStoneData(OutData);
+		}
+	}
+	return false;
+}
+
+void AClcStoneVendor::MarkHaggleResolvedOnActiveStone(int32 LockedPrice)
+{
+	ActiveStoneData.bHaggleResolved = true;
+	ActiveStoneData.HaggleLockedPrice = LockedPrice;
+
+	// 名字加锁价标记（覆盖已有阶段标签，锁价是最高阶段）
+	static const FString LockedSuffix = TEXT("【已锁价】");
+	static const FString WindowedSuffix = TEXT("【已擦石】");
+	static const FString CutSuffix = TEXT("【已解石】");
+	if (ActiveStoneData.DisplayName.EndsWith(*WindowedSuffix))
+	{
+		ActiveStoneData.DisplayName.LeftChopInline(WindowedSuffix.Len());
+	}
+	else if (ActiveStoneData.DisplayName.EndsWith(*CutSuffix))
+	{
+		ActiveStoneData.DisplayName.LeftChopInline(CutSuffix.Len());
+	}
+	if (!ActiveStoneData.DisplayName.EndsWith(*LockedSuffix))
+	{
+		ActiveStoneData.DisplayName += LockedSuffix;
+	}
+
+	// 同步到台上石头
+	if (BenchStonePhase == EClcStonePhase::Cut)
+	{
+		if (AClcCuttingStone* CS = Cast<AClcCuttingStone>(BenchStone))
+		{
+			CS->MarkHaggleResolved(LockedPrice);
+		}
+	}
+	else
+	{
+		if (AClcOpeningStone* OS = Cast<AClcOpeningStone>(BenchStone))
+		{
+			OS->MarkHaggleResolved(LockedPrice);
+		}
 	}
 }
 
@@ -717,13 +856,13 @@ void AClcStoneVendor::DestroyOpeningStone()
 
 void AClcStoneVendor::ProcessStoneOnBenchInput(float DeltaTime)
 {
-	if (!CachedPC.IsValid() || !OpeningStone) return;
+	if (!CachedPC.IsValid() || !BenchDisplayMesh.IsValid()) return;
 
 	// 右键 FOV 放大（纯视觉拉近）
 	UpdateAimZoom(DeltaTime);
 
-	// WASD 旋转（相机相对）
-	const float RotAmount = OpeningStone->GetRotationSpeed() * DeltaTime * RotationInputScale;
+	// WASD 旋转（相机相对）——出售台自管旋转，不通过石头 Actor 方法
+	const float RotAmount = DisplayRotationSpeed * DeltaTime * RotationInputScale;
 
 	float DeltaPitch = 0.0f;
 	float DeltaYaw = 0.0f;
@@ -736,8 +875,13 @@ void AClcStoneVendor::ProcessStoneOnBenchInput(float DeltaTime)
 	if (!FMath::IsNearlyZero(DeltaPitch) || !FMath::IsNearlyZero(DeltaYaw))
 	{
 		bResetRotationPending = false; // 用户手动旋转 → 取消复位
-		OpeningStone->AddRotationInput(DeltaPitch, DeltaYaw,
-			VendorCamera->GetRightVector(), VendorCamera->GetUpVector());
+
+		const FVector CamRight = VendorCamera->GetRightVector();
+		const FVector CamUp = VendorCamera->GetUpVector();
+		const FQuat CurrentQuat = BenchDisplayMesh->GetComponentQuat();
+		const FQuat PitchQuat(CamRight, FMath::DegreesToRadians(DeltaPitch));
+		const FQuat YawQuat(CamUp, FMath::DegreesToRadians(DeltaYaw));
+		BenchDisplayMesh->SetWorldRotation(YawQuat * PitchQuat * CurrentQuat);
 	}
 
 	// R 键旋转复位
@@ -754,9 +898,12 @@ void AClcStoneVendor::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	if (bResetRotationPending && OpeningStone)
+	if (bResetRotationPending && BenchDisplayMesh.IsValid())
 	{
-		if (OpeningStone->ResetRotation(DeltaTime, ResetRotationSpeed))
+		const FQuat CurrentQuat = BenchDisplayMesh->GetComponentQuat();
+		const FQuat TargetQuat = FMath::QInterpTo(CurrentQuat, BenchInitialRotation, DeltaTime, ResetRotationSpeed);
+		BenchDisplayMesh->SetWorldRotation(TargetQuat);
+		if (CurrentQuat.Equals(BenchInitialRotation, 0.001f))
 		{
 			bResetRotationPending = false;
 		}
@@ -776,7 +923,7 @@ void AClcStoneVendor::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	// Enter 售出（边沿检测，防连按；放最后，售出后 OpeningStone 已销毁）
+	// Enter 售出（边沿检测，防连按；放最后，售出后 BenchStone 已销毁）
 	{
 		const bool bSellDown = CachedPC->IsInputKeyDown(SellKey);
 		if (bSellDown && !bSellKeyPrev)
@@ -944,10 +1091,10 @@ void AClcStoneVendor::PushVendorHUDData()
 
 	FClcVendorHUDData Data;
 
-	if (OpeningStone)
+	if (BenchStone)
 	{
 		FClcStoneRuntimeData StoneRT;
-		if (OpeningStone->GetStoneData(StoneRT))
+		if (GetBenchStoneData(StoneRT))
 		{
 			const auto& I = StoneRT.Internal;
 			Data.DisplayName   = StoneRT.DisplayName;
@@ -955,19 +1102,33 @@ void AClcStoneVendor::PushVendorHUDData()
 			Data.GradeValue    = (uint8)I.Grade;
 			Data.PurchasePrice = I.PurchasePrice;
 
-			// 种水是否暴露：vendor 不擦石，OpenedGreenArea>0 即已暴露
+			// 种水是否暴露：vendor 不改造石头，OpenedGreenArea>0 即已暴露
 			Data.bGradeRevealed = StoneRT.OpenedGreenArea > 0.0f;
 
 			// 皮壳名称
 			Data.ShellName = UClcShellTextureConfig::GetShellName(I.ShellTypeIndex).ToString();
 
-			// 擦石进度
-			float OpenedR, GreenR, BlackR, ImpurityR, CrackR;
-			OpeningStone->GetOpeningProgress(OpenedR, GreenR, BlackR, ImpurityR, CrackR);
-			Data.OpenedRatio = OpenedR;
-			Data.SurfaceArea = I.SurfaceArea;
-			Data.GreenArea   = GreenR * I.SurfaceArea;
-			Data.BlackArea   = BlackR * I.SurfaceArea;
+			// 擦石进度（仅擦石/未加工石头有；解石石头这些字段为 0）
+			if (BenchStonePhase != EClcStonePhase::Cut)
+			{
+				if (AClcOpeningStone* OS = Cast<AClcOpeningStone>(BenchStone))
+				{
+					float OpenedR, GreenR, BlackR, ImpurityR, CrackR;
+					OS->GetOpeningProgress(OpenedR, GreenR, BlackR, ImpurityR, CrackR);
+					Data.OpenedRatio = OpenedR;
+					Data.SurfaceArea = I.SurfaceArea;
+					Data.GreenArea   = GreenR * I.SurfaceArea;
+					Data.BlackArea   = BlackR * I.SurfaceArea;
+				}
+			}
+			else
+			{
+				// 解石石头：HUD 显示体积信息（替代擦石面积）
+				Data.OpenedRatio = 0.0f;
+				Data.SurfaceArea = I.SurfaceArea;
+				Data.GreenArea   = 0.0f;
+				Data.BlackArea   = 0.0f;
+			}
 
 			// 回收价 + 盈亏：已讨价锁定用锁价，否则实时算
 			if (UGameInstance* GI = GetGameInstance())
@@ -983,11 +1144,16 @@ void AClcStoneVendor::PushVendorHUDData()
 				}
 			}
 
-			// 锁价石：HUD 操作提示显式标注已锁价、Enter 直接出手（不可再讨）
-			if (StoneRT.bHaggleResolved)
-			{
-				Data.OperationHints = TEXT("【已锁价】Enter 直接出手 · 不可再讨价\nWASD 旋转 | R 复位 | 右键 放大 | B 换石 | Esc 退出");
-			}
+			// 解石体积（解石石头有值；擦石石头为 0）
+		Data.ExposedCutVolume = StoneRT.ExposedCutVolume;
+		Data.ExposedJadeVolume = StoneRT.ExposedJadeVolume;
+		Data.RemainingVolume = StoneRT.RemainingVolume;
+
+		// 锁价石：HUD 操作提示显式标注已锁价、Enter 直接出手（不可再讨）
+		if (StoneRT.bHaggleResolved)
+		{
+			Data.OperationHints = TEXT("【已锁价】Enter 直接出手 · 不可再讨价\nWASD 旋转 | R 复位 | 右键 放大 | B 换石 | Esc 退出");
+		}
 		}
 
 		Data.bCanSell = true;
@@ -1212,11 +1378,8 @@ void AClcStoneVendor::HandleHaggleResolved(EClcHaggleOutcome Outcome, int32 Fina
 
 void AClcStoneVendor::LockHagglePriceAndReturn(int32 LockedPrice)
 {
-	// 锁定价写到石头运行时数据（之后售出/擦石都据此门禁）
-	if (OpeningStone)
-	{
-		OpeningStone->MarkHaggleResolved(LockedPrice);
-	}
+	// 锁定价写到 ActiveStoneData + 台上石头（出售台自管，不通过石头 Actor 方法）
+	MarkHaggleResolvedOnActiveStone(LockedPrice);
 
 	CurrentState = EClcVendorState::StoneOnBench;
 

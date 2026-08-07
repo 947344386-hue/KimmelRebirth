@@ -8,14 +8,14 @@
 
 namespace
 {
-	// ---- 确定性 RNG 辅助（与 2D 版 ClcJadeTypes.cpp 同构） ----
+	// ---- 确定性 RNG 辅助（与 2D 版 ClcJadeTypes.cpp 同构，名称加 Voxel 前缀避免 Unity Build 冲突） ----
 
-	int32 MakeSubSeed(int32 BaseSeed, int32 SubIndex)
+	FORCEINLINE int32 VoxelMakeSubSeed(int32 BaseSeed, int32 SubIndex)
 	{
 		return BaseSeed * 1103515245 + SubIndex;
 	}
 
-	int32 RandRange(FRandomStream& Rng, int32 Min, int32 Max)
+	FORCEINLINE int32 VoxelRandRange(FRandomStream& Rng, int32 Min, int32 Max)
 	{
 		return Min + Rng.RandHelper(Max - Min + 1);
 	}
@@ -171,7 +171,7 @@ namespace
 
 		const int32 RootR = bSmall ? 1
 			: FMath::Clamp(FMath::RoundToInt(FMath::Pow(static_cast<float>(TargetVoxels), 1.0f / 3.0f) * 0.13f), 2, 9);
-		const int32 NumArms = bSmall ? RandRange(Rng, 5, 9) : RandRange(Rng, 3, 5);
+		const int32 NumArms = bSmall ? VoxelRandRange(Rng, 5, 9) : VoxelRandRange(Rng, 3, 5);
 		const float BranchProb = bSmall ? 0.32f : 0.18f;
 
 		int32 Placed = 0;
@@ -219,9 +219,9 @@ namespace
 			bool bFound = false;
 			for (int32 Try = 0; Try < 8 && !bFound; ++Try)
 			{
-				SX = RandRange(Rng, 2, Res - 3);
-				SY = RandRange(Rng, 2, Res - 3);
-				SZ = RandRange(Rng, 2, Res - 3);
+				SX = VoxelRandRange(Rng, 2, Res - 3);
+				SY = VoxelRandRange(Rng, 2, Res - 3);
+				SZ = VoxelRandRange(Rng, 2, Res - 3);
 				if (Occ[(SZ * Res + SY) * Res + SX]) bFound = true;
 			}
 			if (!bFound) continue;
@@ -421,7 +421,7 @@ FClcStoneVoxelField3D FClcStoneVoxelField3D::Generate(int32 Seed, UStaticMesh* M
 	Result.RemoveMask.Init(0, Total);
 
 	// 3. 生成若干连续不规则 3D 缺陷体（形态随各自体积变化）
-	FRandomStream Rng(MakeSubSeed(Seed, 0));
+	FRandomStream Rng(VoxelMakeSubSeed(Seed, 0));
 	PlaceOrganisms3D(Result.Data, Result.OccupancyMask, Res, Rng,
 		FMath::Max(1, DefectCount), TargetCoverage);
 

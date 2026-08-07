@@ -407,3 +407,25 @@ FVector AClcCuttingStone::GetCutPieceWorldLocation() const
 {
 	return LastCutPieceWorldCenter;
 }
+
+UPrimitiveComponent* AClcCuttingStone::GetDisplayMesh() const
+{
+	return CutMesh;
+}
+
+void AClcCuttingStone::MarkHaggleResolved(int32 LockedPrice)
+{
+	CachedStoneData.bHaggleResolved = true;
+	CachedStoneData.HaggleLockedPrice = LockedPrice;
+
+	static const FString LockedSuffix = TEXT("【已锁价】");
+	static const FString CutSuffix = TEXT("【已解石】");
+	if (CachedStoneData.DisplayName.EndsWith(*CutSuffix))
+	{
+		CachedStoneData.DisplayName.LeftChopInline(CutSuffix.Len());
+	}
+	if (!CachedStoneData.DisplayName.EndsWith(*LockedSuffix))
+	{
+		CachedStoneData.DisplayName += LockedSuffix;
+	}
+}

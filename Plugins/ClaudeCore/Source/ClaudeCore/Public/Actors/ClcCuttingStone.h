@@ -75,6 +75,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcCuttingStone")
 	const FClcStoneVoxelField3D& GetVoxelField() const { return VoxelField; }
 
+	/** 供出售台/外部旋转展示用——返回 PMC，可 SetWorldRotation。 */
+	UPrimitiveComponent* GetDisplayMesh() const;
+
+	/** 讨价还价锁价（出售台调用） */
+	void MarkHaggleResolved(int32 LockedPrice);
+
+	/** 是否已讨价锁价 */
+	bool IsHaggleResolved() const { return CachedStoneData.bHaggleResolved; }
+
 protected:
 	virtual void BeginPlay() override;
 

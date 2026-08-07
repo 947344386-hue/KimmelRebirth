@@ -22,21 +22,14 @@ class UClcInteractionIndicator;
 class UClcBackpackSubsystem;
 class UClcHaggleComponent;
 class AClcOpeningStone;
+class AClcCuttingStone;
 
 /**
- * 回收台 Actor——出售入口（工作台风格）。
- * 玩家进入范围按 F → 背包选石 → Spawn AClcOpeningStone 上台展示 → WASD 旋转查看 +
- * HUD 显示擦石情况/回收价 → 按 Enter 或 UI 售出按钮 才真正售出。
- * C++ 提供交互+展示+售出逻辑，蓝图继承定制 Mesh/音效/特效/HUD。
+ * 回收台 Actor——出售入口。
+ * 玩家进入范围按 F → 背包选石 → 按 Phase 分支 Spawn 上台展示（OpeningStone/CuttingStone）
+ * → WASD 旋转查看 + HUD 显示擦石/解石情况/回收价 → 按 Enter 或 UI 售出按钮才真正售出。
  *
- * 交互流程（参照工作台，去掉工具/擦石，回收台只展示不改造石头）：
- *   1. 走进 TriggerSphere → InteractionIndicator 范围内（背包有石头→选中状态）
- *   2. 按 F → EnterSellMode（切相机 + 锁输入 + 开背包 + 绑选石）
- *   3. 点石头 → PlaceStoneOnVendor（RemoveStone + Spawn 上台 + Initialize + 出 HUD）
- *   4. WASD 旋转 / R 复位 / 右键放大 / B 换石；HUD 实时显示擦石+回收价
- *   5. Enter 或 HUD 售出按钮 → RequestSell → CompleteSell（加金 + 销毁台上石）
- *      · 背包空 → 自动退出；有货 → 回到选石（开背包选下一块）
- *   6. Esc（背包开先关）/ 走出范围 → ExitSellMode（台上石放回背包 + 恢复相机/输入）
+ * 架构 B：旋转展示与讨价还价由出售台自管，石头 Actor 只管 Initialize + GetStoneData。
  *
  * 蓝图定制：VendorMesh、PromptText、InteractionRadius、EnterKey、相机组件定位、
  *           HUDWidgetClass、FillLight 档位、OnStoneSold/OnEnter/OnExit（音效特效）
@@ -168,6 +161,22 @@ protected:
 	/** WASD 旋转速度倍率 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
 	float RotationInputScale = 1.0f;
+
+	/** 解石台外壳材质路径（AClcCuttingStone 初始化时加载） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
+	FString ShellMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneShell.M_StoneShell");
+
+	/** 解石台体素分辨率（AClcCuttingStone 初始化时传入） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config", meta = (ClampMin = "16", ClampMax = "96"))
+	int32 VoxelResolution = 48;
+
+	/** 解石台缺陷覆盖率回落值（AClcCuttingStone 初始化时传入） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config", meta = (ClampMin = "0.01", ClampMax = "0.95"))
+	float FallbackDefectCoverage = 0.18f;
+
+	/** 台上石头旋转速度（度/秒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
+	float DisplayRotationSpeed = 90.0f;
 
 	/** 擦石材质路径（AClcOpeningStone 初始化时加载） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
@@ -306,8 +315,19 @@ private:
 
 	EClcVendorState CurrentState = EClcVendorState::Inactive;
 
+	/** 台上石头——可能是 AClcOpeningStone（擦石/未加工）或 AClcCuttingStone（已解石） */
 	UPROPERTY()
-	AClcOpeningStone* OpeningStone = nullptr;
+	TObjectPtr<AActor> BenchStone = nullptr;
+
+	/** 台上石头的旋转 Mesh（出售台自己管旋转，不通过石头 Actor 方法） */
+	UPROPERTY()
+	TWeakObjectPtr<UPrimitiveComponent> BenchDisplayMesh;
+
+	/** 台上石头初始旋转（用于 R 键复位） */
+	FQuat BenchInitialRotation = FQuat::Identity;
+
+	/** 台上石头 Phase 缓存（GetStoneData 分发用） */
+	EClcStonePhase BenchStonePhase = EClcStonePhase::Unworked;
 
 	FClcStoneRuntimeData ActiveStoneData;
 
@@ -373,7 +393,14 @@ private:
 	void ExitSellMode();
 	void PlaceStoneOnVendor(int32 StoneIndex);
 	void RemoveStoneFromVendor();
-	void DestroyOpeningStone();
+	void DestroyBenchStone();
+
+	/** 从台上石头（任意类型）获取运行时数据 */
+	bool GetBenchStoneData(FClcStoneRuntimeData& OutData) const;
+
+	/** 讨价还价：锁售价到 ActiveStoneData + 更新 DisplayName */
+	void MarkHaggleResolvedOnActiveStone(int32 LockedPrice);
+
 	void CompleteSell();
 	/** 用指定价格完成售出（讨价还价结算价走这里；CompleteSell 重算参考价后调本函数） */
 	void CompleteSellWithPrice(int32 Price);

@@ -78,6 +78,10 @@ void UClcToolDurabilitySubsystem::RestoreDurabilityMask(int32 Mask)
 	{
 		RestoreDurability(EClcRepairableTool::Combined);
 	}
+	if (Mask & static_cast<int32>(EClcRepairableTool::Blade))
+	{
+		RestoreDurability(EClcRepairableTool::Blade);
+	}
 }
 
 bool UClcToolDurabilitySubsystem::OwnsUpgrade(EClcToolUpgrade Upgrade) const

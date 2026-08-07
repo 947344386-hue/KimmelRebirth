@@ -35,7 +35,7 @@ struct FClcJadeTextureSet
 /**
  * 玉石/杂质的高保真纹理配置 DataAsset。
  *
- * 用途：开窗材质 M_StoneOpening 不再用程序化 RevealTex 涂色，
+ * 用途：擦石材质 M_StoneOpening 不再用程序化 RevealTex 涂色，
  * 改为按 TypeTex（R=玉mask, G=杂mask）在 Jade/Junk 两套 PBR 纹理间 lerp。
  * 程序化层降级为调制（色调偏移/UV旋转/边界羽化），见阶段3。
  *
@@ -56,7 +56,7 @@ public:
     FClcJadeTextureSet JunkSet;
 
     /**
-     * 把玉/杂两套纹理注入开窗 MID。
+     * 把玉/杂两套纹理注入擦石 MID。
      * 约定参数名：JadeBaseColor / JadeNormal / JadeORM
      *            JunkBaseColor / JunkNormal / JunkORM
      * 返回成功注入的贴图数量（0~6）。

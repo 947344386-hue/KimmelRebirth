@@ -45,7 +45,7 @@ namespace
 		return S;
 	}
 
-	/** 仅替换石名（{0}），用于无价格场景（未开窗/纯杂等） */
+	/** 仅替换石名（{0}），用于无价格场景（未擦石/纯杂等） */
 	FString FormatNpcLineNameOnly(const FText& Template, const FString& StoneName)
 	{
 		FString S = Template.ToString();
@@ -346,7 +346,7 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 {
 	if (!OpeningStone) return;
 
-	// 读最新数据（vendor 不开窗，数据未变，保持链路一致）
+	// 读最新数据（vendor 不擦石，数据未变，保持链路一致）
 	FClcStoneRuntimeData UpdatedData;
 	if (OpeningStone->GetStoneData(UpdatedData))
 	{
@@ -571,7 +571,7 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	// 从背包移除（保持索引一致；石头此刻仅存于 OpeningStone + ActiveStoneData）
 	CachedBackpack->RemoveStone(StoneIndex);
 
-	// Spawn AClcOpeningStone（不挂任何工具，纯展示已开窗状态）
+	// Spawn AClcOpeningStone（不挂任何工具，纯展示已擦石状态）
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.Owner = this;
@@ -598,7 +598,7 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 	// 挂到 StoneSpawnPoint，让石头跟随定位点
 	OpeningStone->AttachToComponent(StoneSpawnPoint, FAttachmentTransformRules::KeepWorldTransform);
 
-	// 初始化石头（加载 Mesh + 材质 + 还原已开窗遮罩）
+	// 初始化石头（加载 Mesh + 材质 + 还原已擦石遮罩）
 	if (!OpeningStone->Initialize(ActiveStoneData, OpeningMaterialPath))
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcVendor] OpeningStone Initialize failed!"));
@@ -617,7 +617,7 @@ void AClcStoneVendor::PlaceStoneOnVendor(int32 StoneIndex)
 
 	CurrentState = EClcVendorState::StoneOnBench;
 
-	// NPC 反馈：石头上台（判断涨跌+开窗状态）
+	// NPC 反馈：石头上台（判断涨跌+擦石状态）
 	{
 		int32 PriceTrend = 0;
 		int32 OpenStatus = 0; // 0=未开 1=纯杂 2=见玉
@@ -955,13 +955,13 @@ void AClcStoneVendor::PushVendorHUDData()
 			Data.GradeValue    = (uint8)I.Grade;
 			Data.PurchasePrice = I.PurchasePrice;
 
-			// 种水是否暴露：vendor 不开窗，OpenedGreenArea>0 即已暴露
+			// 种水是否暴露：vendor 不擦石，OpenedGreenArea>0 即已暴露
 			Data.bGradeRevealed = StoneRT.OpenedGreenArea > 0.0f;
 
 			// 皮壳名称
 			Data.ShellName = UClcShellTextureConfig::GetShellName(I.ShellTypeIndex).ToString();
 
-			// 开窗进度
+			// 擦石进度
 			float OpenedR, GreenR, BlackR, ImpurityR, CrackR;
 			OpeningStone->GetOpeningProgress(OpenedR, GreenR, BlackR, ImpurityR, CrackR);
 			Data.OpenedRatio = OpenedR;
@@ -1212,7 +1212,7 @@ void AClcStoneVendor::HandleHaggleResolved(EClcHaggleOutcome Outcome, int32 Fina
 
 void AClcStoneVendor::LockHagglePriceAndReturn(int32 LockedPrice)
 {
-	// 锁定价写到石头运行时数据（之后售出/开窗都据此门禁）
+	// 锁定价写到石头运行时数据（之后售出/擦石都据此门禁）
 	if (OpeningStone)
 	{
 		OpeningStone->MarkHaggleResolved(LockedPrice);
@@ -1358,7 +1358,7 @@ void AClcStoneVendor::OnNpcStonePlaced_Implementation(int32 PriceTrend, int32 Op
 	UClcHaggleConfig* Cfg = HaggleComponent ? HaggleComponent->GetHaggleConfig() : nullptr;
 	if (!Cfg) return;
 
-	// 按优先级选动画：锁价 → 涨跌 → 开窗状态 → 通用
+	// 按优先级选动画：锁价 → 涨跌 → 擦石状态 → 通用
 	UAnimSequence* Anim = nullptr;
 	if (bIsLocked)
 	{

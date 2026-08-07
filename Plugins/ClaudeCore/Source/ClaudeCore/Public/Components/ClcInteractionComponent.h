@@ -65,6 +65,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="ClcInteraction")
 	AActor* GetSelectedActor() const { return CurrentSelectedActor.Get(); }
 
+	/** 外部通知本组件"当前进入了独占上下文"（背包/菜单等），本组件会隐藏选中提示 */
+	void SetExclusiveContext(bool bExclusive);
+
+	/** 统一 F 键路由：边沿检测 + 调用 OnInteract + 兜底 Toast */
+	void HandleInteractInput();
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -87,12 +93,17 @@ private:
 
 	int32 CurrentReticleState = 0;
 
-	/** 按键提示句柄：选中可购买原石时注册 E，取消选中时注销 */
-	int32 InteractPromptHandle = 0;
+	/** 当前选中 Actor 的统一 F 键提示句柄（本组件全自动管理，各交互物不再各自维护） */
+	int32 SelectedPromptHandle = 0;
 
 	/** 交互物缓存——避免每帧 GetAllActorsWithInterface + 每物 FindComponentByClass（关卡变大后 CPU/GC 压力大）。
 	 *  每秒重建一次，其余 tick 直接复用弱引用；新生成交互物最多 1 秒后纳入（静态摊位场景可接受）。 */
 	TArray<TWeakObjectPtr<AActor>> CachedInteractables;
 	TArray<TWeakObjectPtr<UClcInteractionIndicator>> CachedIndicators;
 	double InteractableCacheRebuildTime = 0.0;
+
+	// ---- 统一 F 键路由（替代各站点各自 Tick 中的 KeyPrompt 注册/注销 + 按键边沿检测） ----
+	TWeakObjectPtr<AActor> LastSelectedActor;
+	bool bInExclusiveContext = false;
+	bool bInteractKeyPrev = false;
 };

@@ -80,7 +80,7 @@ void UClcVendorHUD::RefreshData(const FClcVendorHUDData& Data)
 		}
 		SetText(GradeText, Data.bGradeRevealed ? FString(GradeRaw) : (TEXT("皮壳：") + Data.ShellName));
 	}
-	SetText(OpenedRatioText, FString::Printf(TEXT("开窗 %.0f%%"), Data.OpenedRatio * 100.f));
+	SetText(OpenedRatioText, FString::Printf(TEXT("擦石 %.0f%%"), Data.OpenedRatio * 100.f));
 	SetText(GreenAreaText, FString::Printf(TEXT("绿 %.1f"), Data.GreenArea));
 	SetText(BlackAreaText, FString::Printf(TEXT("杂 %.1f"), Data.BlackArea));
 

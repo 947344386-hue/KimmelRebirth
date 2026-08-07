@@ -35,7 +35,7 @@ class CLAUDECORE_API UClcHaggleWidget : public UUserWidget
 public:
 	UClcHaggleWidget(const FObjectInitializer& ObjectInitializer);
 
-	void SetOwningComponent(UClcHaggleComponent* InComp) { OwningComponent = InComp; }
+	void SetOwningComponent(UClcHaggleComponent* InComp);
 
 	/** 进入选择阶段：填档位提示、参考价、NPC 报价 */
 	void SetupSelection(int32 InReferencePrice, const TArray<FClcHaggleTier>& Tiers, const UClcHaggleConfig* Config);

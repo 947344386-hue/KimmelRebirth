@@ -15,9 +15,10 @@ static const TCHAR* GetToolDisplayName(EClcRepairableTool Type)
 {
 	switch (Type)
 	{
-	case EClcRepairableTool::Opener:     return TEXT("开窗器");
+	case EClcRepairableTool::Opener:     return TEXT("擦石器");
 	case EClcRepairableTool::Flashlight: return TEXT("手电筒");
-	case EClcRepairableTool::Combined:   return TEXT("手电开窗器");
+	case EClcRepairableTool::Combined:   return TEXT("手电擦石器");
+	case EClcRepairableTool::Blade:      return TEXT("解石刀");
 	default:                             return TEXT("工具");
 	}
 }

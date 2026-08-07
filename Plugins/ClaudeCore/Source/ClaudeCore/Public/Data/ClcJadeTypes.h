@@ -23,7 +23,7 @@ enum class EClcJadeGrade : uint8
  * 分布图逐像素的材质类别（四值）。取代旧的 0/1/2 三值语义：
  * 全图不再“非绿即黑”，而是玉肉 / 杂质 / 裂纹 / 废肉四种独立场。
  *
- * 注意：开窗材质 M_StoneOpening 仍按双通道 TypeTex 混合（R=玉 / G=杂），
+ * 注意：擦石材质 M_StoneOpening 仍按双通道 TypeTex 混合（R=玉 / G=杂），
  * 因此杂质/裂纹/废肉在视觉上都走 Junk PBR，靠“小簇 vs 细线 vs 大片”的
  * 几何形态自然区分；价值与惩罚在 C++ 侧按四类分别统计。
  */
@@ -33,6 +33,21 @@ enum EClcDistVoxel : uint8
 	JadeBody  = 1,  //!< 玉肉：大尺度连续，价值来源（沿用原绿色计数口径）
 	Impurity  = 2,  //!< 杂质：聚簇，轻度惩罚（沿用原杂裂计数口径）
 	Crack     = 3,  //!< 裂纹：细线网络，重度惩罚
+};
+
+/**
+ * 石头操作阶段（互斥门控）：一旦被一个工作台操作过，另一个台封死。
+ * 与 bHaggleResolved 正交——锁价可叠加在 Windowed 或 Cut 之上（终端态，不可再操作）。
+ *   Unworked → 可擦石也可解石；
+ *   Windowed → 只能继续擦石，不能解石；
+ *   Cut      → 只能继续解石，不能擦石。
+ */
+UENUM(BlueprintType)
+enum class EClcStonePhase : uint8
+{
+	Unworked UMETA(DisplayName = "未操作"),
+	Windowed UMETA(DisplayName = "已擦石"),
+	Cut      UMETA(DisplayName = "已解石"),
 };
 
 /**
@@ -151,7 +166,7 @@ struct CLAUDECORE_API FClcStoneInternalData
 	UPROPERTY()
 	FClcStoneDistributionMap DistributionMap;
 
-	/** 石头模型——生成时确定，购买/开窗流程沿用同一 Mesh */
+	/** 石头模型——生成时确定，购买/擦石流程沿用同一 Mesh */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	TSoftObjectPtr<UStaticMesh> StoneMesh;
 
@@ -161,7 +176,30 @@ struct CLAUDECORE_API FClcStoneInternalData
 };
 
 /**
- * 石头运行时状态——随开窗推进而变化
+ * 切平面记录（mesh 局部空间）——解石台退出时序列化保存，再上台时从 Seed 重生成
+ * 3D 体素场后回放这些切平面重建剩余体几何。铡刀切平面在石头局部空间里轴对齐
+ * （法线 ∈ {X,Y,Z}，取决于上台时哪条 bbox 轴对齐到移动方向），只有 Distance 变化。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcCutPlaneRecord
+{
+	GENERATED_BODY()
+
+	/** 切平面法线（mesh 局部空间，归一化，轴对齐） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcCut")
+	FVector Normal = FVector(1, 0, 0);
+
+	/** 切平面距离（mesh 局部空间，FPlane 参数 d：Normal·P + Distance = 0；<0 一侧为切走侧） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcCut")
+	float Distance = 0.0f;
+
+	/** 切走的是 Normal·P+Distance<0 一侧（true）还是正侧（false）——重建 PMC 时据此保留另一侧 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcCut")
+	bool bRemovedNegative = true;
+};
+
+/**
+ * 石头运行时状态——随擦石推进而变化
  */
 USTRUCT(BlueprintType)
 struct CLAUDECORE_API FClcStoneRuntimeData
@@ -172,23 +210,23 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	FClcStoneInternalData Internal;
 
-	/** 已累计开窗面积 */
+	/** 已累计擦石面积 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float AccumulatedOpenedArea = 0.0f;
 
-	/** 已开窗中暴露的玉肉面积 */
+	/** 已擦石中暴露的玉肉面积 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedGreenArea = 0.0f;
 
-	/** 已开窗中暴露的杂质面积（聚簇缺陷） */
+	/** 已擦石中暴露的杂质面积（聚簇缺陷） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedImpurityArea = 0.0f;
 
-	/** 已开窗中暴露的裂纹面积（细线缺陷，重度惩罚） */
+	/** 已擦石中暴露的裂纹面积（细线缺陷，重度惩罚） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedCrackArea = 0.0f;
 
-	/** 已开窗中暴露的杂裂（杂质+裂纹）合计面积——保留旧字段，=OpenedImpurityArea+OpenedCrackArea */
+	/** 已擦石中暴露的杂裂（杂质+裂纹）合计面积——保留旧字段，=OpenedImpurityArea+OpenedCrackArea */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float OpenedBlackArea = 0.0f;
 
@@ -200,13 +238,44 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	FString DisplayName;
 
-	/** 讨价还价锁定的售价（<0=未锁定；≥0=已锁价，按此售出，不再随开窗重算） */
+	/** 讨价还价锁定的售价（<0=未锁定；≥0=已锁价，按此售出，不再随擦石重算） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	int32 HaggleLockedPrice = -1;
 
-	/** 是否已讨价还价结算（锁定后不可再开窗/再讨价，玩家需手动确认售出） */
+	/** 是否已讨价还价结算（锁定后不可再擦石/再讨价，玩家需手动确认售出） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	bool bHaggleResolved = false;
+
+	/**
+	 * 操作阶段（互斥门控）——决定该石头能上哪个台。
+	 * 与 bHaggleResolved 正交：锁价可叠加在 Windowed/Cut 之上（终端态）。
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	EClcStonePhase Phase = EClcStonePhase::Unworked;
+
+	/** 切平面记录列表（局部空间）——解石台退出时保存，再上台从 Seed 重生成体素场后回放重建 */
+	UPROPERTY()
+	TArray<FClcCutPlaneRecord> CutPlanes;
+
+	/** 已露截面累计体积（cm³）——解石外推定价的"已开面积"等价物 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float ExposedCutVolume = 0.0f;
+
+	/** 已露截面中的玉肉体积（cm³） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float ExposedJadeVolume = 0.0f;
+
+	/** 已露截面中的裂纹体积（cm³） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float ExposedCrackVolume = 0.0f;
+
+	/** 剩余未切体积（cm³）——解石外推定价的"未开面积"等价物 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float RemainingVolume = 0.0f;
+
+	/** 解石台已结算的切块累计金币（小块立即折金币的累计，供 HUD/统计） */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	int32 TotalSettledValue = 0;
 
 
 	/** 遮罩 RT 像素缓冲区（256×256 字节），退出工作台时保存，再进入时恢复 */

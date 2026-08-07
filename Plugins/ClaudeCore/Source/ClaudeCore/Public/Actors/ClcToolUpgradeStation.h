@@ -17,7 +17,7 @@ class UClcToolUpgradeMenuWidget;
  * 工具升级站 —— 可放置的通用商店 Actor。
  *
  * 玩家走进范围、瞄准本站按 F → 打开升级列表菜单；选中一项花钱购买即获得对应升级。
- * 默认内置「手电开窗器」一项；BP 可在 Upgrades 数组追加更多升级项。
+ * 默认内置「手电擦石器」一项；BP 可在 Upgrades 数组追加更多升级项。
  *
  * 蓝图使用：
  *   1. Content 中创建继承此类的 BP（如 BP_ToolUpgradeStation）
@@ -58,7 +58,7 @@ protected:
 
 	// ---- 配置 ----
 
-	/** 本站出售的升级项（默认含「手电开窗器」，BP 可追加） */
+	/** 本站出售的升级项（默认含「手电擦石器」，BP 可追加） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UpgradeStation|Config")
 	TArray<FClcToolUpgradeItem> Upgrades;
 
@@ -104,8 +104,6 @@ private:
 	void RefreshMenuItems();
 	/** 生成交互提示 */
 	FText BuildInteractionPrompt() const;
-	/** 交互组件中心球扫是否命中本站 */
-	bool IsLookedAtByPlayer() const;
 
 	UFUNCTION()
 	void HandlePurchaseRequested(int32 ItemIndex);
@@ -130,12 +128,7 @@ private:
 	bool bMenuOpen = false;
 	bool bOwnsInputState = false;
 
-	/** 按键边沿检测（自维护） */
-	bool bEnterKeyPrev = false;
 	bool bPlayerInRange = false;
 
 	TWeakObjectPtr<APlayerController> CachedPC;
-
-	/** 按键提示句柄 */
-	int32 UpgradePromptHandle = 0;
 };

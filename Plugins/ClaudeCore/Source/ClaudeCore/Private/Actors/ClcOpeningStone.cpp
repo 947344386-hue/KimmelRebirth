@@ -66,7 +66,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 	StoneMesh->SetRelativeScale3D(FVector(StoneData.Internal.MeshScale));
 	StoneMesh->SetMobility(EComponentMobility::Movable);
 
-	// ---- 2. 加载开窗材质 ----
+	// ---- 2. 加载擦石材质 ----
 	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialAssetPath);
 	if (!Material)
 	{
@@ -84,7 +84,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 		return false;
 	}
 
-	// ---- 3b. 从皮壳配置表取贴图，注入开窗 MID 的皮壳分支 ----
+	// ---- 3b. 从皮壳配置表取贴图，注入擦石 MID 的皮壳分支 ----
 	// 路径：实例 UPROPERTY 优先，空则走 DeveloperSettings 全局配置
 	const FString& ShellPath = ShellTextureConfigPath.IsEmpty()
 		? GetDefault<UClcDeveloperSettings>()->ShellTextureConfigPath
@@ -95,7 +95,7 @@ bool AClcOpeningStone::Initialize(const FClcStoneRuntimeData& StoneData, const F
 		ShellCfg->InjectTexturesIntoMID(StoneMID, CachedStoneData.Internal.ShellTypeIndex);
 	}
 
-	// ---- 3c. 从玉石纹理配置表取高保真 PBR 纹理，注入开窗 MID 的玉/杂分支 ----
+	// ---- 3c. 从玉石纹理配置表取高保真 PBR 纹理，注入擦石 MID 的玉/杂分支 ----
 	const FString& JadePath = JadeTextureConfigPath.IsEmpty()
 		? GetDefault<UClcDeveloperSettings>()->JadeTextureConfigPath
 		: JadeTextureConfigPath;
@@ -178,10 +178,23 @@ bool AClcOpeningStone::GrindAtUV(float U, float V)
 {
 	if (!bInitialized || !OpeningMaskComp) return false;
 
-	// 已讨价还价锁定 → 禁止再开窗（价格已定，不能再改石头暴露）
+	// 已讨价还价锁定 → 禁止再擦石（价格已定，不能再改石头暴露）
 	if (CachedStoneData.bHaggleResolved)
 	{
 		return false;
+	}
+
+	// 首次擦石 → 标记阶段（与解石互斥门控）
+	if (CachedStoneData.Phase == EClcStonePhase::Unworked)
+	{
+		CachedStoneData.Phase = EClcStonePhase::Windowed;
+
+		// 名字加阶段标签（防重复追加）
+		static const FString Suffix = TEXT("【已擦石】");
+		if (!CachedStoneData.DisplayName.EndsWith(*Suffix))
+		{
+			CachedStoneData.DisplayName += Suffix;
+		}
 	}
 
 	FClcStoneOpeningResult Result = OpeningMaskComp->GrindAtUV(U, V);
@@ -285,11 +298,23 @@ void AClcOpeningStone::MarkHaggleResolved(int32 LockedPrice)
 	CachedStoneData.bHaggleResolved = true;
 	CachedStoneData.HaggleLockedPrice = LockedPrice;
 
-	// 名字加锁价标记（防重复追加）——让背包/tooltip/HUD/售出提示统一体现锁定概念
-	static const FString Suffix = TEXT("【已锁价】");
-	if (!CachedStoneData.DisplayName.EndsWith(*Suffix))
+	// 名字加锁价标记（防重复追加）——覆盖已有阶段标签，锁价是最高阶段
+	static const FString LockedSuffix = TEXT("【已锁价】");
+	static const FString WindowedSuffix = TEXT("【已擦石】");
+	static const FString CutSuffix = TEXT("【已解石】");
+	// 先去掉阶段标签
+	if (CachedStoneData.DisplayName.EndsWith(*WindowedSuffix))
 	{
-		CachedStoneData.DisplayName += Suffix;
+		CachedStoneData.DisplayName.LeftChopInline(WindowedSuffix.Len());
+	}
+	else if (CachedStoneData.DisplayName.EndsWith(*CutSuffix))
+	{
+		CachedStoneData.DisplayName.LeftChopInline(CutSuffix.Len());
+	}
+	// 再加锁价标签
+	if (!CachedStoneData.DisplayName.EndsWith(*LockedSuffix))
+	{
+		CachedStoneData.DisplayName += LockedSuffix;
 	}
 }
 

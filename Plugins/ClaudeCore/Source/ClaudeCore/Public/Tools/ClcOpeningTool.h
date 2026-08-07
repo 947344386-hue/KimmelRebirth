@@ -9,7 +9,7 @@
 class UDecalComponent;
 
 /**
- * 开窗器工具——打磨去除皮壳，暴露下方玉/裂纹。
+ * 擦石器工具——打磨去除皮壳，暴露下方玉/裂纹。
  *
  * 逻辑层（本类）：
  *   - OnUpdate：每帧把工具 Mesh 定位到命中点，垂直于表面
@@ -37,18 +37,18 @@ public:
 	virtual void OnUpdate(const FClcToolTraceInfo& TraceInfo) override;
 	virtual void OnLeftClick(bool bPressed) override;
 
-	/** 增减开窗半径（鼠标滚轮驱动，正=增大，负=缩小）。
+	/** 增减擦石半径（鼠标滚轮驱动，正=增大，负=缩小）。
 	 *  @return 0=正常调整，-1=已到达下限，1=已到达上限 */
 	UFUNCTION(BlueprintCallable, Category = "OpeningTool")
 	int32 AdjustBrushRadius(float Delta);
 
 	// ---- 配置：笔刷尺寸 ----
 
-	/** 开窗半径下限（UV 空间 0~1） */
+	/** 擦石半径下限（UV 空间 0~1） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush", meta = (ClampMin = "0.001", ClampMax = "0.5"))
 	float BrushRadiusMin = 0.01f;
 
-	/** 开窗半径上限 */
+	/** 擦石半径上限 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "OpeningTool|Brush", meta = (ClampMin = "0.001", ClampMax = "0.5"))
 	float BrushRadiusMax = 0.25f;
 
@@ -73,7 +73,7 @@ protected:
 
 	// ---- 组件 ----
 
-	/** 预览贴画——Decal 投影到石头表面，半径=开窗笔刷半径。左键打磨时隐藏 */
+	/** 预览贴画——Decal 投影到石头表面，半径=擦石笔刷半径。左键打磨时隐藏 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UDecalComponent* PreviewDecal;
 

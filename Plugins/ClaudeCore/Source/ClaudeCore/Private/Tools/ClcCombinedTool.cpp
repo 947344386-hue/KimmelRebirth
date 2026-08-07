@@ -87,7 +87,7 @@ void AClcCombinedTool::ToggleLight()
 
 void AClcCombinedTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 {
-	// 先走开窗器逻辑（定位 + 打磨 + 打磨耐久消耗 + 进入时耐久提示）
+	// 先走擦石器逻辑（定位 + 打磨 + 打磨耐久消耗 + 进入时耐久提示）
 	Super::OnUpdate(TraceInfo);
 
 	// 进入工作台时若耐久已耗尽（持久化值），Super 已飘过一次提示，这里无需重复
@@ -108,7 +108,7 @@ void AClcCombinedTool::OnUpdate(const FClcToolTraceInfo& TraceInfo)
 
 void AClcCombinedTool::Tick(float DeltaTime)
 {
-	// 开窗器位姿平滑（Super=AClcOpeningTool → AClcStoneTool::Tick）
+	// 擦石器位姿平滑（Super=AClcOpeningTool → AClcStoneTool::Tick）
 	Super::Tick(DeltaTime);
 
 	// 把平滑后的 SpotLight 世界位姿同步到材质，让 X-ray 光圈跟灯走

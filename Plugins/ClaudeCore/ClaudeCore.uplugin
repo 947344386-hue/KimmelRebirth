@@ -30,6 +30,10 @@
 		{
 			"Name": "EnhancedInput",
 			"Enabled": true
+		},
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
 		}
 	]
 }

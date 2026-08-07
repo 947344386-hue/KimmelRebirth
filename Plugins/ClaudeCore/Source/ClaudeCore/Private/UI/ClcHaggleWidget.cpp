@@ -19,6 +19,11 @@ UClcHaggleWidget::UClcHaggleWidget(const FObjectInitializer& ObjectInitializer)
 {
 }
 
+void UClcHaggleWidget::SetOwningComponent(UClcHaggleComponent* InComp)
+{
+	OwningComponent = InComp;
+}
+
 void UClcHaggleWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();

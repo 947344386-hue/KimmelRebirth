@@ -54,7 +54,7 @@ public:
 	UPROPERTY()
 	FClcOnQueryCanSelect OnQueryCanSelect;
 
-	/** 强制隐藏——true 时小白点立即隐藏并停止更新（工作台进开窗模式时设 true 避免碍事） */
+	/** 强制隐藏——true 时小白点立即隐藏并停止更新（工作台进擦石模式时设 true 避免碍事） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ClcInteraction")
 	bool bHidden = false;
 

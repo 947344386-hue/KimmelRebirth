@@ -10,17 +10,19 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "Actors/ClcFacilityManager.h"
 #include "UI/ClcToolUpgradeMenuWidget.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 AClcToolUpgradeStation::AClcToolUpgradeStation()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.0f;
+	PrimaryActorTick.TickInterval = 0.1f;
 
 	StationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("StationRoot"));
 	RootComponent = StationRoot;
@@ -46,8 +48,15 @@ AClcToolUpgradeStation::AClcToolUpgradeStation()
 	InteractionIndicator->bSelectByProximity = false;
 	InteractionIndicator->InteractionRadius = InteractionRadius;
 
-	// 默认内置「手电开窗器」一项
+	// 默认内置「手电擦石器」一项
 	Upgrades.AddDefaulted();
+
+	// 第二项：解石台
+	FClcToolUpgradeItem& CuttingItem = Upgrades.AddDefaulted_GetRef();
+	CuttingItem.Type = EClcToolUpgrade::CuttingTable;
+	CuttingItem.Name = TEXT("解石台");
+	CuttingItem.Description = TEXT("解锁解石台入口，铡刀切石一刀穷一刀富");
+	CuttingItem.Cost = 3000;
 
 	MenuWidgetClass = UClcToolUpgradeMenuWidget::StaticClass();
 }
@@ -67,51 +76,9 @@ void AClcToolUpgradeStation::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!bPlayerInRange || !CachedPC.IsValid() || bMenuOpen)
-	{
-		return;
-	}
-
-	const bool bLookedAt = IsLookedAtByPlayer();
-
-	// 动态维护按键提示
-	if (bLookedAt && UpgradePromptHandle == 0)
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				UpgradePromptHandle = KP->RegisterKeyPrompt(
-					EnterKey, BuildInteractionPrompt(), FName("Upgrade"), 60);
-			}
-		}
-	}
-	else if (!bLookedAt && UpgradePromptHandle != 0)
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KP->UnregisterKeyPrompt(UpgradePromptHandle);
-			}
-		}
-		UpgradePromptHandle = 0;
-	}
-
-	if (!bLookedAt)
-	{
-		bEnterKeyPrev = false;
-		return;
-	}
-
-	// F 键边沿 → 开菜单
-	const bool bKeyDown = CachedPC->IsInputKeyDown(EnterKey);
-	const bool bJustPressed = bKeyDown && !bEnterKeyPrev;
-	bEnterKeyPrev = bKeyDown;
-	if (bJustPressed)
-	{
-		OpenMenu();
-	}
+	// F 键提示与路由已由 UClcInteractionComponent 统一管理。
+	// 本站只需实现 IClcInteractable::GetInteractionPrompt / OnInteract。
+	// 如果 bMenuOpen，交互组件会忽略本站（bInExclusiveContext）
 }
 
 void AClcToolUpgradeStation::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -120,17 +87,7 @@ void AClcToolUpgradeStation::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		CloseMenu();
 	}
-	if (UpgradePromptHandle != 0 && CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KP->UnregisterKeyPrompt(UpgradePromptHandle);
-			}
-		}
-		UpgradePromptHandle = 0;
-	}
+	// F 键提示已由 UClcInteractionComponent 统一管理
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -156,7 +113,7 @@ bool AClcToolUpgradeStation::OnInteract(AActor* Interactor)
 
 bool AClcToolUpgradeStation::CanOpenMenu() const
 {
-	if (bMenuOpen || !bPlayerInRange || !CachedPC.IsValid() || !IsLookedAtByPlayer())
+	if (bMenuOpen || !bPlayerInRange || !CachedPC.IsValid())
 	{
 		return false;
 	}
@@ -224,7 +181,6 @@ void AClcToolUpgradeStation::CloseMenu()
 
 	bOwnsInputState = false;
 	bMenuOpen = false;
-	bEnterKeyPrev = false;
 	OnUpgradeMenuClosed();
 }
 
@@ -313,6 +269,12 @@ void AClcToolUpgradeStation::ExecutePurchase(int32 ItemIndex)
 	OnUpgradePurchased(Item);
 	RefreshMenuItems();
 
+	// 通知设施管理器刷新布局（如购买解石台升级后生成解石台）
+	for (TActorIterator<AClcFacilityManager> It(GetWorld()); It; ++It)
+	{
+		It->RefreshLayout();
+	}
+
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcToolUpgradeStation] Upgrade purchased: %s, cost=%d"),
 		*Item.Name, Item.Cost);
 }
@@ -338,15 +300,7 @@ FText AClcToolUpgradeStation::BuildInteractionPrompt() const
 	return FText::FromString(FString::Printf(TEXT("按 %s 升级工具"), *EnterKey.ToString()));
 }
 
-bool AClcToolUpgradeStation::IsLookedAtByPlayer() const
-{
-	if (!CachedPC.IsValid()) return false;
-	APawn* Pawn = CachedPC->GetPawn();
-	if (!Pawn) return false;
-	UClcInteractionComponent* InteractComp = Pawn->FindComponentByClass<UClcInteractionComponent>();
-	if (!InteractComp) return false;
-	return InteractComp->GetLookedAtActor() == this;
-}
+// IsLookedAtByPlayer / CachedInteractionComp 已删除——F 键路由由 UClcInteractionComponent 统一接管
 
 // ---- 蓝图事件默认实现 ----
 
@@ -377,7 +331,6 @@ void AClcToolUpgradeStation::OnTriggerEndOverlap(UPrimitiveComponent* Overlapped
 	if (!Pawn || !Pawn->IsLocallyControlled()) return;
 
 	bPlayerInRange = false;
-	bEnterKeyPrev = false;
 
 	// 离开范围 → 若菜单开着则关闭
 	if (bMenuOpen)
@@ -385,16 +338,6 @@ void AClcToolUpgradeStation::OnTriggerEndOverlap(UPrimitiveComponent* Overlapped
 		CloseMenu();
 	}
 
-	if (UpgradePromptHandle != 0 && CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KP->UnregisterKeyPrompt(UpgradePromptHandle);
-			}
-		}
-		UpgradePromptHandle = 0;
-	}
+	// F 键提示已由 UClcInteractionComponent 统一管理
 	CachedPC.Reset();
 }

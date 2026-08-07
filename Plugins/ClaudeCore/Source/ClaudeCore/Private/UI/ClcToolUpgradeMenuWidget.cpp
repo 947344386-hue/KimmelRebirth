@@ -180,17 +180,17 @@ FReply UClcToolUpgradeMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, c
 		RequestClose();
 		return FReply::Handled();
 	}
-	if (Key == EKeys::Enter)
+	if (Key == EKeys::Enter || Key == EKeys::SpaceBar)
 	{
 		ConfirmSelected();
 		return FReply::Handled();
 	}
-	if (Key == EKeys::Up || Key == EKeys::Left)
+	if (Key == EKeys::Up || Key == EKeys::Left || Key == EKeys::W)
 	{
 		MoveSelection(-1);
 		return FReply::Handled();
 	}
-	if (Key == EKeys::Down || Key == EKeys::Right)
+	if (Key == EKeys::Down || Key == EKeys::Right || Key == EKeys::S)
 	{
 		MoveSelection(1);
 		return FReply::Handled();
@@ -275,7 +275,7 @@ void UClcToolUpgradeMenuWidget::BuildDefaultLayout()
 
 	// ── 底部提示 ──
 	UTextBlock* Hint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HintText"));
-	Hint->SetText(NSLOCTEXT("ClcUpgrade", "Hint", "方向键选择 | Enter 购买 | Esc 关闭"));
+	Hint->SetText(NSLOCTEXT("ClcUpgrade", "Hint", "WASD/方向键选择 | 空格 购买 | Esc 关闭"));
 	Hint->SetColorAndOpacity(FLinearColor(0.5f, 0.5f, 0.5f));
 	Hint->SetJustification(ETextJustify::Center);
 	{

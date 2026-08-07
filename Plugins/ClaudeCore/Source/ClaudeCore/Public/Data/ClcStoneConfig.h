@@ -78,7 +78,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float PricePerUnitArea = 2.0f;
 
-	/** 未开窗原石的保底折扣系数（保底价 = TheoreticalValue × 此系数，杂裂多的石头自然低） */
+	/** 未擦石原石的保底折扣系数（保底价 = TheoreticalValue × 此系数，杂裂多的石头自然低） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float UnopenedFloorDiscountFactor = 0.1f;
 
@@ -98,6 +98,20 @@ public:
 	/** 石头标价的基础系数（乘以表面积，再叠加隐藏溢价） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float BasePricePerArea = 0.1f;
+
+	// ---- 解石（3D 体积）定价参数 ----
+
+	/** 单位体积玉肉基础单价（cm³）——初值 0.0005，待实测标定 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
+	float PricePerUnitVolume = 0.0005f;
+
+	/** 单位体积缺陷惩罚扣分——解石版，应和 PricePerUnitVolume 同级量纲（默认玉肉的 0.5 倍） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
+	float PenaltyPerUnitCrackVolume = 0.00025f;
+
+	/** 切块最小有价值体积（cm³）——低于此体积的切块直接归零，防薄片速切 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
+	float MinVolumeForValue = 500.0f;
 
 	// ---- 命名/话术 ----
 

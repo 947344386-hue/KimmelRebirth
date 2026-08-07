@@ -49,7 +49,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void RestoreDurability(EClcRepairableTool ToolType);
 
-	/** 按位掩码批量恢复耐久（Bitmask：Opener=1|Flashlight=2|Combined=4） */
+	/** 按位掩码批量恢复耐久（Bitmask：Opener=1|Flashlight=2|Combined=4|Blade=8） */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	void RestoreDurabilityMask(int32 Mask);
 
@@ -63,9 +63,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	bool GrantUpgrade(EClcToolUpgrade Upgrade);
 
-	/** 便捷封装：是否拥有「手电开窗器」组合工具升级 */
+	/** 便捷封装：是否拥有「手电擦石器」组合工具升级 */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	bool HasCombinedTool() const { return OwnsUpgrade(EClcToolUpgrade::CombinedTool); }
+
+	/** 便捷封装：是否拥有「解石台」升级 */
+	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
+	bool HasCuttingTable() const { return OwnsUpgrade(EClcToolUpgrade::CuttingTable); }
 
 	/** 是否需要修复（耐久 < 最大值） */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")

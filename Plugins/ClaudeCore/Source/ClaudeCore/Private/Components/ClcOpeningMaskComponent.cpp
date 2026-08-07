@@ -65,7 +65,7 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 	if (InData.SavedMaskBuffer.Num() == MaskResolution * MaskResolution)
 	{
 		MaskBuffer = InData.SavedMaskBuffer;
-		// 从存档重算已开窗像素数 + 玉/杂质/裂暴露量
+		// 从存档重算已擦石像素数 + 玉/杂质/裂暴露量
 		OpenedPixelCount = 0;
 		OpenedGreenPixelCount = 0;
 		OpenedImpurityPixelCount = 0;
@@ -622,7 +622,7 @@ int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
 		const int32 SX = StartIdx % Res;
 		const int32 SY = StartIdx / Res;
 
-		// 必须是已开窗(>=128)且玉肉(CachedDistribution==JadeBody)
+		// 必须是已擦石(>=128)且玉肉(CachedDistribution==JadeBody)
 		if (MaskBuffer[StartIdx] < 128 || CachedDistribution.GetPixel(SX, SY) != JadeBody)
 		{
 			Visited[StartIdx] = true;

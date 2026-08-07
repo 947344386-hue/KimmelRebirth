@@ -43,6 +43,18 @@ public:
 	int32 CalculateSalePrice(const FClcStoneRuntimeData& StoneData) const;
 
 	/**
+	 * 解石切块折金币——体积驱动价值公式。
+	 * CutAwayTotal/Jade/Crack = 切走侧体素数；VoxelVolume = 单体素体积(cm³)。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
+	int32 CalculateCutPieceValue(int32 CutAwayTotal, int32 CutAwayJade, int32 CutAwayCrack,
+		float VoxelVolume, EClcJadeGrade Grade) const;
+
+	/** 解石剩余主体回收估值——已露截面体积外推到未切体积（仿 2D 净外推模型）。 */
+	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
+	int32 CalculateCutStoneSalePrice(const FClcStoneRuntimeData& StoneData) const;
+
+	/**
 	 * 讨价还价最终价——基于参考价按对称赔率结算。
 	 * 成功 → BasePrice × (1 + Ratio)；失败 → BasePrice × (1 - Ratio)。
 	 * 集中价格数学，避免在 vendor/widget 里复制乘法。

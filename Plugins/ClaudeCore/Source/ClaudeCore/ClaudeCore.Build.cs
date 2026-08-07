@@ -18,6 +18,7 @@ public class ClaudeCore : ModuleRules
 			"PhysicsCore",
 			"RenderCore",
 			"RHI",
+			"ProceduralMeshComponent",
 			"DeveloperSettings",
 		});
 

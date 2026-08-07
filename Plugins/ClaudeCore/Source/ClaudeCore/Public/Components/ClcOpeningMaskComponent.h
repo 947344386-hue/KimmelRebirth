@@ -54,7 +54,7 @@ struct CLAUDECORE_API FClcStoneOpeningResult
 };
 
 /**
- * 开窗遮罩组件——管理 RenderTarget 遮罩（皮壳可见性）和揭示纹理（底层颜色）。
+ * 擦石遮罩组件——管理 RenderTarget 遮罩（皮壳可见性）和揭示纹理（底层颜色）。
  * 挂在工作台 Actor 上，每块石头初始化一次。
  */
 UCLASS(ClassGroup = (Clc), meta = (BlueprintSpawnableComponent))
@@ -123,7 +123,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	UTexture2D* GetTypeTexture() const { return TypeTex; }
 
-	/** 获取累计开窗比例（0~1） */
+	/** 获取累计擦石比例（0~1） */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetOpenedRatio() const;
 
@@ -139,7 +139,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetExposedCrackRatio() const;
 
-	/** 计算当前已开窗绿色像素的最大连通域像素数（4连通 BFS，每 0.3s 调一次性能无忧） */
+	/** 计算当前已擦石绿色像素的最大连通域像素数（4连通 BFS，每 0.3s 调一次性能无忧） */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	int32 ComputeLargestGreenConnectedComponent() const;
 
@@ -160,16 +160,16 @@ private:
 
 	TArray<uint8> MaskBuffer; // 0~255，MaskResolution*MaskResolution
 
-	/** 已开窗像素数（>=128 阈值），增量维护避免每次 GetOpenedRatio 全量遍历 */
+	/** 已擦石像素数（>=128 阈值），增量维护避免每次 GetOpenedRatio 全量遍历 */
 	int32 OpenedPixelCount = 0;
 
-	/** 已开窗像素中绿色（玉肉）像素数——与 OpenedPixelCount 对称，GrindAtUV 增量、RestoreMaskFromData 全量重算 */
+	/** 已擦石像素中绿色（玉肉）像素数——与 OpenedPixelCount 对称，GrindAtUV 增量、RestoreMaskFromData 全量重算 */
 	int32 OpenedGreenPixelCount = 0;
 
-	/** 已开窗像素中杂质像素数——同上 */
+	/** 已擦石像素中杂质像素数——同上 */
 	int32 OpenedImpurityPixelCount = 0;
 
-	/** 已开窗像素中裂纹像素数——同上 */
+	/** 已擦石像素中裂纹像素数——同上 */
 	int32 OpenedCrackPixelCount = 0;
 
 	// ---- GPU 资源 ----

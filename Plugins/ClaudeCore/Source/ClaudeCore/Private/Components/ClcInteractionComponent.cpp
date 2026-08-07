@@ -3,10 +3,10 @@
 #include "Components/ClcInteractionComponent.h"
 #include "ClcLog.h"
 #include "Interfaces/ClcInteractable.h"
-#include "Actors/ClcStone.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "UI/ClcInteractionWidget.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
@@ -15,6 +15,8 @@
 #include "Engine/World.h"
 #include "InputCoreTypes.h"
 #include "Blueprint/UserWidget.h"
+
+DECLARE_CYCLE_STAT(TEXT("Interaction Update"), STAT_Interaction_Update, STATGROUP_Game);
 
 UClcInteractionComponent::UClcInteractionComponent()
 {
@@ -26,8 +28,6 @@ void UClcInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 准星 Widget 类兜底：未在 BP Details 指定时按约定路径加载 WBP_Reticle。
-	// 资产未创建前 LoadClass 返回 null——准星不显示，但中心 trace / Indicator 驱动 / 商人收敛照常生效。
 	if (!ReticleWidgetClass)
 	{
 		ReticleWidgetClass = LoadClass<UClcInteractionWidget>(
@@ -42,7 +42,6 @@ void UClcInteractionComponent::BeginPlay()
 			if (ReticleWidget)
 			{
 				ReticleWidget->AddToViewport(10);
-				// 锚定屏幕中心——与相机正前方射线发射点对齐。
 				ReticleWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
 				ReticleWidget->SetStateHidden();
 			}
@@ -64,6 +63,7 @@ void UClcInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 
 void UClcInteractionComponent::UpdateInteraction()
 {
+	SCOPE_CYCLE_COUNTER(STAT_Interaction_Update);
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 	if (!PC)
 	{
@@ -78,7 +78,7 @@ void UClcInteractionComponent::UpdateInteraction()
 		return;
 	}
 
-	// 准星延迟创建：BeginPlay 时 PC 可能尚未就绪，此处兜底，避免准星永远不出现。
+	// 准星延迟创建
 	if (!ReticleWidget && ReticleWidgetClass)
 	{
 		ReticleWidget = CreateWidget<UClcInteractionWidget>(PC, ReticleWidgetClass);
@@ -91,7 +91,6 @@ void UClcInteractionComponent::UpdateInteraction()
 	}
 
 	// ---- 1. 唯一一条中心球扫：CurrentLookedAtActor ----
-	// SweepSingle 返回最近命中——与旧 Indicator/商人自检一致的遮挡语义（不穿透墙）。
 	AActor* LookedAt = nullptr;
 	FVector CamLoc;
 	FRotator CamRot;
@@ -119,7 +118,6 @@ void UClcInteractionComponent::UpdateInteraction()
 	CurrentLookedAtActor = LookedAt;
 
 	// ---- 2. 收集附近交互物，按各自 InteractionRadius 判 in-range，驱动各 Indicator 态 ----
-	// 交互物缓存每秒重建一次（GetAllActorsWithInterface + FindComponentByClass 较重），其余 tick 复用。
 	if (FPlatformTime::Seconds() - InteractableCacheRebuildTime >= 1.0)
 	{
 		InteractableCacheRebuildTime = FPlatformTime::Seconds();
@@ -137,8 +135,8 @@ void UClcInteractionComponent::UpdateInteraction()
 	const FVector PawnLoc = Pawn->GetActorLocation();
 
 	bool bAnyInRange = false;
-	AActor* AimSelected = nullptr;       // aim 模式命中且 in-range（准星优先）
-	AActor* ProximitySelected = nullptr; // proximity 委托 true（准星次选）
+	AActor* AimSelected = nullptr;
+	AActor* ProximitySelected = nullptr;
 
 	for (int32 Ci = 0; Ci < CachedInteractables.Num(); ++Ci)
 	{
@@ -159,13 +157,11 @@ void UClcInteractionComponent::UpdateInteraction()
 		bool bThisSelected = false;
 		if (Ind && Ind->bSelectByProximity)
 		{
-			// proximity 模式（工作台/回收商）：不要求瞄准，由 Owner 委托决定选中（背包有石头→选中）。
 			bThisSelected = Ind->OnQueryCanSelect.IsBound() ? Ind->OnQueryCanSelect.Execute() : true;
 			if (bThisSelected) ProximitySelected = A;
 		}
 		else
 		{
-			// aim 模式（石头）：中心射线命中自己才算选中。
 			bThisSelected = (A == LookedAt);
 			if (bThisSelected) AimSelected = A;
 		}
@@ -173,35 +169,58 @@ void UClcInteractionComponent::UpdateInteraction()
 		if (Ind) Ind->ApplyControllerState(bThisSelected ? 2 : 1);
 	}
 
-	// 准星选中：aim 命中优先，否则取 proximity 委托选中。
 	AActor* Selected = AimSelected ? AimSelected : ProximitySelected;
 	CurrentSelectedActor = Selected;
 
-	// ---- 按键提示：选中可购买原石（AClcStone）时显示 E，取消选中时隐藏 ----
-	// 工作台/回收商用 F（各自 overlap 注册 E 之外的键），这里只管 E。
+	// ---- 3. 按键提示：所有 IClcInteractable 统一由本组件管理 ----
+	// 工作台/解石台/修理站/升级站/回收商/石头 只需实现 IClcInteractable::GetInteractionPrompt，
+	// F 键路由由这里统一处理；各站点不再各自维护 PromptHandle 和 Tick 按键轮询。
 	{
-		const bool bShouldShowEPrompt = (Selected && Selected->IsA(AClcStone::StaticClass()));
-		if (ULocalPlayer* LP = PC->GetLocalPlayer())
+		const bool bShouldShow = !bInExclusiveContext && Selected != nullptr;
+		const FText PromptText = bShouldShow ? Cast<IClcInteractable>(Selected)->GetInteractionPrompt() : FText::GetEmpty();
+
+		if (bShouldShow && SelectedPromptHandle == 0)
 		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+			if (ULocalPlayer* LP = PC->GetLocalPlayer())
 			{
-				if (bShouldShowEPrompt && InteractPromptHandle == 0)
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
 				{
-					InteractPromptHandle = KP->RegisterKeyPrompt(
-						EKeys::E,
-						NSLOCTEXT("ClcInteraction", "PurchasePromptLabel", "购买原石"),
-						FName("Purchase"), 150);
-				}
-				else if (!bShouldShowEPrompt && InteractPromptHandle != 0)
-				{
-					KP->UnregisterKeyPrompt(InteractPromptHandle);
-					InteractPromptHandle = 0;
+					SelectedPromptHandle = KP->RegisterKeyPrompt(
+						EKeys::F, PromptText, Selected->GetClass()->GetFName(), 100);
 				}
 			}
 		}
+		else if (bShouldShow && Selected != LastSelectedActor.Get())
+		{
+			if (ULocalPlayer* LP = PC->GetLocalPlayer())
+			{
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+				{
+					KP->UpdateKeyPromptLabel(SelectedPromptHandle, PromptText);
+				}
+			}
+		}
+		else if (!bShouldShow && SelectedPromptHandle != 0)
+		{
+			if (ULocalPlayer* LP = PC->GetLocalPlayer())
+			{
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+				{
+					KP->UnregisterKeyPrompt(SelectedPromptHandle);
+				}
+			}
+			SelectedPromptHandle = 0;
+		}
+		LastSelectedActor = Selected;
 	}
 
-	// ---- 3. 准星态 + Prompt 文案 ----
+	// ---- 4. F 键路由：统一处理交互输入 ----
+	if (bAnyInRange)
+	{
+		HandleInteractInput();
+	}
+
+	// ---- 5. 准星态 + Prompt 文案 ----
 	if (!bAnyInRange)
 	{
 		SetReticleState(0, FText::GetEmpty());
@@ -239,9 +258,67 @@ void UClcInteractionComponent::SetReticleState(int32 State, const FText& Prompt)
 		}
 	}
 
-	// 选中态每帧刷新 Prompt（价格/石头可能变）；其余态仅在状态变化时推一次（清屏或无文案）。
 	if (State == 2 || bStateChanged)
 	{
 		ReticleWidget->SetPromptText(Prompt);
+	}
+}
+
+// ============================================================
+// 统一 F 键路由
+// ============================================================
+
+void UClcInteractionComponent::SetExclusiveContext(bool bExclusive)
+{
+	bInExclusiveContext = bExclusive;
+	// 进入独占上下文 → 立即注销提示；退出时下一 tick 重新注册
+	if (bExclusive && SelectedPromptHandle != 0)
+	{
+		APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+		if (PC)
+		{
+			if (ULocalPlayer* LP = PC->GetLocalPlayer())
+			{
+				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+				{
+					KP->UnregisterKeyPrompt(SelectedPromptHandle);
+				}
+			}
+		}
+		SelectedPromptHandle = 0;
+	}
+	bInteractKeyPrev = false;
+}
+
+void UClcInteractionComponent::HandleInteractInput()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!PC) return;
+
+	const bool bKeyDown = PC->IsInputKeyDown(EKeys::F);
+	const bool bJustPressed = bKeyDown && !bInteractKeyPrev;
+	bInteractKeyPrev = bKeyDown;
+
+	if (!bJustPressed) return;
+
+	AActor* Selected = CurrentSelectedActor.Get();
+	if (!Selected) return;
+
+	if (IClcInteractable* Interactable = Cast<IClcInteractable>(Selected))
+	{
+		APawn* Pawn = PC->GetPawn();
+		const bool bSuccess = Interactable->OnInteract(Pawn);
+
+		// 交互失败 → 飘 Toast（各站点 OnInteract 内也会飘详细原因，这里做兜底）
+		if (!bSuccess)
+		{
+			if (ULocalPlayer* LP = PC->GetLocalPlayer())
+			{
+				if (UClcLogToastSubsystem* Toast = LP->GetSubsystem<UClcLogToastSubsystem>())
+				{
+					Toast->AddLog(TEXT("无法交互"), 1.5f, FLinearColor::Yellow);
+				}
+			}
+		}
 	}
 }

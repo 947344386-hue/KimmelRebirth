@@ -20,7 +20,7 @@ class UClcInteractionIndicator;
  * 蓝图使用：
  *   1. 在 Content 中创建继承此类的 BP（如 BP_ToolRepairStation）
  *   2. 设置 StationMesh（修理站视觉模型）
- *   3. 在 RepairableTools 中勾选要修复的工具类型（开窗器/手电筒，可多选）
+ *   3. 在 RepairableTools 中勾选要修复的工具类型（擦石器/手电筒/手电擦石器/解石刀，可多选）
  *   4. 设置 RepairCost（金币消耗）
  *   5. 拖入关卡
  */
@@ -61,7 +61,7 @@ protected:
 
 	// ---- 配置 ----
 
-	/** 可修复的工具类型（多选：开窗器=1，手电筒=2） */
+	/** 可修复的工具类型（多选：擦石器=1，手电筒=2，手电擦石器=4，解石刀=8） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RepairStation|Config", meta = (Bitmask, BitmaskEnum = "EClcRepairableTool"))
 	int32 RepairableTools = 3; // 默认两种都修复
 
@@ -77,7 +77,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RepairStation|Config")
 	FKey EnterKey = FKey("F");
 
-	/** 交互提示文本（留空则按 RepairableTools 自动生成，如 "按 F 修复开窗器、手电筒"） */
+	/** 交互提示文本（留空则按 RepairableTools 自动生成，如 "按 F 修复擦石器、手电筒"） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "RepairStation|Config")
 	FText InteractionPrompt;
 
@@ -96,14 +96,11 @@ private:
 	/** 执行修复操作 */
 	void ExecuteRepair(APlayerController* PC);
 
-	/** 按 RepairableTools 位掩码生成中文工具名串（如 "开窗器、手电筒"） */
+	/** 按 RepairableTools 位掩码生成中文工具名串（如 "擦石器、手电筒"） */
 	FString BuildToolNamesString() const;
 
 	/** 生成交互提示文本（优先用 InteractionPrompt，为空则自动生成） */
 	FText BuildInteractionPrompt() const;
-
-	/** 交互组件中心球扫是否命中本站（复用 UClcInteractionComponent::GetLookedAtActor） */
-	bool IsLookedAtByPlayer() const;
 
 	// ---- 重叠 ----
 
@@ -117,15 +114,10 @@ private:
 
 	// ---- 按键轮询 ----
 
-	/** 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） */
-	bool bEnterKeyPrev = false;
 	bool bPlayerInRange = false;
 
 	/** 缓存的玩家控制器 */
 	TWeakObjectPtr<APlayerController> CachedPC;
-
-	/** 按键提示句柄 */
-	int32 RepairPromptHandle = 0;
 
 	/** 进入范围飘字冷却（per-instance，防 overlap 抖动；不同修复台各自计时，回复类型不同时各飘各的） */
 	double LastEnterToastTime = 0.0;

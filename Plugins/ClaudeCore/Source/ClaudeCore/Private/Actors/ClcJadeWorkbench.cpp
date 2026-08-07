@@ -12,6 +12,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/ClcInteractionIndicator.h"
+#include "Components/ClcInteractionComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Pawn.h"
@@ -62,7 +63,7 @@ AClcJadeWorkbench::AClcJadeWorkbench()
 	// ---- 观察摄像机 ----
 	CameraArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraArm"));
 	CameraArm->SetupAttachment(StoneSpawnPoint);
-	CameraArm->TargetArmLength = CameraDistance;
+	CameraArm->TargetArmLength = 200.0f;
 	CameraArm->SetRelativeRotation(FRotator(-15.0f, 0.0f, 0.0f));
 	CameraArm->bDoCollisionTest = false;
 	CameraArm->bUsePawnControlRotation = false;
@@ -115,7 +116,7 @@ void AClcJadeWorkbench::BeginPlay()
 	if (InteractionIndicator)
 	{
 		InteractionIndicator->InteractionRadius = TriggerRadius;
-		InteractionIndicator->bSelectByProximity = true;
+		InteractionIndicator->bSelectByProximity = false;
 		InteractionIndicator->OnQueryCanSelect.BindDynamic(this, &AClcJadeWorkbench::QueryCanSelect);
 	}
 }
@@ -127,17 +128,10 @@ void AClcJadeWorkbench::Tick(float DeltaTime)
 	// 自适应补光：放在所有 early return 之前，保证进/出工作台、切工具、手电开关都能平滑过渡
 	TickFillLight(DeltaTime);
 
-	// Inactive 状态：检测进入按键
-	if (CurrentState == EClcWorkbenchState::Inactive && PlayerInRange.IsValid())
-	{
-		if (CachedPC.IsValid() && CachedPC->WasInputKeyJustPressed(EnterKey))
-		{
-			EnterOpeningMode();
-			return;
-		}
-	}
+	// Inactive 状态：F 键入口由 UClcInteractionComponent 统一路由到 OnInteract
+	// OnInteract 内调 EnterOpeningMode
 
-	// 开窗模式：检测退出——背包打开时优先关背包
+	// 擦石模式：检测退出——背包打开时优先关背包
 	if (CurrentState != EClcWorkbenchState::Inactive && CachedPC.IsValid())
 	{
 		const bool bExitDown = CachedPC->IsInputKeyDown(ExitKey);
@@ -199,18 +193,7 @@ void AClcJadeWorkbench::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	TriggerSphere->OnComponentBeginOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerBeginOverlap);
 	TriggerSphere->OnComponentEndOverlap.RemoveDynamic(this, &AClcJadeWorkbench::OnTriggerEndOverlap);
 
-	// 兜底注销按键提示（CachedPC 可能已失效，子系统 Deinitialize 会统一清理）
-	if (WorkbenchPromptHandle != 0 && CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KP->UnregisterKeyPrompt(WorkbenchPromptHandle);
-			}
-		}
-		WorkbenchPromptHandle = 0;
-	}
+	// F 键提示已由 UClcInteractionComponent 统一管理
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -223,7 +206,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 {
 	if (!CachedPC.IsValid() || !OpeningStone) return;
 
-	// ---- 右键长按 FOV 放大（独立于工具，纯视觉拉近，不碰开窗/手电筒） ----
+	// ---- 右键长按 FOV 放大（独立于工具，纯视觉拉近，不碰擦石/手电筒） ----
 	UpdateAimZoom(DeltaTime);
 
 	// ---- WASD 旋转（相机相对：W/S 绕相机 X 轴上下翻，A/D 绕相机 Y 轴左右转） ----
@@ -267,7 +250,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	// ---- T 键：组合工具=开关手电；否则循环切换开窗器/手电筒 ----
+	// ---- T 键：组合工具=开关手电；否则循环切换擦石器/手电筒 ----
 	{
 		const bool bTDown = CachedPC->IsInputKeyDown(ToolSwitchKey);
 		if (bTDown && !bTKeyPrev)
@@ -291,7 +274,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 		}
 	}
 
-	// ---- 鼠标滚轮调整开窗笔刷半径 ----
+	// ---- 鼠标滚轮调整擦石笔刷半径 ----
 	if (AClcOpeningTool* OpeningTool = Cast<AClcOpeningTool>(CurrentTool))
 	{
 		float WheelDelta = 0.0f;
@@ -406,7 +389,7 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 				}
 				else
 				{
-					// 背包刚关——开窗模式需要光标做打磨
+					// 背包刚关——擦石模式需要光标做打磨
 					SetWorkbenchCursor(true);
 				}
 				bBackpackWasOpen = bNowOpen;
@@ -549,7 +532,7 @@ void AClcJadeWorkbench::UpdateFillLightTarget()
 		return;
 	}
 
-	// 组合工具：灯开→压暗让 X-ray 突出，灯关→同开窗器亮度看清打磨
+	// 组合工具：灯开→压暗让 X-ray 突出，灯关→同擦石器亮度看清打磨
 	if (CurrentToolMode == EClcToolMode::Combined)
 	{
 		const AClcCombinedTool* CT = Cast<AClcCombinedTool>(CurrentTool);
@@ -609,21 +592,7 @@ void AClcJadeWorkbench::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedCom
 					LastEnterToastTime = Now;
 					if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 					{
-						LT->AddLog(TEXT("按 F 使用赌石工作台"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
-					}
-				}
-			}
-			// 小白点由 InteractionIndicator 自动显示（范围+背包有石头→选中）
-			if (WorkbenchPromptHandle == 0 && CachedPC.IsValid())
-			{
-				if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-				{
-					if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-					{
-						WorkbenchPromptHandle = KP->RegisterKeyPrompt(
-							EnterKey,
-							NSLOCTEXT("ClcWorkbench", "WorkbenchPromptLabel", "使用工作台"),
-							FName("Workbench"), 100);
+						LT->AddLog(TEXT("按 F 使用擦石台"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 					}
 				}
 			}
@@ -637,19 +606,7 @@ void AClcJadeWorkbench::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp,
 	if (PlayerInRange.Get() == Other)
 	{
 		PlayerInRange.Reset();
-		// 小白点由 InteractionIndicator 自动隐藏（离开范围）
-
-		if (WorkbenchPromptHandle != 0 && CachedPC.IsValid())
-		{
-			if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-			{
-				if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-				{
-					KP->UnregisterKeyPrompt(WorkbenchPromptHandle);
-				}
-			}
-			WorkbenchPromptHandle = 0;
-		}
+		// F 键提示已由 UClcInteractionComponent 统一管理
 
 		if (CurrentState != EClcWorkbenchState::Inactive)
 		{
@@ -691,14 +648,14 @@ void AClcJadeWorkbench::EnterOpeningMode()
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcWorkbench] Player has no stones."));
 		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 		{
-			LT->AddLog(TEXT("背包空，无可开窗的石头"), 2.0f, FLinearColor::Yellow);
+			LT->AddLog(TEXT("背包空，无可擦石的石头"), 2.0f, FLinearColor::Yellow);
 		}
 		return;
 	}
 
 	CurrentState = EClcWorkbenchState::AwaitingStone;
 	HidePrompt();  // 向后兼容：BP 端如有文字提示则隐藏
-	if (InteractionIndicator) InteractionIndicator->bHidden = true;  // 开窗模式隐藏小白点（切相机避免碍事）
+	if (InteractionIndicator) InteractionIndicator->bHidden = true;  // 擦石模式隐藏小白点（切相机避免碍事）
 	OnEnterOpeningMode();
 
 	// 打开背包
@@ -714,7 +671,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 
 	if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 	{
-		LT->AddLog(TEXT("进入开窗模式——选择一块石头"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+		LT->AddLog(TEXT("进入擦石模式——选择一块石头"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 	}
 }
 
@@ -748,7 +705,7 @@ void AClcJadeWorkbench::ExitOpeningMode()
 		{
 			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 			{
-				LT->AddLog(TEXT("开窗进度已保存"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+				LT->AddLog(TEXT("擦石进度已保存"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 			}
 		}
 	}
@@ -841,6 +798,8 @@ bool AClcJadeWorkbench::QueryCanSelect()
 	return false;
 }
 
+// IsLookedAtByPlayer / CachedInteractionComp 已删除——F 键路由由 UClcInteractionComponent 统一接管
+
 // ============================================================
 // IClcInteractable
 // ============================================================
@@ -852,18 +811,22 @@ FText AClcJadeWorkbench::GetInteractionPrompt() const
 
 bool AClcJadeWorkbench::OnInteract(AActor* Interactor)
 {
-	// 工作台目前仍由自身 Tick 轮询 F 键进入（EnterOpeningMode）。
-	// 此实现为接口契约（让 GetAllActorsWithInterface 收集到工作台 → 中心组件驱动其准星/Indicator）
-	// + 未来中心化输入路由预留；当前无人调用，不与现有 F 键自轮询冲突。
-	// 被调用时若已激活则忽略，避免重复进入。
+	// F 键路由已由 UClcInteractionComponent 统一接管——球扫命中 → GetInteractionPrompt → F 键 → OnInteract
 	if (CurrentState != EClcWorkbenchState::Inactive) return false;
+
+	if (APawn* Pawn = Cast<APawn>(Interactor))
+	{
+		PlayerInRange = Pawn;
+		CachePlayerRefs();
+	}
+
 	EnterOpeningMode();
-	return true;
+	return CurrentState != EClcWorkbenchState::Inactive;
 }
 
 void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 {
-	// 锁价石头不能上工作台开窗——飘 tips 拦截，背包保持打开让玩家选别的
+	// 锁价石头不能上工作台擦石——飘 tips 拦截，背包保持打开让玩家选别的
 	if (CachedCarrier)
 	{
 		TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
@@ -871,7 +834,16 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 		{
 			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 			{
-				LT->AddLog(TEXT("这块石头已锁价，不能上工作台开窗（到回收台 Enter 出手）"), 2.5f, FLinearColor(1.0f, 0.5f, 0.2f));
+				LT->AddLog(TEXT("这块石头已锁价，不能上擦石台（到回收台 Enter 出手）"), 2.5f, FLinearColor(1.0f, 0.5f, 0.2f));
+			}
+			return;
+		}
+		// 已解石的石头不能上擦石台——阶段互斥门控
+		if (AllStones.IsValidIndex(StoneIndex) && AllStones[StoneIndex].Phase == EClcStonePhase::Cut)
+		{
+			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
+			{
+				LT->AddLog(TEXT("已解石的原石不能再擦石"), 2.2f, FLinearColor::Yellow);
 			}
 			return;
 		}
@@ -986,7 +958,7 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 		return;
 	}
 
-	// 生成默认工具：拥有「手电开窗器」升级 → 组合工具；否则开窗器
+	// 生成默认工具：拥有「手电擦石器」升级 → 组合工具；否则擦石器
 	UClcToolDurabilitySubsystem* DuraSys = UClcToolDurabilitySubsystem::Get(GetWorld());
 	const bool bHasCombined = DuraSys && DuraSys->HasCombinedTool();
 	CurrentToolMode = bHasCombined ? EClcToolMode::Combined : EClcToolMode::Opener;
@@ -1030,7 +1002,7 @@ void AClcJadeWorkbench::RemoveStoneFromBench()
 	DestroyHUD();
 	DestroyCurrentTool();
 
-	// 从 OpeningStone 读取最新开窗进度
+	// 从 OpeningStone 读取最新擦石进度
 	FClcStoneRuntimeData UpdatedData;
 	if (OpeningStone->GetStoneData(UpdatedData))
 	{
@@ -1188,7 +1160,7 @@ void AClcJadeWorkbench::PushHUDData()
 		// 皮壳名称
 		Data.ShellName = UClcShellTextureConfig::GetShellName(I.ShellTypeIndex).ToString();
 
-		// 开窗进度
+		// 擦石进度
 		float OpenedR, GreenR, BlackR, ImpurityR, CrackR;
 		OpeningStone->GetOpeningProgress(OpenedR, GreenR, BlackR, ImpurityR, CrackR);
 		Data.OpenedRatio = OpenedR;
@@ -1217,8 +1189,8 @@ void AClcJadeWorkbench::PushHUDData()
 		switch (CurrentToolMode)
 		{
 		case EClcToolMode::Flashlight: Data.ToolName = TEXT("手电筒"); break;
-		case EClcToolMode::Combined:   Data.ToolName = TEXT("手电开窗器"); break;
-		default:                       Data.ToolName = TEXT("开窗器"); break;
+		case EClcToolMode::Combined:   Data.ToolName = TEXT("手电擦石器"); break;
+		default:                       Data.ToolName = TEXT("擦石器"); break;
 		}
 
 		// 灯是否开启（手电筒或组合工具）
@@ -1240,13 +1212,13 @@ void AClcJadeWorkbench::PushHUDData()
 	switch (CurrentToolMode)
 	{
 	case EClcToolMode::Flashlight:
-		Data.OperationHints = TEXT("左键 开/关灯 | T 切开窗器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		Data.OperationHints = TEXT("左键 开/关灯 | T 切擦石器\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
 		break;
 	case EClcToolMode::Combined:
-		Data.OperationHints = TEXT("左键 开窗 | T 开/关手电 | 滚轮 笔刷大小\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		Data.OperationHints = TEXT("左键 擦石 | T 开/关手电 | 滚轮 笔刷大小\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
 		break;
 	default:
-		Data.OperationHints = TEXT("左键 开窗 | 滚轮 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
+		Data.OperationHints = TEXT("左键 擦石 | 滚轮 笔刷大小 | T 切手电筒\nWASD 旋转 | R 复位 | 右键 放大\nB 背包 | Esc 退出");
 		break;
 	}
 

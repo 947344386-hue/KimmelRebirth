@@ -13,8 +13,8 @@ class UMaterialInterface;
 class UMaterialInstanceDynamic;
 
 /**
- * 工作台上正在被开窗的石头——只管 3D 表现、材质、遮罩、旋转、存档。
- * 开窗/手电逻辑由各自的 Tool 类（AClcOpeningTool / AClcFlashlightTool）驱动。
+ * 工作台上正在被擦石的石头——只管 3D 表现、材质、遮罩、旋转、存档。
+ * 擦石/手电逻辑由各自的 Tool 类（AClcOpeningTool / AClcFlashlightTool）驱动。
  * 由 AClcJadeWorkbench 在 PlaceStoneOnBench 时 Spawn，RemoveStoneFromBench 时 Destroy。
  */
 UCLASS()
@@ -28,7 +28,7 @@ public:
 	// ---- 生命周期 ----
 
 	/** 用石头运行时数据初始化——加载 Mesh、创建 MID、初始化遮罩、设材质。
-	 *  MaterialAssetPath 指定开窗材质路径（如 /Game/JadeBetting/Materials/M_StoneOpening）。 */
+	 *  MaterialAssetPath 指定擦石材质路径（如 /Game/JadeBetting/Materials/M_StoneOpening）。 */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	bool Initialize(const FClcStoneRuntimeData& StoneData, const FString& MaterialAssetPath);
 
@@ -53,20 +53,20 @@ public:
 
 	// ---- 存档 ----
 
-	/** 获取当前开窗进度，用于退出时写回 FClcStoneRuntimeData */
+	/** 获取当前擦石进度，用于退出时写回 FClcStoneRuntimeData */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	void GetOpeningProgress(float& OutOpenedRatio, float& OutOpenedGreenRatio, float& OutOpenedBlackRatio,
 		float& OutOpenedImpurityRatio, float& OutOpenedCrackRatio) const;
 
-	/** 获取当前石头的运行时数据（含已更新的开窗信息） */
+	/** 获取当前石头的运行时数据（含已更新的擦石信息） */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	bool GetStoneData(FClcStoneRuntimeData& OutData) const;
 
-	/** 标记石头已讨价还价结算，锁定最终售价（写回内部数据；锁定后禁止开窗/再讨价） */
+	/** 标记石头已讨价还价结算，锁定最终售价（写回内部数据；锁定后禁止擦石/再讨价） */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	void MarkHaggleResolved(int32 LockedPrice);
 
-	/** 该石头是否已讨价还价锁定（开窗/再讨价时据此门禁） */
+	/** 该石头是否已讨价还价锁定（擦石/再讨价时据此门禁） */
 	UFUNCTION(BlueprintCallable, Category = "ClcOpeningStone")
 	bool IsHaggleResolved() const;
 
@@ -127,7 +127,7 @@ protected:
 	FString JadeTextureConfigPath;
 
 private:
-	/** 当前石头数据（运行时持续更新开窗进度） */
+	/** 当前石头数据（运行时持续更新擦石进度） */
 	FClcStoneRuntimeData CachedStoneData;
 
 	/** 动态材质实例 */
@@ -143,7 +143,7 @@ private:
 	/** HUD 需要立即刷新（GrindAtUV 触发） */
 	bool bHUDDirty = false;
 
-	/** 累计开窗面积（UV 比例 × 表面积） */
+	/** 累计擦石面积（UV 比例 × 表面积） */
 	float AccumulatedOpenedRatio = 0.0f;
 
 	/** 累计暴露的玉肉面积比例 */

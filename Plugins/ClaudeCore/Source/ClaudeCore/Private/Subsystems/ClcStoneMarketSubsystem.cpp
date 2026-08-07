@@ -377,13 +377,19 @@ int32 UClcStoneMarketSubsystem::CalculateSalePrice(const FClcStoneRuntimeData& S
 {
 	if (!StoneConfig) return 0;
 
+	// 解石阶段 → 3D 体积定价（独立于 2D 面积定价）
+	if (StoneData.Phase == EClcStonePhase::Cut)
+	{
+		return CalculateCutStoneSalePrice(StoneData);
+	}
+
 	const FClcStoneInternalData& I = StoneData.Internal;
 	const float S_total = I.SurfaceArea;
 	if (S_total <= 0.0f) return 0;
 	const float S_opened = StoneData.AccumulatedOpenedArea;
 	const float S_unopened = S_total - S_opened;
 
-	// 边界A：未开窗 → 保底价 = 理论全开价值 × 折扣系数
+	// 边界A：未擦石 → 保底价 = 理论全开价值 × 折扣系数
 	// （杂裂多的石头 TheoreticalValue 低，保底自然低，避免杂裂多的石头保底和纯皮壳一样）
 	if (S_opened <= 0.0f)
 	{
@@ -433,6 +439,68 @@ int32 UClcStoneMarketSubsystem::CalculateHagglePrice(int32 BasePrice, float Rati
 	return FMath::Max(0, FMath::RoundToInt(static_cast<float>(BasePrice) * Mult));
 }
 
+// ============================================================
+// 解石（3D 体积）定价
+// ============================================================
+
+int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(int32 CutAwayTotal, int32 CutAwayJade,
+	int32 CutAwayCrack, float VoxelVolume, EClcJadeGrade Grade) const
+{
+	if (!StoneConfig || CutAwayTotal <= 0) return 0;
+
+	const float V_total = static_cast<float>(CutAwayTotal) * VoxelVolume;
+	if (V_total < StoneConfig->MinVolumeForValue)
+	{
+		return 0;
+	}
+
+	const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+		? StoneConfig->GradeValueMultiplier
+		: GetDefaultGradeValueMultipliers();
+	const float* GradeMult = ValueMults.Find(Grade);
+	const float C_sw = GradeMult ? *GradeMult : 1.0f;
+
+	const float V_jade  = static_cast<float>(CutAwayJade)  * VoxelVolume;
+	const float V_crack = static_cast<float>(CutAwayCrack) * VoxelVolume;
+
+	const float V_value = V_jade * StoneConfig->PricePerUnitVolume * C_sw
+		- V_crack * StoneConfig->PenaltyPerUnitCrackVolume;
+
+	return FMath::Max(0, FMath::RoundToInt(V_value));
+}
+
+int32 UClcStoneMarketSubsystem::CalculateCutStoneSalePrice(const FClcStoneRuntimeData& StoneData) const
+{
+	if (!StoneConfig) return 0;
+
+	const float V_total = StoneData.ExposedCutVolume + StoneData.RemainingVolume;
+	if (V_total <= 0.0f) return 0;
+
+	// 边界A：尚未下刀 → 保底价 = 理论全开价值 × 折扣系数
+	if (StoneData.ExposedCutVolume <= 0.0f)
+	{
+		return FMath::RoundToInt(StoneData.Internal.TheoreticalValue * StoneConfig->UnopenedFloorDiscountFactor);
+	}
+
+	const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+		? StoneConfig->GradeValueMultiplier
+		: GetDefaultGradeValueMultipliers();
+	const float* GradeMult = ValueMults.Find(StoneData.Internal.Grade);
+	const float C_sw = GradeMult ? *GradeMult : 1.0f;
+
+	// 已露截面价值
+	const float V_jade_value  = StoneData.ExposedJadeVolume  * StoneConfig->PricePerUnitVolume * C_sw;
+	const float V_crack_pen   = StoneData.ExposedCrackVolume * StoneConfig->PenaltyPerUnitCrackVolume;
+	const float V_net = V_jade_value - V_crack_pen;
+
+	// 净外推：把已露截面净价值密度对称外推到未切体积
+	const float V_unexposed = StoneData.RemainingVolume;
+	const float V_gambling = V_net * (V_unexposed / V_total) * StoneConfig->GamblingKCoefficient;
+	const float V_final = FMath::Max(0.0f, V_net + V_gambling);
+
+	return FMath::RoundToInt(V_final);
+}
+
 int32 UClcStoneMarketSubsystem::CalculatePurchasePrice(const FClcStoneInternalData& Data) const
 {
 	if (!StoneConfig) return 0;
@@ -455,7 +523,7 @@ FClcStoneTooltipInfo UClcStoneMarketSubsystem::BuildTooltipInfo(const FClcStoneR
 	Info.Origin = StoneData.Internal.Origin;
 	Info.PurchasePrice = StoneData.Internal.PurchasePrice;
 
-	// 当前回收价：已讨价锁定用锁价，否则随开窗进度实时算
+	// 当前回收价：已讨价锁定用锁价，否则随擦石进度实时算
 	Info.CurrentValue = StoneData.bHaggleResolved ? StoneData.HaggleLockedPrice : CalculateSalePrice(StoneData);
 
 	// 开到玉判定：已暴露绿色面积 > 0

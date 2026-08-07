@@ -14,9 +14,10 @@ UENUM(BlueprintType, meta = (Bitmask, UseEnumValuesAsMaskValuesInEditor = "true"
 enum class EClcRepairableTool : uint8
 {
 	None       = 0   UMETA(Hidden),
-	Opener     = 1   UMETA(DisplayName = "开窗器"),
+	Opener     = 1   UMETA(DisplayName = "擦石器"),
 	Flashlight = 2   UMETA(DisplayName = "手电筒"),
-	Combined   = 4   UMETA(DisplayName = "手电开窗器"),
+	Combined   = 4   UMETA(DisplayName = "手电擦石器"),
+	Blade      = 8   UMETA(DisplayName = "解石刀"),
 };
 ENUM_CLASS_FLAGS(EClcRepairableTool)
 
@@ -27,7 +28,8 @@ ENUM_CLASS_FLAGS(EClcRepairableTool)
 UENUM(BlueprintType)
 enum class EClcToolUpgrade : uint8
 {
-	CombinedTool UMETA(DisplayName = "手电开窗器"),
+	CombinedTool UMETA(DisplayName = "手电擦石器"),
+	CuttingTable  UMETA(DisplayName = "解石台"),
 };
 
 /** 升级台的一项商品（BP 可在 Upgrades 数组里增补） */
@@ -40,10 +42,10 @@ struct FClcToolUpgradeItem
 	EClcToolUpgrade Type = EClcToolUpgrade::CombinedTool;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
-	FString Name = TEXT("手电开窗器");
+	FString Name = TEXT("手电擦石器");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
-	FString Description = TEXT("合并开窗器与手电筒，T 切换手电");
+	FString Description = TEXT("合并擦石器与手电筒，T 切换手电");
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade", meta = (ClampMin = "0"))
 	int32 Cost = 2000;
@@ -81,7 +83,7 @@ struct FClcToolTraceInfo
 };
 
 /**
- * 石头工具基类——开窗器、手电筒等的公共接口。
+ * 石头工具基类——擦石器、手电筒等的公共接口。
  * 由 Workbench Spawn，每帧通过 OnUpdate 传入鼠标射线命中信息。
  * 子类实现具体逻辑（打磨、光照、耐久消耗等）。
  *

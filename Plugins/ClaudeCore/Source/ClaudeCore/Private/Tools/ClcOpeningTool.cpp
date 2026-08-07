@@ -16,7 +16,7 @@ AClcOpeningTool::AClcOpeningTool()
 	MaxDurability = 200.0f;
 	CurrentDurability = MaxDurability;
 
-	// 开窗器位姿平滑提速——命中点是即时的，工具跟太慢会不匹配，调快让工具更跟手
+	// 擦石器位姿平滑提速——命中点是即时的，工具跟太慢会不匹配，调快让工具更跟手
 	SmoothSpeedLocation = 0.3f;
 	SmoothSpeedRotation = 0.35f;
 

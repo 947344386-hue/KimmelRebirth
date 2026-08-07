@@ -18,7 +18,7 @@
 AClcToolRepairStation::AClcToolRepairStation()
 {
 	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.0f;
+	PrimaryActorTick.TickInterval = 0.1f;
 
 	// 无缩放根
 	StationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("StationRoot"));
@@ -66,64 +66,16 @@ void AClcToolRepairStation::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!bPlayerInRange || !CachedPC.IsValid()) return;
-
-	// 复用交互组件中心球扫结果：只有被瞄着的那台注册提示 + 响应 F
-	const bool bLookedAt = IsLookedAtByPlayer();
-
-	// 动态维护按键提示：瞄着 → 注册；没瞄着 → 注销
-	if (bLookedAt && RepairPromptHandle == 0)
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				RepairPromptHandle = KP->RegisterKeyPrompt(
-					EnterKey, BuildInteractionPrompt(), FName("Repair"), 60);
-			}
-		}
-	}
-	else if (!bLookedAt && RepairPromptHandle != 0)
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KP->UnregisterKeyPrompt(RepairPromptHandle);
-				RepairPromptHandle = 0;
-			}
-		}
-	}
-
-	// 按键轮询（自维护边沿）—— 只在被瞄着时响应
-	if (!bLookedAt)
-	{
-		bEnterKeyPrev = false;
-		return;
-	}
-	const bool bKeyDown = CachedPC->IsInputKeyDown(EnterKey);
-	const bool bJustPressed = bKeyDown && !bEnterKeyPrev;
-	bEnterKeyPrev = bKeyDown;
-	if (bJustPressed)
-	{
-		ExecuteRepair(CachedPC.Get());
-	}
+	// 交互提示和 F 键路由已下沉到 UClcInteractionComponent——本站只需实现
+	// IClcInteractable::GetInteractionPrompt / OnInteract。
+	// 此 Tick 保留为空，供 BP 覆写事件等后续使用。
+	// 按键边沿保留用于兼容——交互组件路由优先选 SelectedActor，
+	// 修理站作为 fallback 保留 OnInteract 入口。
 }
 
 void AClcToolRepairStation::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 注销按键提示
-	if (RepairPromptHandle != 0 && CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KeyPrompt = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KeyPrompt->UnregisterKeyPrompt(RepairPromptHandle);
-				RepairPromptHandle = 0;
-			}
-		}
-	}
+	// F 键提示已由 UClcInteractionComponent 统一管理
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -165,6 +117,10 @@ bool AClcToolRepairStation::HasToolsNeedingRepair() const
 	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Combined))
 	{
 		if (DuraSys->NeedsRepair(EClcRepairableTool::Combined)) return true;
+	}
+	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Blade))
+	{
+		if (DuraSys->NeedsRepair(EClcRepairableTool::Blade)) return true;
 	}
 	return false;
 }
@@ -248,7 +204,7 @@ FString AClcToolRepairStation::BuildToolNamesString() const
 	TArray<FString> Names;
 	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Opener))
 	{
-		Names.Add(TEXT("开窗器"));
+		Names.Add(TEXT("擦石器"));
 	}
 	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Flashlight))
 	{
@@ -256,7 +212,11 @@ FString AClcToolRepairStation::BuildToolNamesString() const
 	}
 	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Combined))
 	{
-		Names.Add(TEXT("手电开窗器"));
+		Names.Add(TEXT("手电擦石器"));
+	}
+	if (RepairableTools & static_cast<int32>(EClcRepairableTool::Blade))
+	{
+		Names.Add(TEXT("解石刀"));
 	}
 	if (Names.IsEmpty())
 	{
@@ -273,21 +233,13 @@ FText AClcToolRepairStation::BuildInteractionPrompt() const
 		return InteractionPrompt;
 	}
 
-	// 自动生成：按 F 修复开窗器、手电筒
+	// 自动生成：按 F 修复擦石器、手电筒
 	const FString KeyStr = EnterKey.ToString();
 	const FString Names = BuildToolNamesString();
 	return FText::FromString(FString::Printf(TEXT("按 %s 修复%s"), *KeyStr, *Names));
 }
 
-bool AClcToolRepairStation::IsLookedAtByPlayer() const
-{
-	if (!CachedPC.IsValid()) return false;
-	APawn* Pawn = CachedPC->GetPawn();
-	if (!Pawn) return false;
-	UClcInteractionComponent* InteractComp = Pawn->FindComponentByClass<UClcInteractionComponent>();
-	if (!InteractComp) return false;
-	return InteractComp->GetLookedAtActor() == this;
-}
+// IsLookedAtByPlayer / CachedInteractionComp 已删除——F 键路由由 UClcInteractionComponent 统一接管
 
 // ---- 重叠 ----
 
@@ -324,20 +276,8 @@ void AClcToolRepairStation::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedC
 	if (!Pawn || !Pawn->IsLocallyControlled()) return;
 
 	bPlayerInRange = false;
-	bEnterKeyPrev = false;
 
-	// 注销按键提示
-	if (RepairPromptHandle != 0 && CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcKeyPromptSubsystem* KeyPrompt = LP->GetSubsystem<UClcKeyPromptSubsystem>())
-			{
-				KeyPrompt->UnregisterKeyPrompt(RepairPromptHandle);
-				RepairPromptHandle = 0;
-			}
-		}
-	}
+	// F 键提示已由 UClcInteractionComponent 统一管理
 	CachedPC.Reset();
 }
 

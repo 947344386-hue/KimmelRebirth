@@ -814,7 +814,7 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 			CurrentTalkState = ETalkState::Enter;
 			RefreshTalkBubble();
 
-			// 进入商人话术范围——一次性飘字提示瞄准石料按 E 购入（per-instance CD）
+			// 进入商人话术范围——一次性飘字提示瞄准石料按 F 购入（per-instance CD）
 			{
 				const double Now = FPlatformTime::Seconds();
 				if (Now - LastEnterToastTime > 3.0)
@@ -824,7 +824,7 @@ void AClcMerchant::OnTalkTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp
 					{
 						if (UClcLogToastSubsystem* LT = ClcGetLogToast(PC))
 						{
-							LT->AddLog(TEXT("瞄准石料按 E 购入"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+							LT->AddLog(TEXT("瞄准石料按 F 购入"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
 						}
 					}
 				}

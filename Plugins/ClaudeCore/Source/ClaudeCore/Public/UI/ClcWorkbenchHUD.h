@@ -40,7 +40,7 @@ struct CLAUDECORE_API FClcWorkbenchHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "HUD|Stone")
 	int32 ValuationTrend = 0;
 
-	// ── 开窗 ──
+	// ── 擦石 ──
 
 	UPROPERTY(BlueprintReadOnly, Category = "HUD|Opening")
 	float OpenedRatio = 0.0f;

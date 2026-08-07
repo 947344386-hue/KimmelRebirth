@@ -32,7 +32,7 @@ struct CLAUDECORE_API FClcVendorHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Stone")
 	FString ShellName;
 
-	/** 是否已暴露出玉石（OpenedGreenArea>0 时为 true，回收台不开窗，上台即定） */
+	/** 是否已暴露出玉石（OpenedGreenArea>0 时为 true，回收台不擦石，上台即定） */
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Stone")
 	bool bGradeRevealed = false;
 
@@ -43,7 +43,7 @@ struct CLAUDECORE_API FClcVendorHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Stone")
 	int32 PurchasePrice = 0;
 
-	// ── 开窗展示 ──
+	// ── 擦石展示 ──
 
 	UPROPERTY(BlueprintReadOnly, Category = "VendorHUD|Opening")
 	float OpenedRatio = 0.0f;

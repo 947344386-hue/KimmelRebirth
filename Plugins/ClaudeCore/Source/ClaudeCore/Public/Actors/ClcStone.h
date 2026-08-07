@@ -81,7 +81,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ClcStone")
 	UClcInteractionIndicator* InteractionIndicator;
 
-	/** 摊位展示用皮壳材质路径（纯皮壳，不含开窗逻辑） */
+	/** 摊位展示用皮壳材质路径（纯皮壳，不含擦石逻辑） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcStone")
 	FString ShellMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneShell.M_StoneShell");
 

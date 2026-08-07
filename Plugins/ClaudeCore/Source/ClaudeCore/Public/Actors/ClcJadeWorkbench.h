@@ -12,9 +12,9 @@
 UENUM(BlueprintType)
 enum class EClcToolMode : uint8
 {
-	Opener     UMETA(DisplayName = "开窗器"),
+	Opener     UMETA(DisplayName = "擦石器"),
 	Flashlight UMETA(DisplayName = "手电筒"),
-	Combined   UMETA(DisplayName = "手电开窗器"),
+	Combined   UMETA(DisplayName = "手电擦石器"),
 	// 玩家离开工作台时触发，表示当前无工具——供蓝图做退出编排
 	None       UMETA(DisplayName = "无工具")
 };
@@ -31,10 +31,10 @@ class UClcWorkbenchHUD;
 struct FClcWorkbenchHUDData;
 
 /**
- * 工作台 Actor——原石开窗的入口。
+ * 工作台 Actor——原石擦石的入口。
  * 玩家进入范围按键 → 背包选石 → Spawn AClcOpeningStone → WASD 旋转 + 工具操作 → 按键退出回背包。
  *
- * 工具系统：T 键循环切换工具模式（开窗器 ⇄ 手电筒），互斥。
+ * 工具系统：T 键循环切换工具模式（擦石器 ⇄ 手电筒），互斥。
  * 每帧做鼠标 LineTrace，命中石头时把结果传给当前工具的 OnUpdate。
  */
 UCLASS()
@@ -45,7 +45,7 @@ class CLAUDECORE_API AClcJadeWorkbench : public AActor, public IClcInteractable
 public:
 	AClcJadeWorkbench();
 
-	/** 当前是否处于开窗模式 */
+	/** 当前是否处于擦石模式 */
 	UFUNCTION(BlueprintCallable, Category = "ClcWorkbench")
 	bool IsInOpeningMode() const { return CurrentState != EClcWorkbenchState::Inactive; }
 
@@ -57,7 +57,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcWorkbench")
 	bool HasActiveStone() const { return CurrentState == EClcWorkbenchState::StoneOnBench; }
 
-	/** 开窗模式是否处于等待选石状态 */
+	/** 擦石模式是否处于等待选石状态 */
 	UFUNCTION(BlueprintCallable, Category = "ClcWorkbench")
 	bool IsAwaitingStoneSelection() const { return CurrentState == EClcWorkbenchState::AwaitingStone; }
 
@@ -127,7 +127,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FKey BackpackKey = FKey("B");
 
-	/** 工具切换键（循环：开窗器 ⇄ 手电筒） */
+	/** 工具切换键（循环：擦石器 ⇄ 手电筒） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FKey ToolSwitchKey = FKey("T");
 
@@ -142,10 +142,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FText InteractionPrompt = FText::FromString(TEXT("Press [F] to use Workbench"));
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
-	float CameraDistance = 200.0f;
-
-	/** 长按右键放大倍率（2.0=放大2倍，只改 FOV，不碰开窗/工具/手电筒） */
+	/** 长按右键放大倍率（2.0=放大2倍，只改 FOV，不碰擦石/工具/手电筒） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "8.0"))
 	float AimZoomFactor = 2.0f;
 
@@ -153,7 +150,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "30.0"))
 	float AimZoomSpeed = 10.0f;
 
-	/** 开窗材质路径（AClcOpeningStone 初始化时加载） */
+	/** 擦石材质路径（AClcOpeningStone 初始化时加载） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FString OpeningMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneOpening.M_StoneOpening");
 
@@ -171,7 +168,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
 	float FillLightIdleIntensity = 2500.0f;
 
-	/** 开窗器模式补光强度（亮，看清表面精磨） */
+	/** 擦石器模式补光强度（亮，看清表面精磨） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
 	float OpenerFillLightIntensity = 7000.0f;
 
@@ -189,7 +186,7 @@ protected:
 
 	// ---- 工具蓝图槽位（指定 BP 子类来覆写参数 / Mesh / 表现） ----
 
-	/** 开窗器工具类——默认用 C++ 类，可改为 BP 子类覆写 */
+	/** 擦石器工具类——默认用 C++ 类，可改为 BP 子类覆写 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Tools")
 	TSubclassOf<AClcStoneTool> OpeningToolClass;
 
@@ -197,7 +194,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Tools")
 	TSubclassOf<AClcStoneTool> FlashlightToolClass;
 
-	/** 组合工具（手电开窗器）类——拥有升级后工作台改用此类 */
+	/** 组合工具（手电擦石器）类——拥有升级后工作台改用此类 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Tools")
 	TSubclassOf<AClcStoneTool> CombinedToolClass;
 
@@ -272,7 +269,7 @@ private:
 
 	bool bLeftMousePrev = false;
 
-	/** 进入开窗时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
+	/** 进入擦石时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
 	float BaseFOV = 90.0f;
 
 	// ---- 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
@@ -289,9 +286,6 @@ private:
 
 	/** 背包开闭状态（轮询用，检测全局 IA_Backpack 触发的开关） */
 	bool bBackpackWasOpen = false;
-
-	/** 按键提示句柄：进入范围注册 F（使用工作台），离开/EndPlay 注销 */
-	int32 WorkbenchPromptHandle = 0;
 
 	/** 进入范围飘字冷却（per-instance，防 overlap 抖动；多台工作台各自计时） */
 	double LastEnterToastTime = 0.0;

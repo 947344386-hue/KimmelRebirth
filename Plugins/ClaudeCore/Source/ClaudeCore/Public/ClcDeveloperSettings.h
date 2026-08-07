@@ -37,7 +37,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets")
 	FString ShellTextureConfigPath = TEXT("/Game/JadeBetting/Data/DA_ShellTextureConfig");
 
-	/** 玉石纹理配置（开窗后内部材质贴图） */
+	/** 玉石纹理配置（擦石后内部材质贴图） */
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets")
 	FString JadeTextureConfigPath = TEXT("/Game/JadeBetting/Data/DA_JadeTextureConfig");
 

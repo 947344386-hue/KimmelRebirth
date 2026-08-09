@@ -10,6 +10,7 @@
 #include "ClcLog.h"
 #include "Data/ClcJadeTypes.h"
 #include "Data/ClcShellTextureConfig.h"
+#include "Data/ClcJadeTextureConfig.h"
 #include "ClcDeveloperSettings.h"
 
 // ============================================================
@@ -100,6 +101,21 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcCuttingStone] Shell material not found: %s"), *ShellMaterialPath);
 	}
 
+	// ---- 4b. 切面材质 MID（PBR 玉杂 lerp；贴图由 DA_JadeTextureConfig 注入，与 M_StoneOpening 同链路） ----
+	if (UMaterialInterface* CutFaceMat = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+	{
+		CutFaceMID = UMaterialInstanceDynamic::Create(CutFaceMat, this, TEXT("CutFaceMID"));
+		if (CutFaceMID)
+		{
+			if (UClcJadeTextureConfig* JadeCfg = LoadObject<UClcJadeTextureConfig>(
+				nullptr, *GetDefault<UClcDeveloperSettings>()->JadeTextureConfigPath))
+			{
+				JadeCfg->InjectIntoMID(CutFaceMID);
+			}
+		}
+	}
+
 	// ---- 5. 从源 mesh LOD0 拷贝到 PMC section 0（体素场生成用的同一套渲染数据 API） ----
 	CutMesh->ClearAllMeshSections();
 	{
@@ -159,11 +175,17 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 
 void AClcCuttingStone::ReplayAllCuts()
 {
-	UMaterialInterface* CapMat = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace"));
+	UMaterialInterface* CapMat = CutFaceMID;
 	if (!CapMat)
 	{
-		// 退化：未建材质时用顶点色占位，不阻塞切割流程
+		if (UMaterialInterface* Loaded = LoadObject<UMaterialInterface>(
+			nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+		{
+			CapMat = Loaded;
+		}
+	}
+	if (!CapMat)
+	{
 		CapMat = (GEngine && GEngine->VertexColorMaterial)
 			? static_cast<UMaterialInterface*>(GEngine->VertexColorMaterial)
 			: static_cast<UMaterialInterface*>(ShellMID);
@@ -305,8 +327,15 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	// bActuallyRemoveNeg=false → 保留负侧 → 法线反向
 	const FVector SliceNormal = bActuallyRemoveNeg ? PlaneNormalWorld : -PlaneNormalWorld;
 
-	UMaterialInterface* CapMat = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace"));
+	UMaterialInterface* CapMat = CutFaceMID;
+	if (!CapMat)
+	{
+		if (UMaterialInterface* Loaded = LoadObject<UMaterialInterface>(
+			nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+		{
+			CapMat = Loaded;
+		}
+	}
 	if (!CapMat)
 	{
 		CapMat = (GEngine && GEngine->VertexColorMaterial)

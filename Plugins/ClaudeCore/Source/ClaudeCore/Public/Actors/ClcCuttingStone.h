@@ -126,8 +126,8 @@ private:
 	/** 回放全部已记录的切平面到 PMC（用引擎 SliceProceduralMesh） */
 	void ReplayAllCuts();
 
-	/** 对指定 section 的顶点用体素场采样写入顶点色 */
-	void ApplyVoxelColorsToSection(int32 SectionIndex);
+	/** 对指定 cap section 写顶点色 + planar UV（按切平面法线投影） */
+	void ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormal);
 
 	/** 世界刀口平面 → 源 mesh 局部平面。 */
 	bool BuildLocalCutPlane(const FVector& PlanePointWorld, const FVector& PlaneNormalWorld,

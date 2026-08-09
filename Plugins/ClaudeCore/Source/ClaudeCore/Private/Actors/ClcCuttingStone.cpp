@@ -159,9 +159,15 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 
 void AClcCuttingStone::ReplayAllCuts()
 {
-	UMaterialInterface* CapMat = (GEngine && GEngine->VertexColorMaterial)
-		? static_cast<UMaterialInterface*>(GEngine->VertexColorMaterial)
-		: static_cast<UMaterialInterface*>(ShellMID);
+	UMaterialInterface* CapMat = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace"));
+	if (!CapMat)
+	{
+		// 退化：未建材质时用顶点色占位，不阻塞切割流程
+		CapMat = (GEngine && GEngine->VertexColorMaterial)
+			? static_cast<UMaterialInterface*>(GEngine->VertexColorMaterial)
+			: static_cast<UMaterialInterface*>(ShellMID);
+	}
 
 	const FTransform PMCToWorld = CutMesh->GetComponentTransform();
 
@@ -181,9 +187,9 @@ void AClcCuttingStone::ReplayAllCuts()
 			false, OtherHalf,
 			EProcMeshSliceCapOption::CreateNewSectionForCap, CapMat);
 
-		// 顶点色：用体素场在 cap 顶点位置采样写入
+		// cap 顶点色 + planar UV（按切平面法线投影生成，避免退化 UV）
 		const int32 CapIdx = CutMesh->GetNumSections() - 1;
-		ApplyVoxelColorsToSection(CapIdx);
+		ApplyVoxelColorsToSection(CapIdx, P.Normal);
 	}
 }
 
@@ -299,9 +305,14 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	// bActuallyRemoveNeg=false → 保留负侧 → 法线反向
 	const FVector SliceNormal = bActuallyRemoveNeg ? PlaneNormalWorld : -PlaneNormalWorld;
 
-	UMaterialInterface* CapMat = (GEngine && GEngine->VertexColorMaterial)
-		? static_cast<UMaterialInterface*>(GEngine->VertexColorMaterial)
-		: static_cast<UMaterialInterface*>(ShellMID);
+	UMaterialInterface* CapMat = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace"));
+	if (!CapMat)
+	{
+		CapMat = (GEngine && GEngine->VertexColorMaterial)
+			? static_cast<UMaterialInterface*>(GEngine->VertexColorMaterial)
+			: static_cast<UMaterialInterface*>(ShellMID);
+	}
 
 	UProceduralMeshComponent* OtherHalf = nullptr;
 	UKismetProceduralMeshLibrary::SliceProceduralMesh(
@@ -309,9 +320,9 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 		false, OtherHalf,
 		EProcMeshSliceCapOption::CreateNewSectionForCap, CapMat);
 
-	// ---- 6. cap 顶点色：体素场采样写入 ----
+	// ---- 6. cap 顶点色 + planar UV ----
 	const int32 CapIdx = CutMesh->GetNumSections() - 1;
-	ApplyVoxelColorsToSection(CapIdx);
+	ApplyVoxelColorsToSection(CapIdx, PlaneNormal);
 
 	// ---- 7. 切走块位置缓存（飞金币动效用） ----
 	LastCutPieceWorldCenter = CutMesh->GetComponentTransform().TransformPosition(-PlaneDistance * PlaneNormal);
@@ -327,14 +338,40 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 // Cap 顶点色
 // ============================================================
 
-void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex)
+void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormal)
 {
 	FProcMeshSection* Sec = CutMesh->GetProcMeshSection(SectionIndex);
 	if (!Sec) return;
 
+	// 切平面局部法线（已归一化）——用来选 planar 投影的两个轴
+	const FVector N = PlaneNormal.GetSafeNormal();
+	const FVector AbsN(FMath::Abs(N.X), FMath::Abs(N.Y), FMath::Abs(N.Z));
+
+	// planar 投影缩放：1 单位（cm）= 0.02 UV，约 50cm 周期
+	constexpr float UVScale = 0.02f;
+
 	for (FProcMeshVertex& V : Sec->ProcVertexBuffer)
 	{
-		V.Color = SampleVoxelColor((FVector)V.Position);
+		// 顶点色：玉→G=255，杂/裂/废→G=0（材质用 VertexColor.G 做 Jade/Junk lerp）
+		const FColor Sample = SampleVoxelColor((FVector)V.Position);
+		V.Color = FColor(Sample.R, (Sample.G > 120) ? 255 : 0, Sample.B, 255);
+
+		// planar UV：按切平面法线的主轴方向选投影面
+		// 法线最接近 X → 用 YZ 平面投影；Y → XZ；Z → XY
+		FVector2D UV(0.0f, 0.0f);
+		if (AbsN.X >= AbsN.Y && AbsN.X >= AbsN.Z)
+		{
+			UV.Set(V.Position.Y * UVScale, V.Position.Z * UVScale);
+		}
+		else if (AbsN.Y >= AbsN.X && AbsN.Y >= AbsN.Z)
+		{
+			UV.Set(V.Position.X * UVScale, V.Position.Z * UVScale);
+		}
+		else
+		{
+			UV.Set(V.Position.X * UVScale, V.Position.Y * UVScale);
+		}
+		V.UV0 = UV;
 	}
 	CutMesh->SetProcMeshSection(SectionIndex, *Sec);
 }

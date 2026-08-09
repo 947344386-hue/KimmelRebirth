@@ -12,10 +12,12 @@ class AClcCuttingStone;
 class APlayerController;
 class APawn;
 class IClcStoneCarrier;
+class UBoxComponent;
 class UCameraComponent;
 class UClcBackpackSubsystem;
 class UClcCuttingTableHUD;
 class UClcInteractionIndicator;
+class UProceduralMeshComponent;
 class USceneComponent;
 class USphereComponent;
 class USpotLightComponent;
@@ -78,6 +80,15 @@ protected:
 	TObjectPtr<UCameraComponent> WorkCamera;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UCameraComponent> LeftCutCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UCameraComponent> RightCutCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoxComponent> CatchBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UClcInteractionIndicator> InteractionIndicator;
 
 	/**
@@ -119,6 +130,47 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Blade", meta = (ClampMin = "0.01"))
 	float BladeDurabilityPerCut = 10.0f;
+
+	// ---- 切割动画循环（电影感下刀）----
+
+	/** 升刀时长（刀片旋转向上升，秒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.05"))
+	float LiftDuration = 0.5f;
+
+	/** 切割执行缓冲（秒；ExecuteCut 在此阶段开始时同步执行） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.01"))
+	float CutDuration = 0.1f;
+
+	/** 降刀时长（刀片下降回原位，秒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.05"))
+	float DescendDuration = 0.35f;
+
+	/** 展示切割面时长（侧视停留，秒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.1"))
+	float ShowCutFaceDuration = 2.0f;
+
+	/** 刀片上升高度（沿 BladePoint 局部 Z，cm） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "1.0"))
+	float BladeLiftHeight = 80.0f;
+
+	/** 刀片旋转速度（度/秒） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "1.0"))
+	float BladeSpinSpeed = 720.0f;
+
+	/** 刀片自旋轴（局部 X，已按当前刀片 mesh 验证） */
+	FVector BladeSpinAxis = FVector(1.0f, 0.0f, 0.0f);
+
+	/** 切下块朝注视相机方向的瞬时速度增量（cm/s） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceCameraImpulseSpeed = 80.0f;
+
+	/** 切下块朝注视相机倾倒的角速度增量（rad/s） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceCameraTipAngularSpeed = 1.5f;
+
+	/** 切下块物理模拟后自动清理延迟（秒，0=不清理） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceCleanupDelay = 5.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Voxel", meta = (ClampMin = "16", ClampMax = "96"))
 	int32 VoxelResolution = 48;
@@ -176,7 +228,18 @@ private:
 	{
 		Inactive,
 		AwaitingStone,
-		StoneOnBench
+		StoneOnBench,
+		CuttingCinematic
+	};
+
+	enum class EBladePhase : uint8
+	{
+		Idle,
+		LiftBlade,
+		Cut,
+		DescendBlade,
+		ShowCutFace,
+		Finish
 	};
 
 	EClcCuttingTableState CurrentState = EClcCuttingTableState::Inactive;
@@ -204,6 +267,19 @@ private:
 	bool bPawnInputDisabled = false;
 	double LastEnterToastTime = 0.0;
 
+	// ---- 切割动画循环状态 ----
+	EBladePhase BladePhase = EBladePhase::Idle;
+	float PhaseTimer = 0.0f;
+	FVector BladePointInitialRelativeLocation = FVector::ZeroVector;
+	bool bCutExecutedThisCycle = false;
+	bool bCutRemovedNegativeSide = false;
+	/** 循环开始时缓存的刀口平面（预判/相机/实际切割共用，防升刀偏移） */
+	FVector PendingCutPlanePoint = FVector::ZeroVector;
+	FVector PendingCutPlaneNormal = FVector::ZeroVector;
+	TWeakObjectPtr<UCameraComponent> ActiveCutCamera;
+	TWeakObjectPtr<UProceduralMeshComponent> LastCutAwayPiece;
+	FTimerHandle CutPieceCleanupHandle;
+
 	/** 补光当前强度（每帧平滑追向 Target） */
 	float CurrentFillLightIntensity = 0.0f;
 	/** 补光目标强度（由 UpdateFillLightTarget 按状态算出） */
@@ -214,6 +290,14 @@ private:
 	void ExitCuttingMode();
 	void ProcessCuttingInput(float DeltaTime);
 	void HandleBackpackInput();
+
+	// ---- 切割动画循环 ----
+	bool StartCutCinematic();
+	void TickCutCinematic(float DeltaTime);
+	void EnterBladePhase(EBladePhase NewPhase);
+	void ExecuteCutDuringCinematic();
+	void FinishCutCinematic();
+	void CleanupLastCutPiece();
 	bool PlaceStoneOnBench(int32 StoneIndex);
 	void RemoveStoneFromBench();
 	void DestroyCuttingStone();

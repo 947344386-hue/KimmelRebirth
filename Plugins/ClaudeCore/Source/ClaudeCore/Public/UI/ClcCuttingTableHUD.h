@@ -7,6 +7,7 @@
 #include "ClcCuttingTableHUD.generated.h"
 
 class UTextBlock;
+class UProgressBar;
 
 USTRUCT(BlueprintType)
 struct CLAUDECORE_API FClcCuttingTableHUDData
@@ -99,6 +100,9 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> BladeText;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
+	TObjectPtr<UProgressBar> BladeProgressBar;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> CutStateText;

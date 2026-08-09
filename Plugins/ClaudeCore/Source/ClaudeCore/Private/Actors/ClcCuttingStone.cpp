@@ -346,8 +346,21 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	UProceduralMeshComponent* OtherHalf = nullptr;
 	UKismetProceduralMeshLibrary::SliceProceduralMesh(
 		CutMesh, PlanePointWorld, SliceNormal,
-		false, OtherHalf,
+		true, OtherHalf,
 		EProcMeshSliceCapOption::CreateNewSectionForCap, CapMat);
+
+	LastOtherHalf = OtherHalf;
+
+	if (OtherHalf)
+	{
+		const FString HalfName = OtherHalf->GetName();
+		const int32 HalfSections = OtherHalf->GetNumSections();
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcCuttingStone][Cut] OtherHalf=%s sections=%d"), *HalfName, HalfSections);
+	}
+	else
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcCuttingStone][Cut] OtherHalf=NULL"));
+	}
 
 	// ---- 6. cap 顶点色 + planar UV ----
 	const int32 CapIdx = CutMesh->GetNumSections() - 1;
@@ -363,9 +376,30 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	return true;
 }
 
-// ============================================================
-// Cap 顶点色
-// ============================================================
+bool AClcCuttingStone::PredictCutSide(const FVector& PlanePointWorld,
+	const FVector& PlaneNormalWorld, bool& OutRemoveNegative) const
+{
+	OutRemoveNegative = false;
+	if (!bInitialized) return false;
+
+	FVector PlaneNormal;
+	float PlaneDistance = 0.0f;
+	if (!BuildLocalCutPlane(PlanePointWorld, PlaneNormalWorld, PlaneNormal, PlaneDistance))
+	{
+		return false;
+	}
+
+	const FClcStoneVoxelField3D::FSliceCounts Counts =
+		VoxelField.ComputeSliceCounts(PlaneNormal, PlaneDistance);
+	if (Counts.NegTotal <= 0 || Counts.PosTotal <= 0)
+	{
+		return false;
+	}
+
+	// 与 ExecuteCut 的自动切较小侧逻辑一致
+	OutRemoveNegative = (Counts.NegTotal <= Counts.PosTotal);
+	return true;
+}
 
 void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormal)
 {
@@ -381,9 +415,9 @@ void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVect
 
 	for (FProcMeshVertex& V : Sec->ProcVertexBuffer)
 	{
-		// 顶点色：玉→G=255，杂/裂/废→G=0（材质用 VertexColor.G 做 Jade/Junk lerp）
+		// 顶点色 G 通道是精确玉肉 mask；其余通道保留调试辨色。
 		const FColor Sample = SampleVoxelColor((FVector)V.Position);
-		V.Color = FColor(Sample.R, (Sample.G > 120) ? 255 : 0, Sample.B, 255);
+		V.Color = FColor(Sample.R, Sample.G, Sample.B, 255);
 
 		// planar UV：按切平面法线的主轴方向选投影面
 		// 法线最接近 X → 用 YZ 平面投影；Y → XZ；Z → XY
@@ -410,10 +444,10 @@ FColor AClcCuttingStone::SampleVoxelColor(const FVector& LocalPos) const
 	const uint8 V = static_cast<uint8>(FMath::RoundToInt(VoxelField.SampleAtLocalPos(LocalPos)));
 	switch (V)
 	{
-		case JadeBody:  return FColor(40, 180, 90);   // 玉=绿
-		case Impurity:  return FColor(200, 180, 40);  // 杂=黄
-		case Crack:     return FColor(40, 30, 30);    // 裂=暗红黑
-		default:        return FColor(120, 120, 120); // 废肉=灰
+		case JadeBody:  return FColor(40, 255, 90);  // G=255：玉肉 mask
+		case Impurity:  return FColor(200, 0, 40);   // G=0：杂质
+		case Crack:     return FColor(40, 0, 30);    // G=0：裂纹
+		default:        return FColor(120, 0, 120);  // G=0：废肉
 	}
 }
 

@@ -7,7 +7,9 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/ProgressBar.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 
 UClcCuttingTableHUD::UClcCuttingTableHUD(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -60,6 +62,15 @@ void UClcCuttingTableHUD::RefreshData(const FClcCuttingTableHUDData& Data)
 			? FLinearColor::Red
 			: (Data.BladeDurability < 0.2f ? FLinearColor::Yellow : FLinearColor(0.3f, 0.9f, 0.5f));
 		BladeText->SetColorAndOpacity(FSlateColor(Color));
+	}
+	if (BladeProgressBar)
+	{
+		const float Ratio = FMath::Clamp(Data.BladeDurability, 0.0f, 1.0f);
+		BladeProgressBar->SetPercent(Ratio);
+		const FLinearColor BarColor = Data.BladeDurability <= 0.0f
+			? FLinearColor::Red
+			: (Data.BladeDurability < 0.2f ? FLinearColor::Yellow : FLinearColor(0.3f, 0.9f, 0.5f));
+		BladeProgressBar->SetFillColorAndOpacity(BarColor);
 	}
 	if (CutStateText)
 	{
@@ -122,6 +133,15 @@ void UClcCuttingTableHUD::BuildDefaultLayout()
 	UVerticalBox* Right = AddCard(TEXT("ToolCard"), FAnchors(1.0f, 0.0f), FVector2D(1.0f, 0.0f), FVector2D(-20.0f, 20.0f));
 	PositionText = AddText(Right, TEXT("PositionText"), 18, FLinearColor::White);
 	BladeText = AddText(Right, TEXT("BladeText"), 20, FLinearColor(0.3f, 0.9f, 0.5f));
+
+	BladeProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("BladeProgressBar"));
+	BladeProgressBar->SetPercent(1.0f);
+	BladeProgressBar->SetFillColorAndOpacity(FLinearColor(0.3f, 0.9f, 0.5f));
+	if (UVerticalBoxSlot* BarSlot = Right->AddChildToVerticalBox(BladeProgressBar))
+	{
+		BarSlot->SetPadding(FMargin(0.0f, 4.0f, 0.0f, 4.0f));
+	}
+
 	CutStateText = AddText(Right, TEXT("CutStateText"), 18, FLinearColor(0.3f, 1.0f, 0.5f));
 
 	HintsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HintsText"));

@@ -159,6 +159,10 @@ void AClcToolUpgradeStation::OpenMenu()
 
 	bMenuOpen = true;
 	OnUpgradeMenuOpened();
+
+	// 鼠标点击选项按钮会抢走键盘焦点，导致根 widget 的 NativeOnKeyDown（空格/方向键）不触发。
+	// 打开菜单时把焦点交给根 widget，并保证后续点击选项后焦点回根（见 SelectItem）。
+	MenuWidget->SetKeyboardFocus();
 }
 
 void AClcToolUpgradeStation::CloseMenu()

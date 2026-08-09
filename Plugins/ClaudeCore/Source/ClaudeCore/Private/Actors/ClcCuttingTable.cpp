@@ -5,9 +5,11 @@
 #include "ClcLog.h"
 #include "Components/ClcInteractionIndicator.h"
 #include "Components/ClcInteractionComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "ProceduralMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -75,6 +77,32 @@ AClcCuttingTable::AClcCuttingTable()
 	WorkCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("WorkCamera"));
 	WorkCamera->SetupAttachment(CameraArm);
 
+	// ---- 左右侧视相机（挂 TableRoot，下刀电影感机位；位置/旋转在 BP 微调） ----
+	LeftCutCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("LeftCutCamera"));
+	LeftCutCamera->SetupAttachment(TableRoot);
+	LeftCutCamera->SetRelativeLocation(FVector(0.0f, -250.0f, 120.0f));
+	LeftCutCamera->SetRelativeRotation(FRotator(0.0f, 90.0f, 0.0f));
+	LeftCutCamera->SetMobility(EComponentMobility::Movable);
+	LeftCutCamera->SetActive(false);
+
+	RightCutCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("RightCutCamera"));
+	RightCutCamera->SetupAttachment(TableRoot);
+	RightCutCamera->SetRelativeLocation(FVector(0.0f, 250.0f, 120.0f));
+	RightCutCamera->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+	RightCutCamera->SetMobility(EComponentMobility::Movable);
+	RightCutCamera->SetActive(false);
+
+	// ---- 桌面承接碰撞（承接物理掉落的切下块；不影响现有 TableMesh 的 QueryOnly） ----
+	CatchBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CatchBox"));
+	CatchBox->SetupAttachment(TableRoot);
+	CatchBox->SetBoxExtent(FVector(120.0f, 200.0f, 5.0f));
+	CatchBox->SetRelativeLocation(FVector(0.0f, 0.0f, 20.0f));
+	CatchBox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	CatchBox->SetCollisionObjectType(ECC_WorldStatic);
+	CatchBox->SetCollisionResponseToAllChannels(ECR_Block);
+	CatchBox->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+	CatchBox->SetGenerateOverlapEvents(false);
+
 	InteractionIndicator = CreateDefaultSubobject<UClcInteractionIndicator>(TEXT("InteractionIndicator"));
 	HUDWidgetClass = UClcCuttingTableHUD::StaticClass();
 
@@ -108,6 +136,11 @@ void AClcCuttingTable::BeginPlay()
 	if (UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld()))
 	{
 		Durability->InitTool(EClcRepairableTool::Blade, BladeMaxDurability);
+	}
+
+	if (BladePoint)
+	{
+		BladePointInitialRelativeLocation = BladePoint->GetRelativeLocation();
 	}
 }
 
@@ -150,6 +183,18 @@ void AClcCuttingTable::Tick(float DeltaTime)
 
 	HandleBackpackInput();
 
+	if (CurrentState == EClcCuttingTableState::CuttingCinematic)
+	{
+		TickCutCinematic(DeltaTime);
+		HUDPushTimer -= DeltaTime;
+		if (HUDPushTimer <= 0.0f)
+		{
+			PushHUDData();
+			HUDPushTimer = HUDPushInterval;
+		}
+		return; // 循环中屏蔽 A/D 和再次 SpaceBar
+	}
+
 	if (CurrentState == EClcCuttingTableState::StoneOnBench)
 	{
 		UClcBackpackSubsystem* Backpack = GetBackpack();
@@ -177,6 +222,12 @@ void AClcCuttingTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	DestroyHUD();
 	DestroyCuttingStone();
 	UnbindFromBackpackWidget();
+
+	if (CutPieceCleanupHandle.IsValid() && GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CutPieceCleanupHandle);
+	}
+	CleanupLastCutPiece();
 
 	if (InteractionIndicator)
 	{
@@ -371,11 +422,17 @@ void AClcCuttingTable::ProcessCuttingInput(float DeltaTime)
 
 bool AClcCuttingTable::ExecuteBladeDrop()
 {
+	return StartCutCinematic();
+}
+
+bool AClcCuttingTable::StartCutCinematic()
+{
 	if (!CuttingStone || !CachedPC.IsValid()) return false;
+	if (CurrentState != EClcCuttingTableState::StoneOnBench) return false;
+	if (BladePhase != EBladePhase::Idle) return false; // 循环中防重复
 
 	FClcStoneRuntimeData StoneData;
 	if (!CuttingStone->GetStoneData(StoneData)) return false;
-
 	if (StoneData.bHaggleResolved)
 	{
 		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
@@ -388,7 +445,6 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 	UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld());
 	if (!Durability) return false;
 	Durability->InitTool(EClcRepairableTool::Blade, BladeMaxDurability);
-
 	const float CurrentDurability = Durability->GetDurability(EClcRepairableTool::Blade);
 	if (CurrentDurability + KINDA_SMALL_NUMBER < BladeDurabilityPerCut)
 	{
@@ -399,8 +455,10 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 		return false;
 	}
 
-	const FVector PlanePoint = BladePoint->GetComponentLocation();
-	if (!CuttingStone->CanCutAtWorldPlane(PlanePoint, MovementAxisWorld))
+	// ---- 缓存刀口平面（升刀动画会移动 BladePoint，预判和实际切割必须共用同一平面） ----
+	PendingCutPlanePoint = BladePoint->GetComponentLocation();
+	PendingCutPlaneNormal = MovementAxisWorld;
+	if (!CuttingStone->CanCutAtWorldPlane(PendingCutPlanePoint, PendingCutPlaneNormal))
 	{
 		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 		{
@@ -409,21 +467,290 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 		return false;
 	}
 
-	int32 CutAwayTotal = 0;
-	int32 CutAwayJade = 0;
-	int32 CutAwayCrack = 0;
-	if (!CuttingStone->ExecuteCut(PlanePoint, MovementAxisWorld, false,
-		CutAwayTotal, CutAwayJade, CutAwayCrack))
+	// ---- 预判切走侧（不修改场），据此选相机 ----
+	bool bWillRemoveNegative = false;
+	if (!CuttingStone->PredictCutSide(PendingCutPlanePoint, PendingCutPlaneNormal, bWillRemoveNegative))
 	{
 		return false;
 	}
+	bCutRemovedNegativeSide = bWillRemoveNegative;
 
+	// ---- 按真实几何方向选择相机 ----
+	// 负侧在 -MovementAxisWorld，正侧在 +MovementAxisWorld；比较两台相机实际位置在切走方向上的投影。
+	// 不再使用 Stone Actor 原点，因为多刀后剩余石体中心会偏移，Actor 原点不能代表当前几何中心。
+	const FVector CutAwayDirection =
+		(bWillRemoveNegative ? -PendingCutPlaneNormal : PendingCutPlaneNormal).GetSafeNormal();
+	const float LeftCameraScore = LeftCutCamera
+		? FVector::DotProduct(LeftCutCamera->GetComponentLocation() - PendingCutPlanePoint, CutAwayDirection)
+		: -BIG_NUMBER;
+	const float RightCameraScore = RightCutCamera
+		? FVector::DotProduct(RightCutCamera->GetComponentLocation() - PendingCutPlanePoint, CutAwayDirection)
+		: -BIG_NUMBER;
+	UCameraComponent* WatchCam = LeftCameraScore >= RightCameraScore
+		? LeftCutCamera
+		: RightCutCamera;
+	ActiveCutCamera = WatchCam;
+
+	UE_LOG(LogClaudeCore, Log,
+		TEXT("[ClcCuttingTable][CutCamera] removeNeg=%d direction=%s leftScore=%.1f rightScore=%.1f selected=%s"),
+		bWillRemoveNegative ? 1 : 0,
+		*CutAwayDirection.ToString(),
+		LeftCameraScore,
+		RightCameraScore,
+		WatchCam ? *WatchCam->GetName() : TEXT("NULL"));
+
+	// 先全清 Active 防残留，再激活目标相机
+	if (WorkCamera) WorkCamera->SetActive(false);
+	if (LeftCutCamera) LeftCutCamera->SetActive(false);
+	if (RightCutCamera) RightCutCamera->SetActive(false);
+	if (WatchCam) WatchCam->SetActive(true);
+	if (CachedPC.IsValid())
+	{
+		CachedPC->SetViewTargetWithBlend(this, 0.3f);
+	}
+
+	// ---- 进入切割电影感循环 ----
+	CurrentState = EClcCuttingTableState::CuttingCinematic;
+	bCutExecutedThisCycle = false;
+	EnterBladePhase(EBladePhase::LiftBlade);
+	return true;
+}
+
+void AClcCuttingTable::EnterBladePhase(EBladePhase NewPhase)
+{
+	BladePhase = NewPhase;
+	PhaseTimer = 0.0f;
+	if (NewPhase == EBladePhase::Cut)
+	{
+		ExecuteCutDuringCinematic();
+	}
+	else if (NewPhase == EBladePhase::Finish)
+	{
+		FinishCutCinematic();
+	}
+}
+
+void AClcCuttingTable::TickCutCinematic(float DeltaTime)
+{
+	PhaseTimer += DeltaTime;
+
+	switch (BladePhase)
+	{
+	case EBladePhase::LiftBlade:
+	{
+		const float Alpha = FMath::Clamp(PhaseTimer / LiftDuration, 0.0f, 1.0f);
+		const float CurrentLift = FMath::Lerp(0.0f, BladeLiftHeight, Alpha);
+		if (BladePoint)
+		{
+			FVector RelLoc = BladePointInitialRelativeLocation;
+			RelLoc.Z += CurrentLift;
+			BladePoint->SetRelativeLocation(RelLoc);
+		}
+		if (BladeMesh)
+		{
+			const FQuat Spin = FQuat(BladeSpinAxis.GetSafeNormal(),
+				FMath::DegreesToRadians(BladeSpinSpeed * DeltaTime));
+			BladeMesh->AddRelativeRotation(Spin);
+		}
+		if (PhaseTimer >= LiftDuration)
+		{
+			EnterBladePhase(EBladePhase::Cut);
+		}
+		break;
+	}
+	case EBladePhase::Cut:
+	{
+		// ExecuteCut 已在 EnterBladePhase(Cut) 执行；此阶段仅等待物理稳定缓冲
+		if (PhaseTimer >= CutDuration)
+		{
+			EnterBladePhase(EBladePhase::DescendBlade);
+		}
+		break;
+	}
+	case EBladePhase::DescendBlade:
+	{
+		const float Alpha = FMath::Clamp(PhaseTimer / DescendDuration, 0.0f, 1.0f);
+		const float CurrentLift = FMath::Lerp(BladeLiftHeight, 0.0f, Alpha);
+		if (BladePoint)
+		{
+			FVector RelLoc = BladePointInitialRelativeLocation;
+			RelLoc.Z += CurrentLift;
+			BladePoint->SetRelativeLocation(RelLoc);
+		}
+		if (BladeMesh)
+		{
+			const FQuat Spin = FQuat(BladeSpinAxis.GetSafeNormal(),
+				FMath::DegreesToRadians(BladeSpinSpeed * DeltaTime));
+			BladeMesh->AddRelativeRotation(Spin);
+		}
+		if (PhaseTimer >= DescendDuration)
+		{
+			EnterBladePhase(EBladePhase::ShowCutFace); // 停旋转
+		}
+		break;
+	}
+	case EBladePhase::ShowCutFace:
+	{
+		if (PhaseTimer >= ShowCutFaceDuration)
+		{
+			EnterBladePhase(EBladePhase::Finish);
+		}
+		break;
+	}
+	default: break;
+	}
+}
+
+void AClcCuttingTable::ExecuteCutDuringCinematic()
+{
+	if (!CuttingStone || !CachedPC.IsValid() || bCutExecutedThisCycle) return;
+
+	UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld());
+	if (!Durability) return;
+	const float CurrentDurability = Durability->GetDurability(EClcRepairableTool::Blade);
+
+	int32 CutAwayTotal = 0;
+	int32 CutAwayJade = 0;
+	int32 CutAwayCrack = 0;
+
+	// 用缓存的刀口平面（与预判/相机一致），不再强制切侧——让 ExecuteCut 在固定平面上重新
+	// 自动比较两侧体积，避免升刀后 BladePoint 偏移导致预判与实际切割不一致。
+	if (!CuttingStone->ExecuteCut(PendingCutPlanePoint, PendingCutPlaneNormal,
+		false, CutAwayTotal, CutAwayJade, CutAwayCrack))
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcCuttingTable][CutResult] ExecuteCut failed"));
+		return;
+	}
+	bCutExecutedThisCycle = true;
+
+	// 记录实际移除侧（ExecuteCut 内部自动选了较小侧，这里从 LastCutPieceWorldCenter 反推）
+	const FVector CutPieceLoc = CuttingStone->GetCutPieceWorldLocation();
+	const bool bActuallyRemovedNegOnRetry = FVector::DotProduct(
+		CutPieceLoc - PendingCutPlanePoint, PendingCutPlaneNormal) < 0.0f;
+	bCutRemovedNegativeSide = bActuallyRemovedNegOnRetry;
+
+	const float VoxelVol = CuttingStone->GetVoxelField().VoxelVolume;
+	const float CutVolume = static_cast<float>(CutAwayTotal) * VoxelVol;
+	const int32 RemainingTotal = FMath::Max(1, static_cast<int32>(CuttingStone->GetVoxelField().GetRemainingVolume() / VoxelVol));
+	const float CutRatio = CutAwayTotal > 0
+		? static_cast<float>(CutAwayTotal) / static_cast<float>(CutAwayTotal + RemainingTotal)
+		: 0.0f;
+	UE_LOG(LogClaudeCore, Log,
+		TEXT("[ClcCuttingTable][CutResult] negRemoved=%d awayTotal=%d remainTotal=%d cutRatio=%.1f%% volume=%.0fcm³ jade=%d crack=%d"),
+		bActuallyRemovedNegOnRetry ? 1 : 0,
+		CutAwayTotal,
+		RemainingTotal,
+		CutRatio * 100.0f,
+		CutVolume,
+		CutAwayJade,
+		CutAwayCrack);
+
+	// ---- 切下块物理掉落 ----
+	UProceduralMeshComponent* OtherHalf = CuttingStone->GetLastOtherHalf();
+	UE_LOG(LogClaudeCore, Warning,
+		TEXT("[ClcCuttingTable][CutPhys] enter: OtherHalf=%s bRegistered=%d IsSimPhys=%d"),
+		OtherHalf ? *OtherHalf->GetName() : TEXT("NULL"),
+		OtherHalf ? OtherHalf->IsRegistered() : -1,
+		OtherHalf ? OtherHalf->IsSimulatingPhysics() : -1);
+	if (OtherHalf)
+	{
+		// UE 明确禁止 ComplexAsSimple 三角网格参与动态模拟。
+		// 渲染仍用精确切片网格，物理改用本地包围盒的简单凸碰撞。
+		OtherHalf->SetMobility(EComponentMobility::Movable);
+		OtherHalf->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+		OtherHalf->SetSimulatePhysics(false);
+		OtherHalf->bUseComplexAsSimpleCollision = false;
+		OtherHalf->bUseAsyncCooking = false;
+		OtherHalf->SetCollisionProfileName(TEXT("PhysicsActor"));
+		OtherHalf->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		OtherHalf->SetCollisionObjectType(ECC_WorldDynamic);
+		OtherHalf->SetCollisionResponseToAllChannels(ECR_Block);
+		OtherHalf->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+
+		FBox LocalBounds(ForceInit);
+		for (int32 SectionIndex = 0; SectionIndex < OtherHalf->GetNumSections(); ++SectionIndex)
+		{
+			if (const FProcMeshSection* Section = OtherHalf->GetProcMeshSection(SectionIndex))
+			{
+				for (const FProcMeshVertex& Vertex : Section->ProcVertexBuffer)
+				{
+					LocalBounds += FVector(Vertex.Position);
+				}
+			}
+		}
+
+		if (LocalBounds.IsValid)
+		{
+			const FVector Min = LocalBounds.Min;
+			const FVector Max = LocalBounds.Max;
+			TArray<FVector> ConvexVerts;
+			ConvexVerts.Reserve(8);
+			ConvexVerts.Add(FVector(Min.X, Min.Y, Min.Z));
+			ConvexVerts.Add(FVector(Min.X, Min.Y, Max.Z));
+			ConvexVerts.Add(FVector(Min.X, Max.Y, Min.Z));
+			ConvexVerts.Add(FVector(Min.X, Max.Y, Max.Z));
+			ConvexVerts.Add(FVector(Max.X, Min.Y, Min.Z));
+			ConvexVerts.Add(FVector(Max.X, Min.Y, Max.Z));
+			ConvexVerts.Add(FVector(Max.X, Max.Y, Min.Z));
+			ConvexVerts.Add(FVector(Max.X, Max.Y, Max.Z));
+
+			TArray<TArray<FVector>> ConvexMeshes;
+			ConvexMeshes.Add(MoveTemp(ConvexVerts));
+			OtherHalf->SetCollisionConvexMeshes(ConvexMeshes);
+			OtherHalf->SetSimulatePhysics(true);
+			OtherHalf->SetEnableGravity(true);
+			OtherHalf->WakeRigidBody(NAME_None);
+			UE_LOG(LogClaudeCore, Warning,
+				TEXT("[ClcCuttingTable][CutPhys] simple convex: bounds=%s IsSimPhys=%d IsGravity=%d"),
+				*LocalBounds.GetSize().ToString(),
+				OtherHalf->IsSimulatingPhysics(),
+				OtherHalf->IsGravityEnabled());
+
+			FVector CameraDirection =
+				ActiveCutCamera.IsValid()
+				? ActiveCutCamera->GetComponentLocation() - OtherHalf->GetComponentLocation()
+				: (bCutRemovedNegativeSide ? -MovementAxisWorld : MovementAxisWorld);
+			CameraDirection = FVector::VectorPlaneProject(CameraDirection, FVector::UpVector).GetSafeNormal();
+			if (CameraDirection.IsNearlyZero())
+			{
+				CameraDirection =
+					(bCutRemovedNegativeSide ? -MovementAxisWorld : MovementAxisWorld).GetSafeNormal();
+			}
+
+			const FVector CameraVelocityChange = CameraDirection * CutPieceCameraImpulseSpeed;
+			OtherHalf->AddImpulse(CameraVelocityChange, NAME_None, true);
+
+			const FVector TipAxis = FVector::CrossProduct(FVector::UpVector, CameraDirection).GetSafeNormal();
+			OtherHalf->AddAngularImpulseInRadians(
+				TipAxis * CutPieceCameraTipAngularSpeed, NAME_None, true);
+
+			UE_LOG(LogClaudeCore, Log,
+				TEXT("[ClcCuttingTable][CutPhys] camera push: camera=%s direction=%s linear=%.1f angular=%.2f"),
+				ActiveCutCamera.IsValid() ? *ActiveCutCamera->GetName() : TEXT("NULL"),
+				*CameraDirection.ToString(),
+				CutPieceCameraImpulseSpeed,
+				CutPieceCameraTipAngularSpeed);
+		}
+		else
+		{
+			UE_LOG(LogClaudeCore, Error,
+				TEXT("[ClcCuttingTable][CutPhys] OtherHalf has no valid local bounds"));
+		}
+
+		LastCutAwayPiece = OtherHalf;
+		if (CutPieceCleanupDelay > 0.0f && GetWorld())
+		{
+			GetWorld()->GetTimerManager().SetTimer(
+				CutPieceCleanupHandle, this, &AClcCuttingTable::CleanupLastCutPiece,
+				CutPieceCleanupDelay, false);
+		}
+	}
+
+	// ---- 后处理：耐久、金币、飞金币、Toast ----
 	Durability->SetDurability(EClcRepairableTool::Blade,
 		CurrentDurability - BladeDurabilityPerCut);
 	CuttingStone->GetStoneData(ActiveStoneData);
 
-	// 切块折金币（体积驱动定价）
-	const float VoxelVol = CuttingStone->GetVoxelField().VoxelVolume;
 	int32 PieceGold = 0;
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -439,7 +766,6 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 		CachedCarrier->AddGold(PieceGold);
 		ActiveStoneData.TotalSettledValue += PieceGold;
 
-		// 飞金币动效
 		if (CachedPC.IsValid())
 		{
 			const FVector WorldPos = CuttingStone->GetCutPieceWorldLocation();
@@ -459,7 +785,6 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 	OnBladeCut(CutAwayTotal, CutAwayJade, CutAwayCrack);
 	PushHUDData();
 
-	const float CutVolume = static_cast<float>(CutAwayTotal) * CuttingStone->GetVoxelField().VoxelVolume;
 	if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 	{
 		if (PieceGold > 0)
@@ -473,7 +798,34 @@ bool AClcCuttingTable::ExecuteBladeDrop()
 				1.8f, FLinearColor(0.6f, 0.6f, 0.6f));
 		}
 	}
-	return true;
+}
+
+void AClcCuttingTable::FinishCutCinematic()
+{
+	if (LeftCutCamera) LeftCutCamera->SetActive(false);
+	if (RightCutCamera) RightCutCamera->SetActive(false);
+	if (WorkCamera) WorkCamera->SetActive(true);
+	if (CachedPC.IsValid())
+	{
+		CachedPC->SetViewTargetWithBlend(this, 0.3f);
+	}
+
+	CurrentState = EClcCuttingTableState::StoneOnBench;
+	BladePhase = EBladePhase::Idle;
+	PhaseTimer = 0.0f;
+	bCutExecutedThisCycle = false;
+	ActiveCutCamera.Reset();
+	bCutKeyPrev = true; // 防止玩家一直按住 SpaceBar 立即再触发
+}
+
+void AClcCuttingTable::CleanupLastCutPiece()
+{
+	if (UProceduralMeshComponent* Piece = LastCutAwayPiece.Get())
+	{
+		Piece->DestroyComponent();
+	}
+	LastCutAwayPiece.Reset();
+	CutPieceCleanupHandle.Invalidate();
 }
 
 bool AClcCuttingTable::PlaceStoneOnBench(int32 StoneIndex)
@@ -889,6 +1241,9 @@ void AClcCuttingTable::UpdateFillLightTarget()
 		TargetFillLightIntensity = FillLightIdleIntensity;
 		return;
 	case EClcCuttingTableState::StoneOnBench:
+		TargetFillLightIntensity = StoneOnBenchFillLightIntensity;
+		return;
+	case EClcCuttingTableState::CuttingCinematic:
 		TargetFillLightIntensity = StoneOnBenchFillLightIntensity;
 		return;
 	}

@@ -105,6 +105,13 @@ void UClcToolUpgradeMenuWidget::SelectItem(int32 Index)
 	}
 	SelectedIndex = FMath::Clamp(Index, 0, Items.Num() - 1);
 	RefreshSelectionVisuals();
+
+	// 鼠标点击 RowButton 会把键盘焦点夺到按钮上，导致后续空格/方向键的
+	// NativeOnKeyDown 不再在菜单根触发。选中后把焦点还给根 widget。
+	if (!HasKeyboardFocus())
+	{
+		SetKeyboardFocus();
+	}
 }
 
 void UClcToolUpgradeMenuWidget::MoveSelection(int32 Delta)

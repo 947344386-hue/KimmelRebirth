@@ -54,6 +54,14 @@ public:
 	/** 当前刀口是否同时穿过剩余主体两侧。 */
 	bool CanCutAtWorldPlane(const FVector& PlanePointWorld, const FVector& PlaneNormalWorld) const;
 
+	/**
+	 * 预判切割将切走哪一侧（不修改体素场/mesh，供调用方选相机+决定 force 方向）。
+	 * 返回 true 表示预判成功。OutRemoveNegative=true 表示将切走负侧。
+	 * 与 ExecuteCut 的自动切较小侧逻辑一致；调用后立即 ExecuteCut 且中间不移动石头即可保证一致。
+	 */
+	bool PredictCutSide(const FVector& PlanePointWorld, const FVector& PlaneNormalWorld,
+		bool& OutRemoveNegative) const;
+
 	/** 源 mesh 包围盒沿指定世界轴投影后的半尺寸。 */
 	float GetHalfExtentAlongWorldAxis(const FVector& WorldAxis) const;
 
@@ -77,6 +85,12 @@ public:
 
 	/** 供出售台/外部旋转展示用——返回 PMC，可 SetWorldRotation。 */
 	UPrimitiveComponent* GetDisplayMesh() const;
+
+	/**
+	 * 返回最近一次 ExecuteCut 由 SliceProceduralMesh 产生的 OtherHalf PMC（切下块几何，可能为空）。
+	 * 调用方负责注册+开物理+清理。ExecuteCut 内部仅缓存，不再丢弃。
+	 */
+	UProceduralMeshComponent* GetLastOtherHalf() const { return LastOtherHalf.Get(); }
 
 	/** 讨价还价锁价（出售台调用） */
 	void MarkHaggleResolved(int32 LockedPrice);
@@ -114,6 +128,10 @@ private:
 
 	/** 最近一次切走侧的世界位置缓存（GetCutPieceWorldLocation 用） */
 	FVector LastCutPieceWorldCenter = FVector::ZeroVector;
+
+	/** 最近一次 ExecuteCut 由 SliceProceduralMesh 产生的切下块 PMC（供调用方开物理掉落） */
+	UPROPERTY()
+	TWeakObjectPtr<UProceduralMeshComponent> LastOtherHalf;
 
 	/** 切面材质路径（P6 新增，空则退化为顶点色模式） */
 	FString CutFaceMaterialPath;

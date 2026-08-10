@@ -82,9 +82,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float UnopenedFloorDiscountFactor = 0.1f;
 
-	/** 单位面积缺陷惩罚扣分（有机缺陷体模型下唯一惩罚项，缺陷越密价值越低） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float PenaltyPerUnitCrack = 5.0f;
+	/** @deprecated 已废弃——乘法衰减模型不再使用减法惩罚。保留字段兼容旧 DA 序列化，不再参与逻辑运算。 */
+	UPROPERTY()
+	float PenaltyPerUnitCrack_DEPRECATED = 1.2f;
+
+	// ---- 乘法衰减模型（替代旧减法：T = V_weighted × (1 - DecayRatio)） ----
+
+	/** 裂纹衰减权重 α——CrackRatio × α 进入衰减比。
+	 *  有机缺陷体模型下 α=0.8 使中位石头(45%裂)衰减 ~36%，极品(5%裂)衰减 ~4%。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float CrackDecayWeight = 0.8f;
+
+	/** 杂质衰减权重 β——ImpurityRatio × β 进入衰减比（杂质伤害弱于裂纹，默认 0.5）。
+	 *  衰减比 = Clamp(α×CrackRatio + β×ImpurityRatio, 0.0, MaxDecayRatio) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float ImpurityDecayWeight = 0.5f;
+
+	/** 最大衰减比——数学保证 T ≥ V_weighted × (1 - MaxDecayRatio)。
+	 *  默认 0.95 → 最差石头仍有 5% 残值，彻底杜绝 T=0。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MaxDecayRatio = 0.95f;
 
 	/** 净外推赌价系数——把已开区域净价值密度外推到未开区域的强度。
 	 *  越大越刺激（富窗吹高、穷窗砸低都更猛）；全开时赌价=0，回收价恒=理论价值。 */
@@ -99,19 +116,50 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float BasePricePerArea = 0.1f;
 
-	// ---- 解石（3D 体积）定价参数 ----
+	// ---- 解石定价参数（以 Internal.TheoreticalValue 为唯一经济锚点） ----
 
-	/** 单位体积玉肉基础单价（cm³）——初值 0.0005，待实测标定 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
-	float PricePerUnitVolume = 0.0005f;
+	/** 切块最小有价值比例（占原石总体素比）——低于此比例的切块实际金币归零，防薄片速切。
+	 *  注意：毛预算仍会被消耗，不会由后续切块补回。默认 0.05 = 5% 原石体积。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinCutRatioForValue = 0.05f;
 
-	/** 单位体积缺陷惩罚扣分——解石版，应和 PricePerUnitVolume 同级量纲（默认玉肉的 0.5 倍） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
-	float PenaltyPerUnitCrackVolume = 0.00025f;
+	/** 切石相对擦石的收益放大系数——Internal.TheoreticalValue × 此系数 = 完整切块总预算。
+	 *  标准切法全部切完时，切块累计金币精确收敛到此预算；剩余主体回收只领取理论价份额（不乘此系数）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0"))
+	float CutValueMultiplier = 1.3f;
 
-	/** 切块最小有价值体积（cm³）——低于此体积的切块直接归零，防薄片速切 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting")
-	float MinVolumeForValue = 500.0f;
+	/** 标准切块比例区间 [Min,Max]——切下块体积 / 原石总体积落在此区间内不压缩单价。
+	 *  小于 Min 视为薄片速切（过小），大于 Max 视为粗暴大切（过大），均按系数压缩玉肉单价。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	FVector2D IdealCutRatioRange = FVector2D(0.15f, 0.45f);
+
+	/** 过小切块的玉肉单价压缩下限——r→0 时 SizeFactor 衰减到此值（0.3=压缩到 30% 单价）。
+	 *  薄片速切仍有残值但重压缩，避免投机取巧。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float UndersizedSizeFactor = 0.3f;
+
+	/** 过大切块的玉肉单价压缩下限——切块比例达到可切较小侧理论上限 0.5 时 SizeFactor 衰减到此值。
+	 *  一刀切太粗浪费玉肉，给残值但不鼓励。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float OversizedSizeFactor = 0.5f;
+
+	// ---- 切块纯度与缺陷惩罚参数 ----
+
+	/** 板料/粗料折现系数——毛预算先乘此系数再叠加各因子，解决 T 锚定导致单刀通胀过高。默认 0.4。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RoughStoneDiscount = 0.4f;
+
+	/** 纯度指数映射幂次——JadePurity 做 pow(..., PurityExponent) 非线性映射。>1 压低中低纯度切块，<1 反之。默认 1.5。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float PurityExponent = 1.5f;
+
+	/** 裂纹惩罚权重——加权缺陷率中裂纹的倍率。默认 1.5（裂纹比杂质更伤价）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.0"))
+	float CrackPenaltyWeight = 1.5f;
+
+	/** 杂质惩罚权重——加权缺陷率中杂质的倍率。默认 1.0。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.0"))
+	float ImpurityPenaltyWeight = 1.0f;
 
 	// ---- 命名/话术 ----
 

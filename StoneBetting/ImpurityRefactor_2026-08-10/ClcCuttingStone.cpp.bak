@@ -226,9 +226,8 @@ void AClcCuttingStone::ReplayAllCuts()
 			EProcMeshSliceCapOption::CreateNewSectionForCap, CapMat);
 
 		// cap 顶点色 + planar UV（按切平面法线投影生成，避免退化 UV）
-		// 传入 WorldNormal（世界空间），ApplyVoxelColorsToSection 内部按目标 Mesh 的 local 转换
 		const int32 CapIdx = CutMesh->GetNumSections() - 1;
-		ApplyVoxelColorsToSection(CapIdx, WorldNormal);
+		ApplyVoxelColorsToSection(CapIdx, P.Normal);
 	}
 }
 
@@ -393,17 +392,15 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	LastOtherHalf = OtherHalf;
 
 	// ---- 6. cap 顶点色 + planar UV（保留块 + 切下块共享切面必须一致） ----
-	// 传入世界空间法线；ApplyVoxelColorsToSection 内部按目标 PMC 的 ComponentTransform 转 local
 	const int32 CapIdx = CutMesh->GetNumSections() - 1;
-	ApplyVoxelColorsToSection(CapIdx, PlaneNormalWorld);
+	ApplyVoxelColorsToSection(CapIdx, PlaneNormal);
 
-	// 切下块 OtherHalf 的 cap 是它自己的最后一个 section；两块共享同一切平面但法线方向相反
-	// ——OtherHalf 切面法线必须取反，否则法线指向 mesh 内部会触发 PBR/次表面散射爆光。
-	// 顶点色/UV 用同一组世界法线（符号反转在 ApplyVoxelColorsToSection 内部完成）。
+	// 切下块 OtherHalf 的 cap 是它自己的最后一个 section；两块共享同一切平面，
+	// 用相同法线/UVScale 写同样的顶点色，避免穿帮（一面有玉/杂色，另一面默认色）。
 	if (OtherHalf && OtherHalf->GetNumSections() > 0)
 	{
 		const int32 OtherCapIdx = OtherHalf->GetNumSections() - 1;
-		ApplyVoxelColorsToSection(OtherCapIdx, -PlaneNormalWorld, OtherHalf);
+		ApplyVoxelColorsToSection(OtherCapIdx, PlaneNormal, OtherHalf);
 	}
 
 	// ---- 7. 切走块位置缓存（飞金币动效用） ----
@@ -467,58 +464,57 @@ bool AClcCuttingStone::PredictCutRatio(const FVector& PlanePointWorld,
 	return true;
 }
 
-void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormalWorld,
+void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormal,
 	UProceduralMeshComponent* TargetMesh)
 {
-	// PlaneNormalWorld 是世界空间法线；默认操作保留块 CutMesh，切下块 OtherHalf 显式传入。
+	// 默认操作保留块 CutMesh；切下块 OtherHalf 显式传入，使其 cap 顶点色/UV 与保留块共享切面一致。
 	UProceduralMeshComponent* Mesh = TargetMesh ? TargetMesh : CutMesh;
 	if (!Mesh) return;
 	FProcMeshSection* Sec = Mesh->GetProcMeshSection(SectionIndex);
 	if (!Sec) return;
 
-	// 【空间修复】PlaneNormalWorld 是同一个世界空间切面法线，但写入不同 PMC 的顶点法线
-	// 时必须是该 PMC 的局部空间方向。用 InverseTransformVectorNoScale 转成目标 mesh 的 local。
-	const FTransform& CompTransform = Mesh->GetComponentTransform();
-	const FVector LocalN = CompTransform.InverseTransformVectorNoScale(PlaneNormalWorld).GetSafeNormal();
-
-	// 统一切线/副法线（与局部法线正交，供材质 planar UV 投影）
-	FVector LocalAxisU, LocalAxisV;
-	LocalN.FindBestAxisVectors(LocalAxisU, LocalAxisV);
-	const FProcMeshTangent UnifiedTangent(LocalAxisU, false);
+	// 切平面局部法线（已归一化）——用来选 planar 投影的两个轴
+	const FVector N = PlaneNormal.GetSafeNormal();
+	const FVector AbsN(FMath::Abs(N.X), FMath::Abs(N.Y), FMath::Abs(N.Z));
 
 	// planar 投影缩放：1 单位（cm）= 0.02 UV，约 50cm 周期
 	constexpr float UVScale = 0.02f;
 
 	for (FProcMeshVertex& V : Sec->ProcVertexBuffer)
 	{
-		// 统一法线+切线覆盖，消灭三角扇放射状折光
-		V.Normal = LocalN;
-		V.Tangent = UnifiedTangent;
+		// 顶点色 G 通道是精确玉肉 mask；其余通道保留调试辨色。
+		const FColor Sample = SampleVoxelColor((FVector)V.Position);
+		V.Color = FColor(Sample.R, Sample.G, Sample.B, 255);
 
-		// 顶点色：最近邻采样 + G 通道硬门限二值化，禁止 GPU 三角扇线性插值产生放射渐变
-		const float HalfVoxel = 0.5f * FMath::Max3(
-			VoxelField.VoxelSize.X, VoxelField.VoxelSize.Y, VoxelField.VoxelSize.Z);
-		const FColor Sample = SampleVoxelColor((FVector)V.Position + LocalN * HalfVoxel);
-		const uint8 HardG = (Sample.G > 128) ? 255 : 0;
-		V.Color = FColor(Sample.R, HardG, Sample.B, 255);
-
-		// planar UV：按局部坐标切面切线/副法线投影
-		V.UV0 = FVector2D(
-			FVector::DotProduct((FVector)V.Position, LocalAxisU) * UVScale,
-			FVector::DotProduct((FVector)V.Position, LocalAxisV) * UVScale);
+		// planar UV：按切平面法线的主轴方向选投影面
+		// 法线最接近 X → 用 YZ 平面投影；Y → XZ；Z → XY
+		FVector2D UV(0.0f, 0.0f);
+		if (AbsN.X >= AbsN.Y && AbsN.X >= AbsN.Z)
+		{
+			UV.Set(V.Position.Y * UVScale, V.Position.Z * UVScale);
+		}
+		else if (AbsN.Y >= AbsN.X && AbsN.Y >= AbsN.Z)
+		{
+			UV.Set(V.Position.X * UVScale, V.Position.Z * UVScale);
+		}
+		else
+		{
+			UV.Set(V.Position.X * UVScale, V.Position.Y * UVScale);
+		}
+		V.UV0 = UV;
 	}
 	Mesh->SetProcMeshSection(SectionIndex, *Sec);
 }
 
 FColor AClcCuttingStone::SampleVoxelColor(const FVector& LocalPos) const
 {
-	const uint8 V = VoxelField.SampleNearestAtLocalPos(LocalPos);
+	const uint8 V = static_cast<uint8>(FMath::RoundToInt(VoxelField.SampleAtLocalPos(LocalPos)));
 	switch (V)
 	{
-		case JadeBody:  return FColor(0,   255, 120, 255);  // G高=翡翠绿
-		case Impurity:  return FColor(220, 80,  20,  255);  // R高=铁锈褐红
-		case Crack:     return FColor(20,  20,  20,  255);  // 全低=暗黑裂纹
-		default:        return FColor(100, 100, 100, 255);  // 灰底废肉
+		case JadeBody:  return FColor(40, 255, 90);  // G=255：玉肉 mask
+		case Impurity:  return FColor(200, 0, 40);   // G=0：杂质
+		case Crack:     return FColor(40, 0, 30);    // G=0：裂纹
+		default:        return FColor(120, 0, 120);  // G=0：废肉
 	}
 }
 

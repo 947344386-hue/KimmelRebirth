@@ -47,22 +47,30 @@ void UClcCuttingTableHUD::RefreshData(const FClcCuttingTableHUDData& Data)
 		? FString::Printf(TEXT("种水 %s"), Grade)
 		: TEXT("种水 未揭示"));
 	SetText(CutCountText, FString::Printf(TEXT("已解 %d 刀"), Data.CutCount));
-	SetText(RemovedVolumeText, FString::Printf(TEXT("已解体积 %.0f cm³"), Data.RemovedVolume));
-	SetText(RemainingVolumeText, FString::Printf(TEXT("剩余体积 %.0f cm³"), Data.RemainingVolume));
-	SetText(PositionText, FString::Printf(TEXT("石位 %+.1f / ±%.1f cm"), Data.StoneOffset, Data.MovementRange));
-	SetText(BladeText, FString::Printf(TEXT("解石刀 %.0f / %.0f"), Data.BladeCurrent, Data.BladeMax));
-	SetText(CutStateText, Data.bCanCut ? TEXT("可下刀") : TEXT("调整石位或修复解石刀"));
-	SetText(HintsText, Data.OperationHints);
-	SetText(RemainingVolumeText, FString::Printf(TEXT("剩余 %.0f cm³ | 结算 %d 金 | 估值 %d 金"),
-		Data.RemainingVolume, Data.SettledGold, Data.CurrentValuation));
 
-	if (BladeText)
+	if (CutProgressBar)
 	{
-		const FLinearColor Color = Data.BladeDurability <= 0.0f
-			? FLinearColor::Red
-			: (Data.BladeDurability < 0.2f ? FLinearColor::Yellow : FLinearColor(0.3f, 0.9f, 0.5f));
-		BladeText->SetColorAndOpacity(FSlateColor(Color));
+		CutProgressBar->SetPercent(FMath::Clamp(Data.CutProgress, 0.0f, 1.0f));
+		// 只改填充率不改颜色——百分比越高越接近完成，进度条越长
 	}
+	SetText(PositionText, FString::Printf(TEXT("石位 %+.1f / ±%.1f cm"), Data.StoneOffset, Data.MovementRange));
+	// CutStateText 由下方四态 switch 统一覆盖
+	SetText(HintsText, Data.OperationHints);
+
+	// 解石收益（利润 = 累计结算 - 购入价）；负数表示亏钱
+	{
+		const int32 Profit = Data.SettledGold - Data.PurchasePrice;
+		const bool bProfit = Profit > 0;
+		const FString Arrow = bProfit ? TEXT("▲") : TEXT("▼");
+		const FString Sign  = bProfit ? TEXT("+") : TEXT("");
+		SetText(ValuationText, FString::Printf(TEXT("解石收益 %s%s%d"), *Sign, *Arrow, Profit));
+		if (ValuationText)
+		{
+			ValuationText->SetColorAndOpacity(FSlateColor(
+				bProfit ? FLinearColor(1.0f, 0.35f, 0.3f) : FLinearColor(0.3f, 0.95f, 0.5f)));
+		}
+	}
+
 	if (BladeProgressBar)
 	{
 		const float Ratio = FMath::Clamp(Data.BladeDurability, 0.0f, 1.0f);
@@ -72,10 +80,33 @@ void UClcCuttingTableHUD::RefreshData(const FClcCuttingTableHUDData& Data)
 			: (Data.BladeDurability < 0.2f ? FLinearColor::Yellow : FLinearColor(0.3f, 0.9f, 0.5f));
 		BladeProgressBar->SetFillColorAndOpacity(BarColor);
 	}
+
+	// 切块尺寸预判四态（右上角实时反馈，帮助玩家判断下刀是否合理）
+	FString CutStateString;
+	FLinearColor CutStateColor;
+	switch (Data.CutSizeState)
+	{
+	case EClcCutSizeState::Undersized:
+		CutStateString = FString::Printf(TEXT("切块过小 %.0f%%"), Data.CutSizeRatio * 100.0f);
+		CutStateColor = FLinearColor(1.0f, 0.85f, 0.25f); // 黄
+		break;
+	case EClcCutSizeState::Standard:
+		CutStateString = FString::Printf(TEXT("切块尺寸标准 %.0f%%"), Data.CutSizeRatio * 100.0f);
+		CutStateColor = FLinearColor(0.3f, 1.0f, 0.5f); // 绿
+		break;
+	case EClcCutSizeState::Oversized:
+		CutStateString = FString::Printf(TEXT("切块过大 %.0f%%"), Data.CutSizeRatio * 100.0f);
+		CutStateColor = FLinearColor(1.0f, 0.55f, 0.2f); // 橙
+		break;
+	default: // CannotCut
+		CutStateString = TEXT("无法下刀");
+		CutStateColor = FLinearColor(1.0f, 0.4f, 0.2f); // 红
+		break;
+	}
+	SetText(CutStateText, CutStateString);
 	if (CutStateText)
 	{
-		CutStateText->SetColorAndOpacity(FSlateColor(
-			Data.bCanCut ? FLinearColor(0.3f, 1.0f, 0.5f) : FLinearColor(1.0f, 0.55f, 0.2f)));
+		CutStateText->SetColorAndOpacity(FSlateColor(CutStateColor));
 	}
 }
 
@@ -127,12 +158,21 @@ void UClcCuttingTableHUD::BuildDefaultLayout()
 	OriginText = AddText(Left, TEXT("OriginText"), 16, FLinearColor(0.75f, 0.8f, 0.9f));
 	GradeText = AddText(Left, TEXT("GradeText"), 18, FLinearColor(0.3f, 0.95f, 0.55f));
 	CutCountText = AddText(Left, TEXT("CutCountText"), 18, FLinearColor::White);
-	RemovedVolumeText = AddText(Left, TEXT("RemovedVolumeText"), 16, FLinearColor(0.8f, 0.8f, 0.8f));
-	RemainingVolumeText = AddText(Left, TEXT("RemainingVolumeText"), 18, FLinearColor(1.0f, 0.85f, 0.25f));
+
+	CutProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("CutProgressBar"));
+	CutProgressBar->SetPercent(0.0f);
+	CutProgressBar->SetFillColorAndOpacity(FLinearColor(0.3f, 0.9f, 0.55f));
+	if (UVerticalBoxSlot* CutBarSlot = Left->AddChildToVerticalBox(CutProgressBar))
+	{
+		CutBarSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 2.0f));
+	}
+
+	ValuationText = AddText(Left, TEXT("ValuationText"), 18, FLinearColor(1.0f, 0.85f, 0.25f));
 
 	UVerticalBox* Right = AddCard(TEXT("ToolCard"), FAnchors(1.0f, 0.0f), FVector2D(1.0f, 0.0f), FVector2D(-20.0f, 20.0f));
 	PositionText = AddText(Right, TEXT("PositionText"), 18, FLinearColor::White);
-	BladeText = AddText(Right, TEXT("BladeText"), 20, FLinearColor(0.3f, 0.9f, 0.5f));
+
+	AddText(Right, TEXT("BladeLabelText"), 14, FLinearColor(0.7f, 0.75f, 0.85f))->SetText(FText::FromString(TEXT("刀片耐久")));
 
 	BladeProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("BladeProgressBar"));
 	BladeProgressBar->SetPercent(1.0f);

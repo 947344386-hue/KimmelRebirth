@@ -9,18 +9,24 @@
 #include "Components/SphereComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/DecalComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "ProceduralMeshComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Math/RandomStream.h"
+#include "Math/RotationMatrix.h"
 #include "Interfaces/ClcStoneCarrier.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Data/ClcStoneConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcCuttingTableHUD.h"
 #include "UI/ClcGoldFlyWidget.h"
@@ -119,6 +125,17 @@ AClcCuttingTable::AClcCuttingTable()
 	FillLight->SetCastShadows(false);
 	FillLight->SetMobility(EComponentMobility::Movable);
 	FillLight->SetVisibility(false);
+
+	// ---- 切刀瞄准线贴花（投影到石头表面显示切割线 + 端帽，颜色按四态动态调） ----
+	AimDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("AimDecal"));
+	AimDecal->SetupAttachment(TableRoot);
+	AimDecal->SetRelativeLocation(FVector::ZeroVector);
+	// 与擦石预览一致：Decal 默认沿 +X 投影，Pitch 90° 后沿组件 -Z 投向石头顶面。
+	// 运行时 UpdateAimDecalTransform 会按切线方向和石头 Bounds 覆盖世界变换。
+	AimDecal->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+	AimDecal->DecalSize = FVector(100.0f, 120.0f, 120.0f); // (投影深度, 宽, 高)
+	AimDecal->SetMobility(EComponentMobility::Movable);
+	AimDecal->SetVisibility(false);
 }
 
 void AClcCuttingTable::BeginPlay()
@@ -186,6 +203,7 @@ void AClcCuttingTable::Tick(float DeltaTime)
 	if (CurrentState == EClcCuttingTableState::CuttingCinematic)
 	{
 		TickCutCinematic(DeltaTime);
+		if (AimDecal) AimDecal->SetVisibility(false);
 		HUDPushTimer -= DeltaTime;
 		if (HUDPushTimer <= 0.0f)
 		{
@@ -524,6 +542,10 @@ void AClcCuttingTable::EnterBladePhase(EBladePhase NewPhase)
 	{
 		ExecuteCutDuringCinematic();
 	}
+	else if (NewPhase == EBladePhase::ShowCutFace)
+	{
+		ShowCutFaceInfo();
+	}
 	else if (NewPhase == EBladePhase::Finish)
 	{
 		FinishCutCinematic();
@@ -612,11 +634,12 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	int32 CutAwayTotal = 0;
 	int32 CutAwayJade = 0;
 	int32 CutAwayCrack = 0;
+	int32 CutAwayImpurity = 0;
 
 	// 用缓存的刀口平面（与预判/相机一致），不再强制切侧——让 ExecuteCut 在固定平面上重新
 	// 自动比较两侧体积，避免升刀后 BladePoint 偏移导致预判与实际切割不一致。
 	if (!CuttingStone->ExecuteCut(PendingCutPlanePoint, PendingCutPlaneNormal,
-		false, CutAwayTotal, CutAwayJade, CutAwayCrack))
+		false, CutAwayTotal, CutAwayJade, CutAwayCrack, CutAwayImpurity))
 	{
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcCuttingTable][CutResult] ExecuteCut failed"));
 		return;
@@ -636,14 +659,15 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 		? static_cast<float>(CutAwayTotal) / static_cast<float>(CutAwayTotal + RemainingTotal)
 		: 0.0f;
 	UE_LOG(LogClaudeCore, Log,
-		TEXT("[ClcCuttingTable][CutResult] negRemoved=%d awayTotal=%d remainTotal=%d cutRatio=%.1f%% volume=%.0fcm³ jade=%d crack=%d"),
+		TEXT("[ClcCuttingTable][CutResult] negRemoved=%d awayTotal=%d remainTotal=%d cutRatio=%.1f%% volume=%.0fcm³ jade=%d crack=%d imp=%d"),
 		bActuallyRemovedNegOnRetry ? 1 : 0,
 		CutAwayTotal,
 		RemainingTotal,
 		CutRatio * 100.0f,
 		CutVolume,
 		CutAwayJade,
-		CutAwayCrack);
+		CutAwayCrack,
+		CutAwayImpurity);
 
 	// ---- 切下块物理掉落 ----
 	UProceduralMeshComponent* OtherHalf = CuttingStone->GetLastOtherHalf();
@@ -706,6 +730,7 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 				OtherHalf->IsSimulatingPhysics(),
 				OtherHalf->IsGravityEnabled());
 
+			// ---- 推出方向：朝相机水平方向 + 随机扰动 ----
 			FVector CameraDirection =
 				ActiveCutCamera.IsValid()
 				? ActiveCutCamera->GetComponentLocation() - OtherHalf->GetComponentLocation()
@@ -717,19 +742,53 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 					(bCutRemovedNegativeSide ? -MovementAxisWorld : MovementAxisWorld).GetSafeNormal();
 			}
 
-			const FVector CameraVelocityChange = CameraDirection * CutPieceCameraImpulseSpeed;
-			OtherHalf->AddImpulse(CameraVelocityChange, NAME_None, true);
+			// 水平偏航扰动：每片在 ±CutPieceYawJitterDeg 内朝不同方向飞，避免规整
+			if (CutPieceYawJitterDeg > 0.0f)
+			{
+				// 用切片中心 + 时间作种子，保证确定性但仍每片不同
+				const uint32 Seed = static_cast<uint32>(
+					FMath::Abs(OtherHalf->GetComponentLocation().X * 1000.0f)
+					+ FMath::Abs(OtherHalf->GetComponentLocation().Y * 31.0f));
+				FRandomStream Rng(Seed);
+				const float JitterRad = FMath::DegreesToRadians(CutPieceYawJitterDeg);
+				const float YawOffset = (Rng.FRand() * 2.0f - 1.0f) * JitterRad;
+				const FQuat YawRot(FVector::UpVector, YawOffset);
+				CameraDirection = YawRot.RotateVector(CameraDirection).GetSafeNormal();
+			}
 
-			const FVector TipAxis = FVector::CrossProduct(FVector::UpVector, CameraDirection).GetSafeNormal();
+			// ---- 速度大小：基础 + 体积系数（大块更猛，小片更轻） ----
+			// CutVolume 在上方已算（CutAwayTotal * VoxelVol），用其做尺寸代理。
+			const float EffVolume = FMath::Min(CutVolume, CutPieceVolumeSpeedCap);
+			const float SpeedMag = CutPieceBaseSpeed + CutPieceVolumeSpeedK * EffVolume;
+
+			// 水平推力（速度增量，bVelChange=true 与质量无关）
+			const FVector HorizontalVel = CameraDirection * SpeedMag;
+
+			// 垂直上抛：让切片腾空翻一下再落地，不是纯平推
+			const FVector LiftVel(0.0f, 0.0f, CutPieceLiftSpeed);
+
+			OtherHalf->AddImpulse(HorizontalVel + LiftVel, NAME_None, true);
+
+			// ---- 倾倒角速度：方向轴也加随机化，翻飞感 ----
+			FVector TipAxis = FVector::CrossProduct(FVector::UpVector, CameraDirection).GetSafeNormal();
+			{
+				const uint32 ASeed = static_cast<uint32>(
+					FMath::Abs(OtherHalf->GetComponentLocation().Z * 1000.0f)
+					+ FMath::Abs(OtherHalf->GetComponentLocation().X * 7.0f));
+				FRandomStream ARng(ASeed);
+				const float ARad = FMath::DegreesToRadians(25.0f) * ARng.FRand();
+				const FQuat ARot(CameraDirection, ARad);
+				TipAxis = ARot.RotateVector(TipAxis).GetSafeNormal();
+			}
 			OtherHalf->AddAngularImpulseInRadians(
-				TipAxis * CutPieceCameraTipAngularSpeed, NAME_None, true);
+				TipAxis * CutPieceTipAngularSpeed, NAME_None, true);
 
 			UE_LOG(LogClaudeCore, Log,
-				TEXT("[ClcCuttingTable][CutPhys] camera push: camera=%s direction=%s linear=%.1f angular=%.2f"),
+				TEXT("[ClcCuttingTable][CutPhys] camera push: camera=%s dir=%s speed=%.1f(%.0f+%.1f*%.0f) lift=%.1f angular=%.2f"),
 				ActiveCutCamera.IsValid() ? *ActiveCutCamera->GetName() : TEXT("NULL"),
 				*CameraDirection.ToString(),
-				CutPieceCameraImpulseSpeed,
-				CutPieceCameraTipAngularSpeed);
+				SpeedMag, CutPieceBaseSpeed, CutPieceVolumeSpeedK, EffVolume,
+				CutPieceLiftSpeed, CutPieceTipAngularSpeed);
 		}
 		else
 		{
@@ -746,25 +805,45 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 		}
 	}
 
-	// ---- 后处理：耐久、金币、飞金币、Toast ----
+	// ---- 后处理：耐久、预算结算、金币、飞金币、Toast ----
 	Durability->SetDurability(EClcRepairableTool::Blade,
 		CurrentDurability - BladeDurabilityPerCut);
 	CuttingStone->GetStoneData(ActiveStoneData);
 
 	int32 PieceGold = 0;
+	int32 ConsumedBudgetAfter = ActiveStoneData.ConsumedCutBudget;
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
 		{
+			UE_LOG(LogClaudeCore, Log,
+				TEXT("[CutBudget][Input] away=%d jade=%d crack=%d imp=%d voxVol=%.3f totalVox=%d | "
+				"T=%.1f Consumed=%d ExpJ=%d RemJ=%d"),
+				CutAwayTotal, CutAwayJade, CutAwayCrack, CutAwayImpurity,
+				VoxelVol, CuttingStone->GetTotalVoxels(),
+				ActiveStoneData.Internal.TheoreticalValue,
+				ActiveStoneData.ConsumedCutBudget,
+				static_cast<int32>(ActiveStoneData.ExposedJadeVolume),
+				static_cast<int32>(ActiveStoneData.RemainingJadeVolume));
+
 			PieceGold = Market->CalculateCutPieceValue(
-				CutAwayTotal, CutAwayJade, CutAwayCrack,
-				VoxelVol, ActiveStoneData.Internal.Grade);
+				ActiveStoneData, CutAwayTotal, CutAwayJade,
+				CutAwayCrack, CutAwayImpurity,
+				VoxelVol, CuttingStone->GetTotalVoxels(),
+				CuttingStone->GetLastCutJadeBoundingBox(),
+				ConsumedBudgetAfter);
 		}
 	}
+
+	// 无论金币是否为零，都写入 ConsumedCutBudget 和 TotalSettledValue
+	CuttingStone->ApplyCutSettlement(ConsumedBudgetAfter, PieceGold);
+
+	// 同步 ActiveStoneData（ApplyCutSettlement 已更新石头 Actor 本地副本）
+	CuttingStone->GetStoneData(ActiveStoneData);
+
 	if (PieceGold > 0 && CachedCarrier)
 	{
 		CachedCarrier->AddGold(PieceGold);
-		ActiveStoneData.TotalSettledValue += PieceGold;
 
 		if (CachedPC.IsValid())
 		{
@@ -785,18 +864,33 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	OnBladeCut(CutAwayTotal, CutAwayJade, CutAwayCrack);
 	PushHUDData();
 
+	// 缓存切割结果，ShowCutFace 阶段飘字展示
+	LastCutAwayTotal = CutAwayTotal;
+	LastCutAwayJade = CutAwayJade;
+	LastCutAwayCrack = CutAwayCrack;
+	LastCutAwayImpurity = CutAwayImpurity;
+	LastPieceGold = PieceGold;
+	LastCutVolume = CutVolume;
+}
+
+void AClcCuttingTable::ShowCutFaceInfo()
+{
+	if (!CachedPC.IsValid()) return;
+
+	const float JadeRatio = LastCutAwayTotal > 0
+		? 100.0f * static_cast<float>(LastCutAwayJade) / static_cast<float>(LastCutAwayTotal)
+		: 0.0f;
+	const float CrackRatio = LastCutAwayTotal > 0
+		? 100.0f * static_cast<float>(LastCutAwayCrack) / static_cast<float>(LastCutAwayTotal)
+		: 0.0f;
+
 	if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 	{
-		if (PieceGold > 0)
-		{
-			Toast->AddLog(FString::Printf(TEXT("解下一块：%.0f cm³  +%d 金"), CutVolume, PieceGold),
-				1.8f, FLinearColor(0.3f, 1.0f, 0.5f));
-		}
-		else
-		{
-			Toast->AddLog(FString::Printf(TEXT("解下一块：%.0f cm³（无价值）"), CutVolume),
-				1.8f, FLinearColor(0.6f, 0.6f, 0.6f));
-		}
+		Toast->AddLog(FString::Printf(TEXT("切下 %.0f cm³  + %d 金"), LastCutVolume, LastPieceGold),
+			ShowCutFaceDuration, FLinearColor(1.0f, 0.9f, 0.4f));
+		Toast->AddLog(FString::Printf(TEXT("玉 %.0f%% | 裂 %.0f%% | 杂 %.0f%%"),
+			JadeRatio, CrackRatio, 100.0f - JadeRatio - CrackRatio),
+			ShowCutFaceDuration, FLinearColor(0.3f, 0.9f, 0.5f));
 	}
 }
 
@@ -924,6 +1018,10 @@ void AClcCuttingTable::RemoveStoneFromBench()
 
 void AClcCuttingTable::DestroyCuttingStone()
 {
+	if (AimDecal)
+	{
+		AimDecal->SetVisibility(false);
+	}
 	if (CuttingStone)
 	{
 		CuttingStone->Destroy();
@@ -1066,9 +1164,55 @@ void AClcCuttingTable::DestroyHUD()
 	}
 }
 
+EClcCutSizeState AClcCuttingTable::ComputeCutSizeState(float& OutRatio) const
+{
+	OutRatio = 0.0f;
+	if (!CanCutNow() || !BladePoint || !CuttingStone)
+	{
+		return EClcCutSizeState::CannotCut;
+	}
+
+	float Ratio = 0.0f;
+	if (!CuttingStone->PredictCutRatio(BladePoint->GetComponentLocation(), MovementAxisWorld, Ratio))
+	{
+		return EClcCutSizeState::CannotCut;
+	}
+
+	OutRatio = Ratio;
+	float MinR = 0.15f, MaxR = 0.45f;
+	float FloorR = 0.05f;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+		{
+			if (const UClcStoneConfig* Cfg = Market->GetStoneConfig())
+			{
+				MinR   = Cfg->IdealCutRatioRange.X;
+				MaxR   = Cfg->IdealCutRatioRange.Y;
+				FloorR = Cfg->MinCutRatioForValue;
+			}
+		}
+	}
+
+	// 比例过低（低于 MinR 或低于硬地板比例）→ 黄色警告（实际金币为 0 或压缩）
+	if (Ratio < MinR || Ratio < FloorR) return EClcCutSizeState::Undersized;
+	if (Ratio > MaxR) return EClcCutSizeState::Oversized;
+	return EClcCutSizeState::Standard;
+}
+
 void AClcCuttingTable::PushHUDData()
 {
-	if (!HUDWidget || !CuttingStone) return;
+	if (!CuttingStone)
+	{
+		UpdateAimDecalColor(EClcCutSizeState::CannotCut);
+		return;
+	}
+
+	float CutSizeRatio = 0.0f;
+	const EClcCutSizeState CutSizeState = ComputeCutSizeState(CutSizeRatio);
+	UpdateAimDecalColor(CutSizeState);
+
+	if (!HUDWidget) return;
 
 	FClcStoneRuntimeData StoneData;
 	if (!CuttingStone->GetStoneData(StoneData)) return;
@@ -1079,12 +1223,20 @@ void AClcCuttingTable::PushHUDData()
 	Data.bGradeRevealed = StoneData.CutPlanes.Num() > 0;
 	Data.GradeValue = static_cast<uint8>(StoneData.Internal.Grade);
 	Data.CutCount = StoneData.CutPlanes.Num();
-	Data.RemovedVolume = StoneData.ExposedCutVolume;
-	Data.RemainingVolume = StoneData.RemainingVolume;
+	{
+		const float TotalVol = StoneData.ExposedCutVolume + StoneData.RemainingVolume;
+		Data.CutProgress = TotalVol > KINDA_SMALL_NUMBER
+			? StoneData.ExposedCutVolume / TotalVol : 0.0f;
+	}
 	Data.StoneOffset = StoneOffset;
 	Data.MovementRange = MovementRange;
 	Data.bCanCut = CanCutNow();
 	Data.SettledGold = StoneData.TotalSettledValue;
+	Data.PurchasePrice = StoneData.Internal.PurchasePrice;
+
+	// ---- 切块尺寸预判四态（与 Decal 共用本次预测结果）----
+	Data.CutSizeState = CutSizeState;
+	Data.CutSizeRatio = CutSizeRatio;
 
 	if (UGameInstance* GI = GetGameInstance())
 	{
@@ -1267,4 +1419,98 @@ void AClcCuttingTable::TickFillLight(float DeltaTime)
 
 	FillLight->SetIntensity(CurrentFillLightIntensity);
 	FillLight->SetVisibility(CurrentFillLightIntensity > KINDA_SMALL_NUMBER);
+}
+
+bool AClcCuttingTable::UpdateAimDecalTransform()
+{
+	if (!AimDecal || !CuttingStone || !BladePoint) return false;
+
+	UPrimitiveComponent* StoneMesh = CuttingStone->GetDisplayMesh();
+	if (!StoneMesh) return false;
+
+	const FBoxSphereBounds Bounds = StoneMesh->Bounds;
+	if (Bounds.BoxExtent.IsNearlyZero()) return false;
+
+	const FVector CutNormal = MovementAxisWorld.GetSafeNormal();
+	if (CutNormal.IsNearlyZero()) return false;
+
+	const FVector ProjectionAxis = FVector::UpVector;
+	FVector LineDirection = FVector::CrossProduct(ProjectionAxis, CutNormal).GetSafeNormal();
+	if (LineDirection.IsNearlyZero())
+	{
+		LineDirection = FVector::RightVector;
+	}
+
+	LineDirection = FQuat(
+		ProjectionAxis,
+		FMath::DegreesToRadians(AimDecalRotationOffset)).RotateVector(LineDirection).GetSafeNormal();
+
+	// Decal 本地 X 指向表面外法线，实际沿 -X 投入表面；本地 Z 是修正后的主切线方向。
+	const FRotator DecalRotation = FRotationMatrix::MakeFromXZ(
+		ProjectionAxis, LineDirection).Rotator();
+
+	FVector Location = Bounds.Origin;
+	Location += CutNormal * FVector::DotProduct(
+		BladePoint->GetComponentLocation() - Bounds.Origin, CutNormal);
+	Location.Z = Bounds.Origin.Z + Bounds.BoxExtent.Z + AimDecalSurfaceOffset;
+
+	const float ProjectionDepth = Bounds.BoxExtent.Z * 2.0f
+		+ AimDecalSurfaceOffset + AimDecalProjectionPadding;
+	const float LineHalfLength = Bounds.BoxExtent.GetMax() * AimDecalCoverageScale;
+	const float LineHalfWidth = FMath::Max(Bounds.BoxExtent.GetMin() * 0.35f, 20.0f);
+
+	AimDecal->SetWorldLocationAndRotation(Location, DecalRotation);
+	AimDecal->DecalSize = FVector(ProjectionDepth, LineHalfWidth, LineHalfLength);
+	AimDecal->MarkRenderStateDirty();
+	return true;
+}
+
+void AClcCuttingTable::UpdateAimDecalColor(EClcCutSizeState State)
+{
+	if (!AimDecal) return;
+
+	const bool bShouldShow = (CurrentState == EClcCuttingTableState::StoneOnBench)
+		&& (BladePhase == EBladePhase::Idle) && CuttingStone != nullptr;
+	if (!bShouldShow || !UpdateAimDecalTransform())
+	{
+		AimDecal->SetVisibility(false);
+		return;
+	}
+	AimDecal->SetVisibility(true);
+
+	// 懒创建 MID（材质未配置时静默跳过，不阻塞配色逻辑）
+	if (!AimDecalMID && AimDecal)
+	{
+		UE_LOG(LogClaudeCore, Log, TEXT("[AimDecal] Loading material: %s"), *AimDecalMaterialPath);
+		if (UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, *AimDecalMaterialPath))
+		{
+			UE_LOG(LogClaudeCore, Log, TEXT("[AimDecal] Material loaded OK, creating MID"));
+			AimDecal->SetDecalMaterial(Mat);
+			AimDecalMID = AimDecal->CreateDynamicMaterialInstance();
+		}
+		else
+		{
+			UE_LOG(LogClaudeCore, Error, TEXT("[AimDecal] FAILED to load material: %s"), *AimDecalMaterialPath);
+		}
+	}
+	if (!AimDecalMID) return;
+
+	AimDecalMID->SetScalarParameterValue(TEXT("LineWidth"), AimDecalLineWidth);
+
+	const uint8 StateKey = static_cast<uint8>(State);
+	if (StateKey == LastAimDecalState) return;
+	LastAimDecalState = StateKey;
+
+	FLinearColor Color;
+	switch (State)
+	{
+	case EClcCutSizeState::CannotCut:
+		Color = FLinearColor(1.0f, 0.1f, 0.05f, 0.8f); break;  // 红
+	case EClcCutSizeState::Standard:
+		Color = FLinearColor(0.2f, 1.0f, 0.2f, 0.95f); break; // 绿
+	default: // Undersized / Oversized
+		Color = FLinearColor(1.0f, 0.55f, 0.2f, 0.9f); break;  // 橙
+	}
+	AimDecalMID->SetVectorParameterValue(TEXT("Color"), Color);
+	AimDecalMID->SetScalarParameterValue(TEXT("Opacity"), Color.A);
 }

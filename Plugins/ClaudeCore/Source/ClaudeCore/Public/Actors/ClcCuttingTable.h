@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Data/ClcJadeTypes.h"
+#include "UI/ClcCuttingTableHUD.h"
 #include "Interfaces/ClcInteractable.h"
 #include "ClcCuttingTable.generated.h"
 
@@ -23,6 +24,8 @@ class USphereComponent;
 class USpotLightComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UDecalComponent;
+class UMaterialInstanceDynamic;
 
 UCLASS(Blueprintable)
 class CLAUDECORE_API AClcCuttingTable : public AActor, public IClcInteractable
@@ -98,6 +101,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USpotLightComponent> FillLight;
 
+	/**
+	 * 切刀瞄准线贴花——投影到石头表面显示一条沿切割平面的发光线 + 两端横标，
+	 * 颜色按切块合理性四态动态变化（红/黄/绿/橙），与 HUD 同源。
+	 * 挂在 BladePoint，随刀片位置移动；切割电影感期间隐藏。
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UDecalComponent> AimDecal;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Interaction", meta = (ClampMin = "50.0"))
 	float TriggerRadius = 300.0f;
 
@@ -160,13 +171,33 @@ protected:
 	/** 刀片自旋轴（局部 X，已按当前刀片 mesh 验证） */
 	FVector BladeSpinAxis = FVector(1.0f, 0.0f, 0.0f);
 
-	/** 切下块朝注视相机方向的瞬时速度增量（cm/s） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
-	float CutPieceCameraImpulseSpeed = 80.0f;
+	// ---- 切下块推出物理（按切片体积驱动 + 翻飞扰动） ----
+	// 速度 = BaseSpeed + VolumeK * CutVolume，让大块"沉而有力"、小块"轻而快"，
+	// 避免固定速度导致大块推不动、小块飞太猛。体积以 cm³ 计（CutAwayTotal * VoxelVolume）。
 
-	/** 切下块朝注视相机倾倒的角速度增量（rad/s） */
+	/** 朝相机方向的基础水平速度（cm/s，体积无关分量，保证最小推力） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
-	float CutPieceCameraTipAngularSpeed = 1.5f;
+	float CutPieceBaseSpeed = 60.0f;
+
+	/** 体积速度系数（cm/s per cm³，乘以切片体积）；大块额外加速，让大切片也能被崩出去 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceVolumeSpeedK = 0.8f;
+
+	/** 体积参与速度计算的软上限（cm³，超过则不再线性加速，防极大片飞太快） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "1.0"))
+	float CutPieceVolumeSpeedCap = 400.0f;
+
+	/** 垂直上抛速度增量（cm/s，让切片腾空翻一下再落地，非纯平推） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceLiftSpeed = 120.0f;
+
+	/** 水平方向随机扰动最大角度（度，0=严格朝相机；±范围内每片飞向不同） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0", ClampMax = "45.0"))
+	float CutPieceYawJitterDeg = 18.0f;
+
+	/** 朝相机倾倒的角速度增量（rad/s，体积无关基线） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
+	float CutPieceTipAngularSpeed = 1.5f;
 
 	/** 切下块物理模拟后自动清理延迟（秒，0=不清理） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Cinematic", meta = (ClampMin = "0.0"))
@@ -180,6 +211,30 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Material")
 	FString ShellMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneShell.M_StoneShell");
+
+	/** 切刀瞄准线贴花材质（Decal）——含 Color/Opacity 参数供 MID 动态调色 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|AimDecal")
+	FString AimDecalMaterialPath = TEXT("/Game/JadeBetting/Materials/M_CutAimLine.M_CutAimLine");
+
+	/** 贴花投影起点高于石头 Bounds 顶部的距离（cm） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|AimDecal", meta = (ClampMin = "0.0"))
+	float AimDecalSurfaceOffset = 5.0f;
+
+	/** 贴花平面相对石头水平 Bounds 的覆盖倍率 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|AimDecal", meta = (ClampMin = "1.0"))
+	float AimDecalCoverageScale = 1.2f;
+
+	/** 瞄准线粗细（UV 缩放，<1 更粗，>1 更细）——传给材质的 LineWidth 参数，BP 可实时调 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CuttingTable|AimDecal", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float AimDecalLineWidth = 1.0f;
+
+	/** 图案绕向下投影轴的旋转修正（度）；用于匹配 BP 中旋转过的石头/刀具朝向 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|AimDecal", meta = (ClampMin = "-180.0", ClampMax = "180.0"))
+	float AimDecalRotationOffset = 90.0f;
+
+	/** 向下投影深度在石头高度之外的额外余量（cm） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|AimDecal", meta = (ClampMin = "0.0"))
+	float AimDecalProjectionPadding = 20.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|Interaction")
 	FText InteractionPrompt = FText::FromString(TEXT("按 F 使用解石台"));
@@ -276,6 +331,13 @@ private:
 	/** 循环开始时缓存的刀口平面（预判/相机/实际切割共用，防升刀偏移） */
 	FVector PendingCutPlanePoint = FVector::ZeroVector;
 	FVector PendingCutPlaneNormal = FVector::ZeroVector;
+	/** 上一刀切割结果缓存（ShowCutFace 阶段飘字用） */
+	int32 LastCutAwayTotal = 0;
+	int32 LastCutAwayJade = 0;
+	int32 LastCutAwayCrack = 0;
+	int32 LastCutAwayImpurity = 0;
+	int32 LastPieceGold = 0;
+	float LastCutVolume = 0.0f;
 	TWeakObjectPtr<UCameraComponent> ActiveCutCamera;
 	TWeakObjectPtr<UProceduralMeshComponent> LastCutAwayPiece;
 	FTimerHandle CutPieceCleanupHandle;
@@ -284,6 +346,12 @@ private:
 	float CurrentFillLightIntensity = 0.0f;
 	/** 补光目标强度（由 UpdateFillLightTarget 按状态算出） */
 	float TargetFillLightIntensity = 0.0f;
+
+	/** 切刀瞄准线贴花 MID——运行时调 Color/Opacity 按四态配色 */
+	UPROPERTY()
+	UMaterialInstanceDynamic* AimDecalMID = nullptr;
+	/** 上次配色状态缓存，避免每帧重复 SetVectorParameterValue */
+	uint8 LastAimDecalState = 255;
 
 	void CachePlayerRefs();
 	void EnterCuttingMode();
@@ -296,6 +364,7 @@ private:
 	void TickCutCinematic(float DeltaTime);
 	void EnterBladePhase(EBladePhase NewPhase);
 	void ExecuteCutDuringCinematic();
+	void ShowCutFaceInfo();
 	void FinishCutCinematic();
 	void CleanupLastCutPiece();
 	bool PlaceStoneOnBench(int32 StoneIndex);
@@ -311,6 +380,7 @@ private:
 	void CreateHUD();
 	void DestroyHUD();
 	void PushHUDData();
+	EClcCutSizeState ComputeCutSizeState(float& OutRatio) const;
 	UClcBackpackSubsystem* GetBackpack() const;
 
 	UFUNCTION()
@@ -328,6 +398,10 @@ private:
 	void UpdateFillLightTarget();
 	/** 每帧把当前强度平滑追向目标并应用到 FillLight */
 	void TickFillLight(float DeltaTime);
+	/** 按石头实时 Bounds 把 AimDecal 放到顶部，并沿世界向下投影 */
+	bool UpdateAimDecalTransform();
+	/** 按切块合理性四态刷新 AimDecal 颜色/透明度（与 HUD 同源） */
+	void UpdateAimDecalColor(EClcCutSizeState State);
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,

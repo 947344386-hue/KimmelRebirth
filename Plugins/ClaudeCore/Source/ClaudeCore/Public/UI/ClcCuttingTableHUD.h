@@ -9,6 +9,16 @@
 class UTextBlock;
 class UProgressBar;
 
+/** 切块尺寸预判四态——HUD 右上角实时显示，帮助玩家判断下刀是否合理 */
+UENUM(BlueprintType)
+enum class EClcCutSizeState : uint8
+{
+	CannotCut   UMETA(DisplayName = "无法下刀"),   // 刀口未穿过两侧 / 耐久不足 / 无石
+	Undersized  UMETA(DisplayName = "切块过小"),   // 切下比例 < IdealCutRatioMin
+	Standard    UMETA(DisplayName = "切块尺寸标准"), // 比例在 [Min,Max] 区间
+	Oversized   UMETA(DisplayName = "切块过大"),   // 比例 > IdealCutRatioMax
+};
+
 USTRUCT(BlueprintType)
 struct CLAUDECORE_API FClcCuttingTableHUDData
 {
@@ -30,13 +40,13 @@ struct CLAUDECORE_API FClcCuttingTableHUDData
 	int32 CutCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Cut")
-	float RemovedVolume = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Cut")
-	float RemainingVolume = 0.0f;
+	float CutProgress = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Gold")
 	int32 SettledGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Gold")
+	int32 PurchasePrice = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Gold")
 	int32 CurrentValuation = 0;
@@ -58,6 +68,14 @@ struct CLAUDECORE_API FClcCuttingTableHUDData
 
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Tool")
 	bool bCanCut = false;
+
+	/** 切块尺寸预判四态（供 CutStateText 文案+配色；CannotCut 时无比例） */
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
+	EClcCutSizeState CutSizeState = EClcCutSizeState::CannotCut;
+
+	/** 当前刀口预判切下比例 [0,1]（供文案显示百分比；CannotCut 时无意义） */
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
+	float CutSizeRatio = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Hints")
 	FString OperationHints = TEXT("A / D 移动原石 | 空格 下刀\nB 更换原石 | Esc 退出");
@@ -90,22 +108,19 @@ protected:
 	TObjectPtr<UTextBlock> CutCountText;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
-	TObjectPtr<UTextBlock> RemovedVolumeText;
-
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
-	TObjectPtr<UTextBlock> RemainingVolumeText;
+	TObjectPtr<UProgressBar> CutProgressBar;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> PositionText;
-
-	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
-	TObjectPtr<UTextBlock> BladeText;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UProgressBar> BladeProgressBar;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> CutStateText;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
+	TObjectPtr<UTextBlock> ValuationText;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> HintsText;

@@ -78,9 +78,6 @@ struct CLAUDECORE_API FClcStoneVoxelField3D
 	/** 按局部空间位置采样体素值（三线性插值返回 0~3 浮点，供材质/调试用；越界返回 0） */
 	float SampleAtLocalPos(const FVector& LocalPos) const;
 
-	/** 按局部空间位置最近邻采样体素值（返回离散 0/1/2/3，供切面顶点色精确分类；越界返回 0） */
-	uint8 SampleNearestAtLocalPos(const FVector& LocalPos) const;
-
 	// ---- 解石 ----
 
 	/** 切平面两侧的体素计数（不修改场，供调用方决定哪侧切走） */

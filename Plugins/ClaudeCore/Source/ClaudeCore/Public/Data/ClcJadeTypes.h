@@ -257,23 +257,32 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY()
 	TArray<FClcCutPlaneRecord> CutPlanes;
 
-	/** 已露截面累计体积（cm³）——解石外推定价的"已开面积"等价物 */
+	/** 累计切走总体积（cm³）——每次 ExecuteCut 后累加，供切石预算分摊与回收价使用 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float ExposedCutVolume = 0.0f;
 
-	/** 已露截面中的玉肉体积（cm³） */
+	/** 累计切走玉肉体积（cm³）——每次 ExecuteCut 后累加，切石预算按玉肉份额分配 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float ExposedJadeVolume = 0.0f;
 
-	/** 已露截面中的裂纹体积（cm³） */
+	/** 累计切走裂纹体积（cm³）——每次 ExecuteCut 后累加，仅用于展示/审计，不再参与货币公式 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float ExposedCrackVolume = 0.0f;
 
-	/** 剩余未切体积（cm³）——解石外推定价的"未开面积"等价物 */
+	/** 剩余未切总体积（cm³）——由体素场 CountRemainingVoxels 重算，不靠累加 */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	float RemainingVolume = 0.0f;
 
-	/** 解石台已结算的切块累计金币（小块立即折金币的累计，供 HUD/统计） */
+	/** 剩余主体中的玉肉体积（cm³）——供理论预算分摊和回收价使用，每次切割后重算 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float RemainingJadeVolume = 0.0f;
+
+	/** 已分配掉的毛切块预算（整数金币）——含尺寸/硬地板扣损，用于增量预算分摊。
+	 *  下一刀从 max(Stored, TargetBefore) 起算，兼容旧数据（0 表示最多补到当前累计预算）。 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	int32 ConsumedCutBudget = 0;
+
+	/** 解石台已结算的切块累计金币（玩家实际到手，供 HUD/统计） */
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	int32 TotalSettledValue = 0;
 

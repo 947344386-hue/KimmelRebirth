@@ -2,7 +2,6 @@
 
 #include "Data/ClcStoneVoxelField3D.h"
 #include "Data/ClcJadeTypes.h"          // EClcDistVoxel: HostWaste/JadeBody/Impurity/Crack
-#include "ClcLog.h"
 #include "Math/RandomStream.h"
 #include "Engine/StaticMesh.h"          // UStaticMesh + FStaticMeshRenderData/FStaticMeshLODResources + FBoxSphereBounds
 #include "Rendering/PositionVertexBuffer.h"
@@ -83,73 +82,108 @@ namespace
 		return FVector::DistSquared(Closest, VoxelCenter) <= DistSq;
 	}
 
-	// ---- 3D 确定性噪声引擎（Permutation-based value noise，Seed 可复现） ----
+	// ---- 缺陷体生成（3D 版有机缺陷体） ----
 
-	struct FVoxelNoise3D
+	/** 盖一个填充球（缺陷体的一个体素节），覆盖玉肉，不重复盖已有缺陷。只在 mesh 内部盖。 */
+	int32 StampBall(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res,
+		int32 CX, int32 CY, int32 CZ, int32 R, FRandomStream& Rng)
 	{
-		uint8 Perm[512];
-
-		void Init(int32 Seed)
+		if (R < 1) R = 1;
+		int32 N = 0;
+		const int32 R2 = R * R;
+		const int32 InR2 = (R - 1) * (R - 1); // 内核半径平方（核内不抠边）
+		for (int32 DZ = -R; DZ <= R; ++DZ)
 		{
-			FRandomStream Rng(VoxelMakeSubSeed(Seed, 999));
-			for (int32 I = 0; I < 256; ++I) Perm[I] = static_cast<uint8>(I);
-			// Fisher-Yates 洗牌
-			for (int32 I = 255; I > 0; --I)
+			for (int32 DY = -R; DY <= R; ++DY)
 			{
-				const int32 J = Rng.RandHelper(I + 1);
-				Swap(Perm[I], Perm[J]);
+				for (int32 DX = -R; DX <= R; ++DX)
+				{
+					const int32 D2 = DX * DX + DY * DY + DZ * DZ;
+					if (D2 > R2) continue;                                  // 球外
+					const int32 X = CX + DX, Y = CY + DY, Z = CZ + DZ;
+					if (X < 0 || X >= Res || Y < 0 || Y >= Res || Z < 0 || Z >= Res) continue;
+					const int32 Idx = (Z * Res + Y) * Res + X;
+					if (!Occ[Idx]) continue;                                // mesh 外不盖
+					if (R >= 2 && D2 > InR2 && Rng.FRand() < 0.35f) continue; // 边缘随机抠
+					if (Data[Idx] != Crack) { Data[Idx] = Crack; ++N; }
+				}
 			}
-			// 双倍到 512 以简化 hash 包裹
-			for (int32 I = 0; I < 256; ++I) Perm[256 + I] = Perm[I];
 		}
+		return N;
+	}
 
-		/** 3D value noise, smoothstep 插值, 输出 [0,1] */
-		float Noise(float X, float Y, float Z) const
-		{
-			const int32 Xi = FMath::FloorToInt(X) & 255;
-			const int32 Yi = FMath::FloorToInt(Y) & 255;
-			const int32 Zi = FMath::FloorToInt(Z) & 255;
-			const float Xf = X - FMath::FloorToInt(X);
-			const float Yf = Y - FMath::FloorToInt(Y);
-			const float Zf = Z - FMath::FloorToInt(Z);
-			const float U = Xf * Xf * (3.0f - 2.0f * Xf);
-			const float V = Yf * Yf * (3.0f - 2.0f * Yf);
-			const float W = Zf * Zf * (3.0f - 2.0f * Zf);
-
-			auto Hash = [this](int32 X, int32 Y, int32 Z) -> uint8
-			{
-				return Perm[Perm[Perm[X] + Y] + Z];
-			};
-
-			const float A = static_cast<float>(Hash(Xi, Yi, Zi)) / 255.0f;
-			const float B = static_cast<float>(Hash(Xi + 1, Yi, Zi)) / 255.0f;
-			const float C = static_cast<float>(Hash(Xi, Yi + 1, Zi)) / 255.0f;
-			const float D = static_cast<float>(Hash(Xi + 1, Yi + 1, Zi)) / 255.0f;
-			const float E = static_cast<float>(Hash(Xi, Yi, Zi + 1)) / 255.0f;
-			const float F = static_cast<float>(Hash(Xi + 1, Yi, Zi + 1)) / 255.0f;
-			const float G = static_cast<float>(Hash(Xi, Yi + 1, Zi + 1)) / 255.0f;
-			const float H = static_cast<float>(Hash(Xi + 1, Yi + 1, Zi + 1)) / 255.0f;
-
-			const float AB = A + (B - A) * U;
-			const float CD = C + (D - C) * U;
-			const float EF = E + (F - E) * U;
-			const float GH = G + (H - G) * U;
-			const float ABCD = AB + (CD - AB) * V;
-			const float EFGH = EF + (GH - EF) * V;
-			return ABCD + (EFGH - ABCD) * W;
-		}
-	};
-
-	// ---- 新三步缺陷生成 ----
-
-	/** 第一步：噪声扰动断层面裂纹。写入 EClcDistVoxel::Crack。
-	 *  单条平面覆盖不足时自动循环生成多条交叉断层，直至 CrackBudget 耗尽。 */
-	void GeneratePlanesOrStrands(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res,
-		FRandomStream& Rng, const FVoxelNoise3D& Noise, int32& CrackBudget)
+	/**
+	 * 在 (CX,CY,CZ) 生长一个紧凑的不规则球状缺陷体——小土豆形态。
+	 * 设计目标：切开截面呈现为"绿盘上的一个不规则黑斑"，而非横贯切面的条带。
+	 *
+	 * 关键约束：
+	 *   - 主球半径硬上限 MaxR = Res/8：不论分到多大体积都不让单球占满切面，
+	 *     从根源杜绝"一大块杂水平劈开切面"。超出 MaxR 的预算不再增大半径，
+	 *     由 PlaceOrganisms3D 层拆成多个中球承载。
+	 *   - 子球数 2~4、半径 0.3~0.5 倍主半径：紧凑团块，边缘有凹凸但不铺满。
+	 *   - 子球偏向朝内（OffsetFactor 0.3~0.7）：让杂质贴住自身边缘而非外扩，
+	 *     叠加 PlaceOrganisms3D 的贴边种子，整体靠近玉体外缘但不越出。
+	 */
+	int32 GrowIrregularBall(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res, FRandomStream& Rng,
+		int32 CX, int32 CY, int32 CZ, int32 TargetVoxels)
 	{
-		if (CrackBudget <= 0) return;
+		if (TargetVoxels <= 0) return 0;
 
-		// 边缘种子选择器（复用旧逻辑：优先 mesh 边缘）
+		// 主球半径：体积反推，但硬上限 Res/8（杜绝横贯切面）。
+		const int32 MaxR = FMath::Max(2, Res / 8);
+		const float RawR = FMath::Pow(static_cast<float>(TargetVoxels) * 3.0f / (4.0f * PI), 1.0f / 3.0f);
+		int32 MainR = FMath::Clamp(FMath::RoundToInt(RawR * 1.25f), 1, MaxR);
+		if (MainR < 1) MainR = 1;
+
+		int32 Placed = StampBall(Data, Occ, Res, CX, CY, CZ, MainR, Rng);
+
+		// 子球：2~4 个，半径 0.3~0.5 倍主半径，贴主球表面朝内偏移。
+		const int32 NumBumps = (MainR >= 2) ? (2 + Rng.RandHelper(3)) : 0; // 2~4，小球无子球
+		for (int32 B = 0; B < NumBumps; ++B)
+		{
+			const int32 SubR = FMath::Max(1, FMath::RoundToInt(static_cast<float>(MainR) * (0.3f + Rng.FRand() * 0.2f)));
+			// Fibonacci 球面方向 + 扰动
+			const float T = (B + 0.5f) / static_cast<float>(NumBumps);
+			const float Phi = FMath::Acos(1.0f - 2.0f * T);
+			const float Theta = PI * (1.0f + FMath::Sqrt(5.0f)) * B;
+			FVector Dir(
+				FMath::Sin(Phi) * FMath::Cos(Theta),
+				FMath::Sin(Phi) * FMath::Sin(Theta),
+				FMath::Cos(Phi));
+			Dir += FVector(Rng.FRand() - 0.5f, Rng.FRand() - 0.5f, Rng.FRand() - 0.5f) * 0.6f;
+			Dir.Normalize();
+
+			// 偏内：OffsetFactor 0.3~0.7，子球贴主球表面内侧而非外扩
+			const float OffsetFactor = 0.3f + Rng.FRand() * 0.4f;
+			const int32 BX = FMath::RoundToInt(static_cast<float>(CX) + Dir.X * MainR * OffsetFactor);
+			const int32 BY = FMath::RoundToInt(static_cast<float>(CY) + Dir.Y * MainR * OffsetFactor);
+			const int32 BZ = FMath::RoundToInt(static_cast<float>(CZ) + Dir.Z * MainR * OffsetFactor);
+			Placed += StampBall(Data, Occ, Res, BX, BY, BZ, SubR, Rng);
+		}
+
+		return Placed;
+	}
+
+	/** 生成 Count 个 3D 缺陷体，覆盖率趋向 TargetCoverage；每个体分到的体积随机。
+	 *  超大预算（单球会超 MaxR）拆成多个中球承载，避免单球横贯切面。
+	 *  种子点加权偏向 mesh 外缘：让杂质靠近玉体边沿、离散分布，而非聚在中心。 */
+	int32 PlaceOrganisms3D(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res, FRandomStream& Rng,
+		int32 Count, float TargetCoverage)
+	{
+		const int32 Total = Res * Res * Res;
+		const int32 TargetVoxels = FMath::RoundToInt(static_cast<float>(Total) * FMath::Clamp(TargetCoverage, 0.0f, 0.95f));
+		if (Count < 1) Count = 1;
+
+		// 单球体积上限：对应 MaxR=Res/8 的球体积（4/3πr³），超出则拆多球。
+		const int32 MaxR = FMath::Max(2, Res / 8);
+		const int32 PerBallCap = FMath::RoundToInt(4.0f / 3.0f * PI * static_cast<float>(MaxR) * MaxR * MaxR);
+
+		TArray<float> Weights;
+		Weights.SetNumZeroed(Count);
+		float WSum = 0.0f;
+		for (int32 I = 0; I < Count; ++I) { Weights[I] = Rng.FRand() + 0.15f; WSum += Weights[I]; }
+
+		// 找一个贴 mesh 边缘的占用体素作种子：候选随机点，优先选"邻居里有外部/废肉"的边缘体素。
 		auto FindEdgeSeed = [&](int32& OutX, int32& OutY, int32& OutZ) -> bool
 		{
 			int32 BestX = -1, BestY = -1, BestZ = -1;
@@ -161,200 +195,51 @@ namespace
 				const int32 CZ = VoxelRandRange(Rng, 2, Res - 3);
 				const int32 Idx = (CZ * Res + CY) * Res + CX;
 				if (!Occ[Idx]) continue;
+				// 数 6 邻域中非占用（外部/废肉）的数量，越多越靠边
 				int32 Edge = 0;
-				const int32 Nbrs[6][3] = { {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1} };
-				for (const auto& D : Nbrs)
+				const int32 N[6][3] = { {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1} };
+				for (const auto& D : N)
 				{
 					const int32 NX = CX + D[0], NY = CY + D[1], NZ = CZ + D[2];
 					if (NX < 0 || NX >= Res || NY < 0 || NY >= Res || NZ < 0 || NZ >= Res) { ++Edge; continue; }
 					if (!Occ[(NZ * Res + NY) * Res + NX]) ++Edge;
 				}
-				if (Edge > BestEdgeCount) { BestEdgeCount = Edge; BestX = CX; BestY = CY; BestZ = CZ; }
-				if (Edge >= 2) break;
+				if (Edge > BestEdgeCount)
+				{
+					BestEdgeCount = Edge;
+					BestX = CX; BestY = CY; BestZ = CZ;
+				}
+				if (Edge >= 2) break; // 已找到贴边的，够用
 			}
 			if (BestX < 0) return false;
 			OutX = BestX; OutY = BestY; OutZ = BestZ;
 			return true;
 		};
 
-		constexpr float NoiseFrequency = 0.1f;
-		constexpr float NoiseAmplitude = 2.5f;
-		constexpr float CrackHalfThickness = 1.5f;
-
-		// 计算网格中心（供法向量生成用）
-		int32 OccCount = 0;
-		float Cx = 0.0f, Cy = 0.0f, Cz = 0.0f;
-		for (int32 Z = 0; Z < Res; ++Z)
-		for (int32 Y = 0; Y < Res; ++Y)
-		for (int32 X = 0; X < Res; ++X)
+		int32 Placed = 0;
+		for (int32 I = 0; I < Count && Placed < TargetVoxels; ++I)
 		{
-			if (Occ[(Z * Res + Y) * Res + X]) { Cx += X; Cy += Y; Cz += Z; ++OccCount; }
-		}
-		const FVector Center(Cx / OccCount, Cy / OccCount, Cz / OccCount);
+			int32 Budget = FMath::RoundToInt(static_cast<float>(TargetVoxels) * (Weights[I] / WSum));
+			if (Budget <= 0) continue;
 
-		int32 PlaneIndex = 0;
-		while (CrackBudget > 0 && PlaneIndex < 8) // 安全上限
-		{
-			++PlaneIndex;
-
-			// 种子点与法向量
-			int32 SX = 0, SY = 0, SZ = 0;
-			FVector P0, N;
-			if (FindEdgeSeed(SX, SY, SZ))
+			// 超大预算拆成多个中球：每球不超过 PerBallCap，离散分布。
+			// 每个 sub-ball 独立找贴边种子，保证"若干离散小土豆"而非"一大团"。
+			int32 SubBallCount = 1;
+			if (PerBallCap > 0 && Budget > PerBallCap)
 			{
-				P0 = FVector(SX, SY, SZ);
+				SubBallCount = FMath::Min(6, FMath::DivideAndRoundUp(Budget, PerBallCap));
 			}
-			else
-			{
-				// 回退：随机内部体素
-				for (int32 Try = 0; Try < 50; ++Try)
-				{
-					const int32 X = VoxelRandRange(Rng, 2, Res - 3);
-					const int32 Y = VoxelRandRange(Rng, 2, Res - 3);
-					const int32 Z = VoxelRandRange(Rng, 2, Res - 3);
-					if (Occ[(Z * Res + Y) * Res + X]) { P0 = FVector(X, Y, Z); break; }
-				}
-			}
-			// 随机法向量（尽量偏向指向中心，让断层穿过石体）
-			const FVector ToCenter = Center - P0;
-			if (!ToCenter.IsNearlyZero())
-			{
-				N = ToCenter.GetSafeNormal() +
-					FVector(Rng.FRand() - 0.5f, Rng.FRand() - 0.5f, Rng.FRand() - 0.5f) * 0.8f;
-			}
-			else
-			{
-				N = FVector(Rng.FRand() - 0.5f, Rng.FRand() - 0.5f, Rng.FRand() - 0.5f);
-			}
-			N.Normalize();
-			if (N.IsNearlyZero()) N = FVector(1.0f, 0.0f, 0.0f);
+			const int32 PerBudget = FMath::DivideAndRoundUp(Budget, SubBallCount);
 
-			// 扫描整个网格，写入 Crack
-			for (int32 Z = 0; Z < Res && CrackBudget > 0; ++Z)
-			for (int32 Y = 0; Y < Res && CrackBudget > 0; ++Y)
-			for (int32 X = 0; X < Res && CrackBudget > 0; ++X)
+			for (int32 S = 0; S < SubBallCount && Placed < TargetVoxels; ++S)
 			{
-				const int32 Idx = (Z * Res + Y) * Res + X;
-				if (!Occ[Idx]) continue;
-				if (Data[Idx] != JadeBody) continue; // 不覆盖已有缺陷
-
-				const FVector P(X, Y, Z);
-				const float D = FVector::DotProduct(P - P0, N); // 到基准平面的距离
-				const float DNoisy = D + (Noise.Noise(X * NoiseFrequency, Y * NoiseFrequency, Z * NoiseFrequency) - 0.5f) * 2.0f * NoiseAmplitude;
-
-				if (FMath::Abs(DNoisy) < CrackHalfThickness)
-				{
-					Data[Idx] = Crack;
-					--CrackBudget;
-				}
+				int32 SX = 0, SY = 0, SZ = 0;
+				if (!FindEdgeSeed(SX, SY, SZ)) continue;
+				Placed += GrowIrregularBall(Data, Occ, Res, Rng, SX, SY, SZ, PerBudget);
 			}
 		}
+		return Placed;
 	}
-
-	/** 第二步：沿裂纹边缘浸染杂质。写入 EClcDistVoxel::Impurity。
-	 *  遍历全部 Crack 体素的 26-邻域，对邻居 JadeBody 用噪声判定是否转为 Impurity。 */
-	void GenerateImpurityDiffusion(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res,
-		FRandomStream& Rng, const FVoxelNoise3D& Noise, int32& ImpurityBudget)
-	{
-		if (ImpurityBudget <= 0) return;
-
-		// 收集全部 Crack 体素索引
-		TArray<int32> CrackIndices;
-		CrackIndices.Reserve(Res * Res * Res / 8);
-		const int32 Total = Res * Res * Res;
-		for (int32 I = 0; I < Total; ++I)
-		{
-			if (Occ[I] && Data[I] == Crack) CrackIndices.Add(I);
-		}
-		if (CrackIndices.Num() == 0) return;
-
-		// Fisher-Yates 洗牌避免扫描方向偏差
-		for (int32 I = CrackIndices.Num() - 1; I > 0; --I)
-		{
-			const int32 J = Rng.RandHelper(I + 1);
-			Swap(CrackIndices[I], CrackIndices[J]);
-		}
-
-		for (int32 CrackIdx : CrackIndices)
-		{
-			if (ImpurityBudget <= 0) break;
-
-			const int32 CX = CrackIdx % Res;
-			const int32 CY = (CrackIdx / Res) % Res;
-			const int32 CZ = CrackIdx / (Res * Res);
-
-			// 26-邻域
-			for (int32 DZ = -1; DZ <= 1 && ImpurityBudget > 0; ++DZ)
-			for (int32 DY = -1; DY <= 1 && ImpurityBudget > 0; ++DY)
-			for (int32 DX = -1; DX <= 1 && ImpurityBudget > 0; ++DX)
-			{
-				if (DX == 0 && DY == 0 && DZ == 0) continue;
-				const int32 NX = CX + DX, NY = CY + DY, NZ = CZ + DZ;
-				if (NX < 0 || NX >= Res || NY < 0 || NY >= Res || NZ < 0 || NZ >= Res) continue;
-				const int32 NIdx = (NZ * Res + NY) * Res + NX;
-				if (!Occ[NIdx] || Data[NIdx] != JadeBody) continue;
-
-				// 用高频率噪声判定：> 0.15 决定浸染（约 85% 通过率）
-				if (Noise.Noise(NX * 0.3f, NY * 0.3f, NZ * 0.3f) > 0.15f)
-				{
-					Data[NIdx] = Impurity;
-					--ImpurityBudget;
-				}
-			}
-		}
-	}
-
-	/** 第三步：皮壳渗透杂质兜底。裂纹太少时，用 mesh 边缘的 JadeBody 转为 Impurity。
-	 *  模拟天然风化皮渗透（铁锈浸染）。 */
-	void GenerateSkinInfiltration(TArray<uint8>& Data, const TArray<uint8>& Occ, int32 Res,
-		FRandomStream& Rng, const FVoxelNoise3D& Noise, int32& ImpurityBudget)
-	{
-		if (ImpurityBudget <= 0) return;
-
-		// 收集边缘 JadeBody 体素（6-邻域中有外部）
-		TArray<int32> EdgeJadeIndices;
-		EdgeJadeIndices.Reserve(Res * Res * Res / 8);
-		const int32 Total = Res * Res * Res;
-		for (int32 I = 0; I < Total; ++I)
-		{
-			if (!Occ[I] || Data[I] != JadeBody) continue;
-			const int32 X = I % Res;
-			const int32 Y = (I / Res) % Res;
-			const int32 Z = I / (Res * Res);
-			bool bEdge = false;
-			const int32 Nbrs[6][3] = { {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1} };
-			for (const auto& D : Nbrs)
-			{
-				const int32 NX = X + D[0], NY = Y + D[1], NZ = Z + D[2];
-				if (NX < 0 || NX >= Res || NY < 0 || NY >= Res || NZ < 0 || NZ >= Res) { bEdge = true; break; }
-				if (!Occ[(NZ * Res + NY) * Res + NX]) { bEdge = true; break; }
-			}
-			if (bEdge) EdgeJadeIndices.Add(I);
-		}
-		if (EdgeJadeIndices.Num() == 0) return;
-
-		// 洗牌
-		for (int32 I = EdgeJadeIndices.Num() - 1; I > 0; --I)
-		{
-			const int32 J = Rng.RandHelper(I + 1);
-			Swap(EdgeJadeIndices[I], EdgeJadeIndices[J]);
-		}
-
-		for (int32 EdgeIdx : EdgeJadeIndices)
-		{
-			if (ImpurityBudget <= 0) break;
-			const int32 X = EdgeIdx % Res;
-			const int32 Y = (EdgeIdx / Res) % Res;
-			const int32 Z = EdgeIdx / (Res * Res);
-			if (Noise.Noise(X * 0.25f, Y * 0.25f, Z * 0.25f) > 0.4f)
-			{
-				Data[EdgeIdx] = Impurity;
-				--ImpurityBudget;
-			}
-		}
-	}
-
-	// ---- mesh 体素化 ----
 
 	/** BFS 计算剩余体中最大玉肉连通域体素数（6 邻域） */
 	int32 MeasureLargestJadePatch3DImpl(const TArray<uint8>& Data, const TArray<uint8>& Occ,
@@ -404,6 +289,8 @@ namespace
 		}
 		return MaxComponent;
 	}
+
+	// ---- mesh 体素化 ----
 
 	/** 把 Field 的 OccupancyMask 按 mesh 实际形状填充（表面标记 + 外部 flood-fill） */
 	void VoxelizeMeshInto(FClcStoneVoxelField3D& Field, UStaticMesh* Mesh)
@@ -544,39 +431,10 @@ FClcStoneVoxelField3D FClcStoneVoxelField3D::Generate(int32 Seed, UStaticMesh* M
 	}
 	Result.RemoveMask.Init(0, Total);
 
-	// 3. 三步法生成缺陷：噪声断层裂纹 + 沿裂浸染杂质 + 皮壳渗透兜底
-	{
-		FRandomStream Rng(VoxelMakeSubSeed(Seed, 0));
-
-		// 统计占用体素数（仅 OccupancyMask==1）
-		int32 TotalOccupied = 0;
-		for (int32 I = 0; I < Total; ++I) { if (Result.OccupancyMask[I]) ++TotalOccupied; }
-
-		const int32 TargetVoxels = FMath::RoundToInt(
-			static_cast<float>(TotalOccupied) * FMath::Clamp(TargetCoverage, 0.05f, 0.85f));
-		// 裂纹 60% / 杂质 40%
-		int32 CrackBudget = FMath::RoundToInt(static_cast<float>(TargetVoxels) * 0.6f);
-		int32 ImpurityBudget = FMath::RoundToInt(static_cast<float>(TargetVoxels) * 0.4f);
-
-		FVoxelNoise3D Noise;
-		Noise.Init(VoxelMakeSubSeed(Seed, 100));
-
-		UE_LOG(LogClaudeCore, Log,
-			TEXT("[VoxelGen] Seed=%d Coverage=%.1f%% Occ=%d Target=%d CrackBudget=%d ImpBudget=%d"),
-			Seed, TargetCoverage * 100.0f, TotalOccupied, TargetVoxels, CrackBudget, ImpurityBudget);
-
-		GeneratePlanesOrStrands(Result.Data, Result.OccupancyMask, Res, Rng, Noise, CrackBudget);
-		UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step1 Crack leftover=%d"), CrackBudget);
-
-		GenerateImpurityDiffusion(Result.Data, Result.OccupancyMask, Res, Rng, Noise, ImpurityBudget);
-		UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step2 Impurity leftover=%d"), ImpurityBudget);
-
-		if (ImpurityBudget > 0)
-		{
-			GenerateSkinInfiltration(Result.Data, Result.OccupancyMask, Res, Rng, Noise, ImpurityBudget);
-			UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step3 SkinInfiltration leftover=%d"), ImpurityBudget);
-		}
-	}
+	// 3. 生成若干连续不规则 3D 缺陷体（形态随各自体积变化）
+	FRandomStream Rng(VoxelMakeSubSeed(Seed, 0));
+	PlaceOrganisms3D(Result.Data, Result.OccupancyMask, Res, Rng,
+		FMath::Max(1, DefectCount), TargetCoverage);
 
 	return Result;
 }
@@ -638,15 +496,6 @@ float FClcStoneVoxelField3D::SampleAtLocalPos(const FVector& LocalPos) const
 	const float C0 = C00 + (C10 - C00) * Ty;
 	const float C1 = C01 + (C11 - C01) * Ty;
 	return C0 + (C1 - C0) * Tz;
-}
-
-uint8 FClcStoneVoxelField3D::SampleNearestAtLocalPos(const FVector& LocalPos) const
-{
-	int32 X, Y, Z;
-	LocalToVoxelInt(LocalPos, X, Y, Z);
-	if (X < 0 || Y < 0 || Z < 0) return 0;
-	const int32 Idx = IndexOf(X, Y, Z);
-	return Idx >= 0 ? Data[Idx] : 0;
 }
 
 FClcStoneVoxelField3D::FSliceCounts FClcStoneVoxelField3D::ComputeSliceCounts(const FVector& PlaneNormal, float PlaneDistance) const

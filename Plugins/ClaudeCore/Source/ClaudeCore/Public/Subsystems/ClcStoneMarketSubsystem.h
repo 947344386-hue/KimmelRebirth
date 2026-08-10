@@ -43,14 +43,22 @@ public:
 	int32 CalculateSalePrice(const FClcStoneRuntimeData& StoneData) const;
 
 	/**
-	 * 解石切块折金币——体积驱动价值公式。
-	 * CutAwayTotal/Jade/Crack = 切走侧体素数；VoxelVolume = 单体素体积(cm³)。
+	 * 解石切块折金币——以 Internal.TheoreticalValue 为唯一经济锚点，预算守恒分摊。
+	 * CutAwayTotal/Jade/Crack/Impurity = 本刀切走侧各类体素数；VoxelVolume = 单体素体积(cm³)；
+	 * TotalVoxels = 原石总体素数（尺寸比例基准）；PieceJadeBoundingBox = 切走侧玉肉体素包围盒；
+	 * StoneData 提供理论价与累计预算。
+	 * OutConsumedBudgetAfter = 本刀后已分配毛预算（含尺寸/硬地板扣损），调用方写入石头。
+	 * 返回本刀实际金币（可能为 0，但毛预算仍前进）。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
-	int32 CalculateCutPieceValue(int32 CutAwayTotal, int32 CutAwayJade, int32 CutAwayCrack,
-		float VoxelVolume, EClcJadeGrade Grade) const;
+	int32 CalculateCutPieceValue(const FClcStoneRuntimeData& StoneData,
+		int32 CutAwayTotal, int32 CutAwayJade,
+		int32 CutAwayCrack, int32 CutAwayImpurity,
+		float VoxelVolume, int32 TotalVoxels,
+		const FBox& PieceJadeBoundingBox,
+		int32& OutConsumedBudgetAfter) const;
 
-	/** 解石剩余主体回收估值——已露截面体积外推到未切体积（仿 2D 净外推模型）。 */
+	/** 解石剩余主体回收估值——理论总价 × 剩余玉肉份额，不乘 CutValueMultiplier。 */
 	UFUNCTION(BlueprintCallable, Category = "ClcMarket")
 	int32 CalculateCutStoneSalePrice(const FClcStoneRuntimeData& StoneData) const;
 

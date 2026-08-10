@@ -77,6 +77,14 @@ struct CLAUDECORE_API FClcCuttingTableHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
 	float CutSizeRatio = 0.0f;
 
+	/** 剩余主体是否可一键出售（体积已进入标准切割阈值区间） */
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
+	bool bCanSellRemaining = false;
+
+	/** 剩余主体预估售价（供 HUD 提示显示） */
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
+	int32 RemainingSellPrice = 0;
+
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Hints")
 	FString OperationHints = TEXT("A / D 移动原石 | 空格 下刀\nB 更换原石 | Esc 退出");
 };

@@ -614,7 +614,7 @@ int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeDat
 
 int32 UClcStoneMarketSubsystem::CalculateCutStoneSalePrice(const FClcStoneRuntimeData& StoneData) const
 {
-	// 剩余主体回收价 = TheoreticalValue x 剩余玉肉份额 x 历史纯度溢价
+	// 剩余主体回收价 = TheoreticalValue x 剩余玉肉份额 x 历史纯度溢价 x 粗料折现
 	const float T = FMath::Max(0.0f, StoneData.Internal.TheoreticalValue);
 	const float OriginalJade = StoneData.ExposedJadeVolume + StoneData.RemainingJadeVolume;
 	if (OriginalJade <= 0.0f) return 0;
@@ -632,7 +632,10 @@ int32 UClcStoneMarketSubsystem::CalculateCutStoneSalePrice(const FClcStoneRuntim
 	// 纯度溢价乘子：历史全是高质量翡翠 -> 剩余主体最高 1.3 倍溢价；全是垃圾 -> 打 0.7 折
 	const float PremiumMultiplier = FMath::Lerp(0.7f, 1.3f, HistoricalPurity);
 
-	return FMath::RoundToInt(T * RemainingRatio * PremiumMultiplier);
+	// 粗料折现系数：与切块定价共享同一折扣基准，避免剩余主体反向贵于单刀
+	const float RoughDiscount = StoneConfig ? StoneConfig->RoughStoneDiscount : 0.4f;
+
+	return FMath::RoundToInt(T * RemainingRatio * PremiumMultiplier * RoughDiscount);
 }
 
 int32 UClcStoneMarketSubsystem::CalculatePurchasePrice(const FClcStoneInternalData& Data) const

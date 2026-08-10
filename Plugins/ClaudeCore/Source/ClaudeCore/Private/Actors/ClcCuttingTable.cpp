@@ -433,7 +433,14 @@ void AClcCuttingTable::ProcessCuttingInput(float DeltaTime)
 	const bool bCutDown = CachedPC->IsInputKeyDown(CutKey);
 	if (bCutDown && !bCutKeyPrev)
 	{
-		ExecuteBladeDrop();
+		if (IsRemainingStoneInStandardRange())
+		{
+			SellRemainingStone();
+		}
+		else
+		{
+			ExecuteBladeDrop();
+		}
 	}
 	bCutKeyPrev = bCutDown;
 }
@@ -1137,6 +1144,101 @@ bool AClcCuttingTable::CanCutNow() const
 	return false;
 }
 
+bool AClcCuttingTable::IsRemainingStoneInStandardRange() const
+{
+	if (!CuttingStone || CuttingStone->GetTotalVoxels() <= 0) return false;
+
+	int32 RemainingTotal = 0, RemainingJade = 0, RemainingCrack = 0, RemainingImpurity = 0;
+	CuttingStone->GetVoxelField().CountRemainingVoxels(RemainingTotal, RemainingJade, RemainingCrack, RemainingImpurity);
+	if (RemainingTotal <= 0) return false;
+
+	const float Ratio = static_cast<float>(RemainingTotal) / static_cast<float>(CuttingStone->GetTotalVoxels());
+
+	float Threshold = 0.15f;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+		{
+			if (const UClcStoneConfig* Cfg = Market->GetStoneConfig())
+			{
+				Threshold = Cfg->QuickSellRatioThreshold;
+			}
+		}
+	}
+
+	return Ratio < Threshold;
+}
+
+bool AClcCuttingTable::SellRemainingStone()
+{
+	if (!CuttingStone || !CachedCarrier || !CachedPC.IsValid()) return false;
+
+	FClcStoneRuntimeData StoneData;
+	if (!CuttingStone->GetStoneData(StoneData)) return false;
+
+	int32 SellPrice = 0;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+		{
+			SellPrice = Market->CalculateCutStoneSalePrice(StoneData);
+		}
+	}
+
+	if (SellPrice > 0)
+	{
+		CachedCarrier->AddGold(SellPrice);
+
+		const FVector WorldPos = CuttingStone->GetCutPieceWorldLocation();
+		FVector2D ScreenPos;
+		if (CachedPC->ProjectWorldLocationToScreen(WorldPos, ScreenPos, false))
+		{
+			UClcGoldFlyWidget* FlyWidget = CreateWidget<UClcGoldFlyWidget>(CachedPC.Get(), UClcGoldFlyWidget::StaticClass());
+			if (FlyWidget)
+			{
+				FlyWidget->AddToViewport(120);
+				FlyWidget->StartFlight(ScreenPos, SellPrice);
+			}
+		}
+	}
+
+	if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
+	{
+		Toast->AddLog(FString::Printf(TEXT("剩余主体售出 +%d 金"), SellPrice),
+			2.5f, FLinearColor(0.0f, 1.0f, 0.8f));
+	}
+
+	// 出售后不归还石头到背包，直接销毁
+	DestroyHUD();
+	DestroyCuttingStone();
+	ActiveStoneData = FClcStoneRuntimeData();
+	StoneOffset = 0.0f;
+	MovementRange = 0.0f;
+	OnStoneRemoved();
+
+	// 背包无可用石头 → 自动退出；有 → 自动打开背包选下一块
+	if (HasEligibleStone())
+	{
+		CurrentState = EClcCuttingTableState::AwaitingStone;
+		if (UClcBackpackSubsystem* Backpack = GetBackpack())
+		{
+			if (!Backpack->IsBackpackOpen())
+			{
+				Backpack->ToggleBackpack();
+			}
+			BindToBackpackWidget();
+		}
+	}
+	else
+	{
+		// 先切到非 StoneOnBench 状态，避免 ExitCuttingMode 里 RemoveStoneFromBench 访问已销毁的 CuttingStone
+		CurrentState = EClcCuttingTableState::AwaitingStone;
+		ExitCuttingMode();
+	}
+
+	return true;
+}
+
 bool AClcCuttingTable::GetActiveStone(FClcStoneRuntimeData& OutData) const
 {
 	return CuttingStone && CuttingStone->GetStoneData(OutData);
@@ -1237,6 +1339,26 @@ void AClcCuttingTable::PushHUDData()
 	// ---- 切块尺寸预判四态（与 Decal 共用本次预测结果）----
 	Data.CutSizeState = CutSizeState;
 	Data.CutSizeRatio = CutSizeRatio;
+
+	// ---- 剩余主体一键出售 ----
+	Data.bCanSellRemaining = IsRemainingStoneInStandardRange();
+	if (Data.bCanSellRemaining)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
+			{
+				Data.RemainingSellPrice = Market->CalculateCutStoneSalePrice(StoneData);
+			}
+		}
+		Data.OperationHints = FString::Printf(
+			TEXT("A / D 移动原石 | 空格 出售剩余主体 (+%d 金)\nB 更换原石 | Esc 退出"),
+			Data.RemainingSellPrice);
+	}
+	else
+	{
+		Data.RemainingSellPrice = 0;
+	}
 
 	if (UGameInstance* GI = GetGameInstance())
 	{

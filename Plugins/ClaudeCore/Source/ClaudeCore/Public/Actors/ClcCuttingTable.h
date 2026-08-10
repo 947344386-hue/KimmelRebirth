@@ -377,6 +377,13 @@ private:
 	bool HasEligibleStone() const;
 	float ResolveTargetCoverage(const FClcStoneRuntimeData& StoneData) const;
 	bool CanCutNow() const;
+
+	/** 剩余石头体积是否已进入标准切割阈值区间（触发热键直售） */
+	bool IsRemainingStoneInStandardRange() const;
+
+	/** 一键出售切台上剩余主体石头 */
+	bool SellRemainingStone();
+
 	void CreateHUD();
 	void DestroyHUD();
 	void PushHUDData();

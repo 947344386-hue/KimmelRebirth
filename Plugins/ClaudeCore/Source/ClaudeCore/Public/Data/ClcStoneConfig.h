@@ -133,6 +133,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D IdealCutRatioRange = FVector2D(0.15f, 0.45f);
 
+	/** 一键售出阈值——剩余石头体积/原石总体积 < 此比例时，空格键直接出售剩余主体而非继续下刀。
+	 *  默认 0.15 = 与原 IdealCutRatioRange.Min 对齐；可独立调大/调小。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float QuickSellRatioThreshold = 0.15f;
+
 	/** 过小切块的玉肉单价压缩下限——r→0 时 SizeFactor 衰减到此值（0.3=压缩到 30% 单价）。
 	 *  薄片速切仍有残值但重压缩，避免投机取巧。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))

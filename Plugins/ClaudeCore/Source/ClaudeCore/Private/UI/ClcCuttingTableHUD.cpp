@@ -84,7 +84,12 @@ void UClcCuttingTableHUD::RefreshData(const FClcCuttingTableHUDData& Data)
 	// 切块尺寸预判四态（右上角实时反馈，帮助玩家判断下刀是否合理）
 	FString CutStateString;
 	FLinearColor CutStateColor;
-	switch (Data.CutSizeState)
+	if (Data.bCanSellRemaining)
+	{
+		CutStateString = FString::Printf(TEXT("可出售剩余主体 +%d 金"), Data.RemainingSellPrice);
+		CutStateColor = FLinearColor(0.3f, 0.9f, 1.0f); // 蓝色（区别于标准切割的绿色）
+	}
+	else switch (Data.CutSizeState)
 	{
 	case EClcCutSizeState::Undersized:
 		CutStateString = FString::Printf(TEXT("切块过小 %.0f%%"), Data.CutSizeRatio * 100.0f);

@@ -110,6 +110,15 @@ struct CLAUDECORE_API FClcSaveData
 	UPROPERTY(SaveGame)
 	FClcSessionConfig SessionConfig;
 
+	// 玩家位置/朝向（读档时恢复，新游戏用 PlayerStart）
+	UPROPERTY(SaveGame)
+	FVector SavedPlayerLocation = FVector::ZeroVector;
+	UPROPERTY(SaveGame)
+	FRotator SavedPlayerRotation = FRotator::ZeroRotator;
+	/** 是否有有效的玩家坐标（区分"从未存过"和"坐标 0,0,0"） */
+	UPROPERTY(SaveGame)
+	bool bHasPlayerTransform = false;
+
 	// 元数据
 	UPROPERTY(SaveGame)
 	FDateTime SaveTimestamp;
@@ -119,6 +128,16 @@ struct CLAUDECORE_API FClcSaveData
 	FString LevelName;
 	UPROPERTY(SaveGame)
 	float PlayTimeHours = 0.0f;
+};
+
+UCLASS()
+class CLAUDECORE_API UClcPlayerSaveGame : public USaveGame
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(SaveGame)
+	FClcSaveData SaveData;
 };
 
 /**

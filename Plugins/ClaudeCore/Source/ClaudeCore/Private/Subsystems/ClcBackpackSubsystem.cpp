@@ -2,6 +2,7 @@
 
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
+#include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "ClcLog.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcBackpackHudWidget.h"
@@ -28,13 +29,11 @@ void UClcBackpackSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		}
 	}
 
-	// 延迟到下一 tick 注册 B 提示——Initialize 阶段跨子系统 GetSubsystem 可能尚未就绪，
-	// 直接注册会被静默跳过（其他运行时注册的提示正常，唯独 Initialize 注册的 B 不出现）。
+	// 延迟到下一 tick 注册 B 提示——Initialize 阶段跨子系统 GetSubsystem 可能尚未就绪
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::DeferredRegisterBPrompt);
-		// 同样延迟到下一 tick 创建常驻金币条 HUD——Initialize 阶段 PlayerController 可能尚未就绪。
-		World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::DeferredCreateHud);
+		// HUD 不在这里创建：只在 HandlePostLoadMap → RebuildHud 中创建，确保仅游戏关卡显示
 	}
 }
 
@@ -57,7 +56,11 @@ void UClcBackpackSubsystem::DeferredRegisterBPrompt()
 			return;
 		}
 	}
-	UE_LOG(LogClaudeCore, Warning, TEXT("[ClcBackpack] DeferredRegisterBPrompt: KeyPromptSubsystem unavailable; B prompt will not show."));
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::DeferredRegisterBPrompt);
+	}
 }
 
 void UClcBackpackSubsystem::DeferredCreateHud()
@@ -144,17 +147,19 @@ void UClcBackpackSubsystem::Deinitialize()
 	}
 	HudWidget = nullptr;
 
-	// 重置滑动状态，跨世界复用本子系统时从干净态开始
-	bSliding = false;
-	bRemoveOnComplete = false;
-	SlideAlpha = 0.0f;
-	SlideTarget = 0.0f;
-
 	Super::Deinitialize();
 }
 
+// ---- 背包/金币数据访问 ----
+
+TArray<FClcStoneRuntimeData> UClcBackpackSubsystem::GetStones() const { return Stones; }
+
+int32 UClcBackpackSubsystem::GetGold() const { return Gold; }
+
 void UClcBackpackSubsystem::ToggleBackpack()
 {
+	if (bSliding) return;
+
 	APlayerController* PC = GetLocalPlayer() ? GetLocalPlayer()->GetPlayerController(GetWorld()) : nullptr;
 	if (!PC) return;
 
@@ -197,124 +202,11 @@ void UClcBackpackSubsystem::ToggleBackpack()
 			HudWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 
-		if (BackpackWidget && BackpackWidget->IsInViewport())
+		if (BackpackWidget)
 		{
-			// 下滑淡出（若正在上滑则反向），到 0 后 TickSlide 自动 RemoveFromParent
 			StartCloseSlide();
 		}
 	}
-}
-
-void UClcBackpackSubsystem::StartOpenSlide()
-{
-	if (!BackpackWidget)
-	{
-		return;
-	}
-
-	SlideTarget = 1.0f;
-	bRemoveOnComplete = false;
-
-	if (!bSliding)
-	{
-		bSliding = true;
-		UWorld* World = GetWorld();
-		LastSlideRealTime = World ? World->GetRealTimeSeconds() : 0.0;
-		// 立即按当前 alpha 设视觉（首次打开 alpha=0 即透明+下移），避免满状态闪一帧
-		ApplySlideVisual();
-		if (World)
-		{
-			World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::TickSlide);
-		}
-	}
-}
-
-void UClcBackpackSubsystem::StartCloseSlide()
-{
-	if (!BackpackWidget)
-	{
-		return;
-	}
-
-	SlideTarget = 0.0f;
-	bRemoveOnComplete = true;
-
-	if (!bSliding)
-	{
-		bSliding = true;
-		UWorld* World = GetWorld();
-		LastSlideRealTime = World ? World->GetRealTimeSeconds() : 0.0;
-		if (World)
-		{
-			World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::TickSlide);
-		}
-	}
-}
-
-void UClcBackpackSubsystem::CancelSlide()
-{
-	// 中断 next-tick 链：TickSlide 下一帧看到 bSliding=false 即提前返回、不再续接
-	bSliding = false;
-	bRemoveOnComplete = false;
-}
-
-void UClcBackpackSubsystem::TickSlide()
-{
-	if (!bSliding || !BackpackWidget)
-	{
-		bSliding = false;
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		bSliding = false;
-		return;
-	}
-
-	const double Now = World->GetRealTimeSeconds();
-	float Dt = static_cast<float>(Now - LastSlideRealTime);
-	LastSlideRealTime = Now;
-	Dt = FMath::Clamp(Dt, 0.0f, 0.1f); // 防卡顿后大跳
-
-	const float Step = Dt / FMath::Max(SlideDuration, KINDA_SMALL_NUMBER);
-	if (SlideTarget > SlideAlpha)
-	{
-		SlideAlpha = FMath::Min(SlideAlpha + Step, SlideTarget);
-	}
-	else if (SlideTarget < SlideAlpha)
-	{
-		SlideAlpha = FMath::Max(SlideAlpha - Step, SlideTarget);
-	}
-
-	ApplySlideVisual();
-
-	if (FMath::IsNearlyEqual(SlideAlpha, SlideTarget))
-	{
-		bSliding = false;
-		const bool bShouldRemove = bRemoveOnComplete;
-		bRemoveOnComplete = false;
-		if (bShouldRemove && BackpackWidget && BackpackWidget->IsInViewport())
-		{
-			// 关闭滑动完成——移除背包（RemoveFromParent 会清 tooltip）
-			BackpackWidget->RemoveFromParent();
-		}
-		return;
-	}
-
-	World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::TickSlide);
-}
-
-void UClcBackpackSubsystem::ApplySlideVisual()
-{
-	if (!BackpackWidget)
-	{
-		return;
-	}
-	// alpha 0 -> Y=+offset(下移) + opacity 0；alpha 1 -> Y=0(就位) + opacity 1
-	BackpackWidget->SetRenderTranslation(FVector2D(0.0f, (1.0f - SlideAlpha) * SlideOffsetY));
-	BackpackWidget->SetRenderOpacity(SlideAlpha);
 }
 
 void UClcBackpackSubsystem::RefreshHud()
@@ -326,27 +218,17 @@ void UClcBackpackSubsystem::RefreshHud()
 	}
 }
 
-// ---- 背包/金币数据访问 ----
-
-TArray<FClcStoneRuntimeData> UClcBackpackSubsystem::GetStones() const
-{
-	return Stones;
-}
+// ---- 操作 ----
 
 int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 {
-	if (Stones.Num() >= MAX_STONE_SLOTS)
-	{
-		UE_LOG(LogClaudeCore, Error, TEXT("[ClcBackpack] MAX_STONE_SLOTS (%d) exceeded!"), MAX_STONE_SLOTS);
-		return -1;
-	}
-
-	const int32 NewIndex = Stones.Add(StoneData);
-	if (BackpackWidget && bIsOpen)
+	int32 NewIndex = Stones.Add(StoneData);
+	if (BackpackWidget && BackpackWidget->IsInViewport())
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
+	NotifySaveManagerTransaction();
 
 	return NewIndex;
 }
@@ -354,64 +236,46 @@ int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 bool UClcBackpackSubsystem::RemoveStone(int32 StoneIndex)
 {
 	if (!Stones.IsValidIndex(StoneIndex)) return false;
-
 	Stones.RemoveAt(StoneIndex);
-
-	if (BackpackWidget && bIsOpen)
+	if (BackpackWidget && BackpackWidget->IsInViewport())
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
+	NotifySaveManagerTransaction();
 	return true;
-}
-
-int32 UClcBackpackSubsystem::GetGold() const
-{
-	return Gold;
 }
 
 void UClcBackpackSubsystem::AddGold(int32 Amount)
 {
 	Gold += Amount;
-	TotalEarned += FMath::Max(0, Amount);
-
-	if (BackpackWidget && bIsOpen)
+	TotalEarned += Amount;
+	if (BackpackWidget && BackpackWidget->IsInViewport())
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
+	NotifySaveManagerGoldChanged();
 }
 
 bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 {
-	if (Gold < Amount)
-	{
-		ShowNotification(FString::Printf(TEXT("金币不足！需要 %d，当前 %d"), Amount, Gold));
-		return false;
-	}
-
+	if (Amount < 0) return false;
+	if (Gold < Amount) return false;
 	Gold -= Amount;
-
-	if (BackpackWidget && bIsOpen)
+	if (BackpackWidget && BackpackWidget->IsInViewport())
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
+	NotifySaveManagerGoldChanged();
 	return true;
-}
-
-void UClcBackpackSubsystem::ShowNotification(const FString& Message)
-{
 }
 
 void UClcBackpackSubsystem::GMAddGold(int32 Amount)
 {
-	Gold += Amount;
-	if (BackpackWidget && bIsOpen)
-	{
-		BackpackWidget->RefreshDisplay(Stones, Gold);
-	}
-	RefreshHud();
+	AddGold(Amount);
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] GMAddGold +%d (total=%d)"), Amount, Gold);
 }
 
 // ---- 存档序列化 ----
@@ -421,12 +285,150 @@ void UClcBackpackSubsystem::RestoreFromSaveData(const FClcSaveData& Data)
 	Stones = Data.SavedStones;
 	Gold = Data.SavedGold;
 	TotalEarned = Data.SavedTotalEarned;
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 从存档恢复 —— Gold=%d, Stones=%d"), Gold, Stones.Num());
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 从存档恢复——Gold=%d, Stones=%d"), Gold, Stones.Num());
+
+	// 读档后立即刷新 UI（HUD 常驻 + 背包若打开），避免依赖隐式时序
 	RefreshHud();
+	if (BackpackWidget && BackpackWidget->IsInViewport())
+	{
+		BackpackWidget->RefreshDisplay(Stones, Gold);
+	}
 }
 
 void UClcBackpackSubsystem::SetSessionConfig(const FClcSessionConfig& Config)
 {
 	Gold = Config.StartingGold;
+	// 新游戏开局：累计收益重置为起始金币（== 当前 Gold）
+	TotalEarned = Config.StartingGold;
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 会话配置已应用 —— StartingGold=%d, Difficulty=%d"), Config.StartingGold, static_cast<uint8>(Config.Difficulty));
+	RefreshHud();
+}
+
+void UClcBackpackSubsystem::RebuildHud()
+{
+	// 清理旧 HUD（可能已由旧关卡 GC，只剩悬空指针）
+	if (HudWidget)
+	{
+		if (HudWidget->IsInViewport())
+		{
+			HudWidget->RemoveFromParent();
+		}
+		HudWidget = nullptr;
+	}
+	HudCreateAttempts = 0;
+	DeferredCreateHud();
+}
+
+void UClcBackpackSubsystem::NotifySaveManagerGoldChanged()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UGameInstance* GI = World->GetGameInstance();
+	if (!GI) return;
+	if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
+	{
+		SM->NotifyGoldChanged(Gold);
+	}
+}
+
+void UClcBackpackSubsystem::NotifySaveManagerTransaction()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+	UGameInstance* GI = World->GetGameInstance();
+	if (!GI) return;
+	if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
+	{
+		SM->NotifyTransactionCompleted();
+	}
+}
+
+// ---- Slide Animation (unchanged) ----
+
+void UClcBackpackSubsystem::StartOpenSlide()
+{
+	if (!BackpackWidget) return;
+	SlideTarget = 1.0f;
+	if (!bSliding)
+	{
+		bSliding = true;
+		bRemoveOnComplete = false;
+		LastSlideRealTime = FPlatformTime::Seconds();
+		ApplySlideVisual();
+		TickSlide();
+	}
+}
+
+void UClcBackpackSubsystem::StartCloseSlide()
+{
+	if (!BackpackWidget) return;
+	SlideTarget = 0.0f;
+	if (!bSliding)
+	{
+		bSliding = true;
+		bRemoveOnComplete = true;
+		LastSlideRealTime = FPlatformTime::Seconds();
+		TickSlide();
+	}
+}
+
+void UClcBackpackSubsystem::TickSlide()
+{
+	if (!bSliding || !BackpackWidget) { bSliding = false; return; }
+
+	double Now = FPlatformTime::Seconds();
+	float dt = static_cast<float>(Now - LastSlideRealTime);
+	LastSlideRealTime = Now;
+
+	if (dt <= 0.0f || dt > 0.1f) dt = 0.016f;
+	float step = dt / SlideDuration;
+	if (SlideTarget > SlideAlpha)
+	{
+		SlideAlpha = FMath::Min(SlideAlpha + step, SlideTarget);
+	}
+	else
+	{
+		SlideAlpha = FMath::Max(SlideAlpha - step, SlideTarget);
+	}
+	ApplySlideVisual();
+	if (FMath::IsNearlyEqual(SlideAlpha, SlideTarget, 0.001f))
+	{
+		bSliding = false;
+		SlideAlpha = SlideTarget;
+		ApplySlideVisual();
+		if (bRemoveOnComplete)
+		{
+			BackpackWidget->RemoveFromParent();
+			BackpackWidget = nullptr;
+			bRemoveOnComplete = false;
+		}
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &UClcBackpackSubsystem::TickSlide);
+	}
+}
+
+void UClcBackpackSubsystem::CancelSlide()
+{
+	bSliding = false;
+	bRemoveOnComplete = false;
+}
+
+void UClcBackpackSubsystem::ApplySlideVisual()
+{
+	if (!BackpackWidget) return;
+	FVector2D Translation(0, (1.0f - SlideAlpha) * SlideOffsetY);
+	BackpackWidget->SetRenderTranslation(Translation);
+	BackpackWidget->SetRenderOpacity(SlideAlpha);
+}
+
+void UClcBackpackSubsystem::ShowNotification(const FString& Message)
+{
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, Message);
+	}
 }

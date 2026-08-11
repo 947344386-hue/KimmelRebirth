@@ -6,9 +6,12 @@
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
+#include "Subsystems/ClcPauseMenuSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "UObject/UObjectGlobals.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 
 void UClcGameInstance::Init()
 {
@@ -31,12 +34,14 @@ void UClcGameInstance::Init()
 
 void UClcGameInstance::Shutdown()
 {
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Shutdown —— 应用即将关闭"));
-
-	// 如果在游戏会话中，最后自动保存一次
-	if (bInGameSession && !bIsTransitioning)
+	// 抢在所有 LocalPlayerSubsystem 销毁之前保存。
+	// 收集数据 → 直接写文件，不依赖任何 LocalPlayer。
+	if (bInGameSession)
 	{
-		TriggerAutoSave();
+		if (UClcSaveManagerSubsystem* SM = GetSubsystem<UClcSaveManagerSubsystem>())
+		{
+			SM->TriggerAutoSave();
+		}
 	}
 
 	// 移除委托绑定
@@ -88,7 +93,7 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 		bInGameSession = true;
 		LastAutoSaveTime = FPlatformTime::Seconds();
 
-		// 应用会话配置到 BackpackSubsystem（新游戏启动时的金币设置）
+		// 新游戏：把起始金币/难度写到 Backpack。读档：LoadGame 已经恢复过数据，这里跳过。
 		if (CurrentSessionConfig.bIsNewGame)
 		{
 			if (const ULocalPlayer* LP = GetFirstGamePlayer())
@@ -97,6 +102,37 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 				{
 					BP->SetSessionConfig(CurrentSessionConfig);
 				}
+			}
+		}
+
+		// 进入玩法关卡后重启自动保存定时器（Initialize 阶段 World 为空无法启动）
+		if (UClcSaveManagerSubsystem* SM = GetSubsystem<UClcSaveManagerSubsystem>())
+		{
+			SM->SetAutoSaveEnabled(true);
+		}
+
+		// 关卡切换后重建常驻 HUD + 重绑 PauseMenu 输入
+		if (const ULocalPlayer* LP = GetFirstGamePlayer())
+		{
+			if (UClcBackpackSubsystem* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
+			{
+				BP->RebuildHud();
+			}
+			if (UClcPauseMenuSubsystem* PM = LP->GetSubsystem<UClcPauseMenuSubsystem>())
+			{
+				PM->RefreshInputBinding();
+			}
+		}
+
+		// 读档恢复：如果有缓存的玩家坐标，延迟一帧应用（等 Pawn Spawn）
+		if (bHasPendingPlayerTransform)
+		{
+			if (UWorld* W = GetWorld())
+			{
+				W->GetTimerManager().SetTimerForNextTick([this]()
+				{
+					ApplyPendingPlayerTransform();
+				});
 			}
 		}
 
@@ -166,13 +202,14 @@ void UClcGameInstance::GoToMainMenu(bool bSaveFirst)
 {
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] GoToMainMenu —— bSaveFirst=%d"), bSaveFirst);
 
+	// 先标记 transitioning，避免 HandlePreLoadMap 再存一次（双重保存去重）
+	bIsTransitioning = true;
 	if (bSaveFirst && bInGameSession)
 	{
 		TriggerAutoSave();
 	}
 
 	bInGameSession = false;
-	bIsTransitioning = true;
 	UGameplayStatics::OpenLevel(this, FName(*MainMenuLevelPath));
 }
 
@@ -180,6 +217,8 @@ void UClcGameInstance::RequestQuit()
 {
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] RequestQuit"));
 
+	// 先标记 transitioning，避免 HandlePreLoadMap 重复保存
+	bIsTransitioning = true;
 	if (bInGameSession)
 	{
 		TriggerAutoSave();
@@ -216,4 +255,38 @@ void UClcGameInstance::TriggerAutoSave()
 	{
 		UE_LOG(LogClaudeCore, Verbose, TEXT("[ClcGameInstance] TriggerAutoSave —— SaveManager 不可用"));
 	}
+}
+
+void UClcGameInstance::ApplyPendingPlayerTransform()
+{
+	if (!bHasPendingPlayerTransform) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn)
+	{
+		// Pawn 还没就绪，下一 tick 重试（最多 60 次 = 1 秒）
+		if (++PendingTransformAttempts < 60)
+		{
+			World->GetTimerManager().SetTimerForNextTick([this]() { ApplyPendingPlayerTransform(); });
+		}
+		else
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcGameInstance] ApplyPendingPlayerTransform —— Pawn 1 秒内未就绪，放弃"));
+			bHasPendingPlayerTransform = false;
+			PendingTransformAttempts = 0;
+		}
+		return;
+	}
+
+	// 用 TeleportTo（含碰撞检查，比直接 SetActorLocation 更安全）
+	Pawn->TeleportTo(PendingPlayerLocation, PendingPlayerRotation, false, false);
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] ApplyPendingPlayerTransform —— Loc=%s, Rot=%s"),
+		*PendingPlayerLocation.ToString(), *PendingPlayerRotation.ToString());
+
+	bHasPendingPlayerTransform = false;
+	PendingTransformAttempts = 0;
 }

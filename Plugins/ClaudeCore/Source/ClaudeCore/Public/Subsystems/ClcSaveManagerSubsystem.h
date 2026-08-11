@@ -9,6 +9,10 @@
 
 /**
  * 存档管理子系统 —— GameInstanceSubsystem。
+ *
+ * 支持多槽位：AutoSave（自动保存，1 个）+ 手动槽位 slot_0~slot_N-1（默认 3 个）。
+ * 自动保存：5 分钟定时器 / 金币变动阈值 / 交易完成 / 关卡转换前。
+ * 手动保存：游戏内暂停菜单"手动存档"写入独立槽位。
  */
 UCLASS()
 class CLAUDECORE_API UClcSaveManagerSubsystem : public UGameInstanceSubsystem
@@ -21,35 +25,51 @@ public:
 
 	static const FString AutoSaveSlotName;
 
-	// 槽位
+	// ---- 槽位查询 ----
+
+	/** 获取所有存档槽位元数据（AutoSave + 手动槽位） */
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	TArray<FClcSaveMetaData> GetSaveSlots() const;
 
+	/** 是否有任何存档存在（AutoSave 或任意手动槽位） */
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	bool HasAnySave() const;
 
-	// 保存/加载/删除
-	UFUNCTION(BlueprintCallable, Category = "ClcSave")
-	bool SaveGame(const FString& SlotName);
+	/** 获取手动槽位数上限 */
+	UFUNCTION(BlueprintPure, Category = "ClcSave")
+	int32 GetMaxSaveSlots() const { return MaxSaveSlots; }
 
-	UFUNCTION(BlueprintCallable, Category = "ClcSave")
-	bool LoadGame(const FString& SlotName);
+	// ---- 保存/加载/删除 ----
 
+	/** 保存到指定槽位（默认 AutoSave） */
+	UFUNCTION(BlueprintCallable, Category = "ClcSave")
+	bool SaveGame(const FString& SlotName = TEXT("AutoSave"));
+
+	/** 从指定槽位加载（默认 AutoSave） */
+	UFUNCTION(BlueprintCallable, Category = "ClcSave")
+	bool LoadGame(const FString& SlotName = TEXT("AutoSave"));
+
+	/** 删除指定槽位 */
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	bool DeleteSave(const FString& SlotName);
 
-	// 自动保存
+	// ---- 自动保存 ----
+
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	void TriggerAutoSave();
 
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	void SetAutoSaveEnabled(bool bEnabled);
 
-	void NotifyGoldChanged(int32 NewGold);
-	void NotifyTransactionCompleted();
+	// ---- 状态 ----
 
 	const FString& GetCurrentSlot() const { return CurrentSlot; }
 	void SetCurrentSlot(const FString& SlotName) { CurrentSlot = SlotName; }
+
+	// ---- 通知（由 BackpackSubsystem 调用） ----
+
+	void NotifyGoldChanged(int32 NewGold);
+	void NotifyTransactionCompleted();
 
 private:
 	FClcSaveData CollectSaveData() const;
@@ -59,11 +79,27 @@ private:
 	FClcSaveMetaData ReadMetaData(const FString& SlotName) const;
 	void RestartAutoSaveTimer();
 
+	// ---- 配置 ----
+
+	/** 自动保存间隔（秒，默认 300 = 5 分钟） */
+	UPROPERTY(EditDefaultsOnly, Category = "ClcSave")
 	float AutoSaveIntervalSeconds = 300.0f;
+
+	/** 金币增量触发自动保存的阈值（默认 5000） */
+	UPROPERTY(EditDefaultsOnly, Category = "ClcSave")
 	int32 AutoSaveGoldDeltaThreshold = 5000;
+
+	/** 手动槽位数上限（默认 3，游戏内暂停菜单使用） */
+	UPROPERTY(EditDefaultsOnly, Category = "ClcSave", meta = (ClampMin = "1"))
+	int32 MaxSaveSlots = 3;
+
+	// ---- 运行时状态 ----
+
 	FString CurrentSlot;
 	int32 LastAutoSavedGold = 0;
 	double LastAutoSaveTime = 0.0;
+	/** 累计游戏时长（秒），跨存档持久化在 SaveData.PlayTimeHours */
+	float AccumulatedPlayTimeSeconds = 0.0f;
 	bool bAutoSaveEnabled = true;
 	FTimerHandle AutoSaveTimerHandle;
 };

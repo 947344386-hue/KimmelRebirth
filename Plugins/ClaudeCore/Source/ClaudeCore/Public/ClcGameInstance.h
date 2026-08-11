@@ -95,6 +95,15 @@ public:
 	/** 上次自动保存时间 */
 	double LastAutoSaveTime = 0.0;
 
+	/** 读档时缓存的玩家坐标——关卡加载后 Pawn 就绪时应用 */
+	FVector PendingPlayerLocation = FVector::ZeroVector;
+	/** 读档时缓存的玩家朝向 */
+	FRotator PendingPlayerRotation = FRotator::ZeroRotator;
+	/** 是否有待应用的玩家坐标（区分新游戏 vs 读档） */
+	bool bHasPendingPlayerTransform = false;
+	/** ApplyPendingPlayerTransform 的重试计数（Pawn 未就绪时） */
+	int32 PendingTransformAttempts = 0;
+
 	/** 自动保存间隔（秒，默认 300=5分钟） */
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Save")
 	float AutoSaveIntervalSeconds = 300.0f;
@@ -109,6 +118,9 @@ protected:
 
 	/** 遍历所有持有玩家数据的 Subsystem 并序列化到 SaveManager→SaveGame */
 	void TriggerAutoSave();
+
+	/** 读档后延迟应用缓存的玩家坐标（关卡加载完 Pawn 就绪时调用） */
+	void ApplyPendingPlayerTransform();
 
 	// ---- 配置（Project Settings → Plugins → ClaudeCore 或 Config/DefaultGame.ini） ----
 

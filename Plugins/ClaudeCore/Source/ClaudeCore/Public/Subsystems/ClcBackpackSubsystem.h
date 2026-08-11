@@ -62,7 +62,15 @@ public:
 	/** 应用会话配置（新游戏启动时调用） */
 	void SetSessionConfig(const struct FClcSessionConfig& Config);
 
+	/** 关卡切换后 GameInstance 调用：重建常驻 HUD */
+	void RebuildHud();
+
 private:
+	/** 金币变动后通知 SaveManager */
+	void NotifySaveManagerGoldChanged();
+
+	/** 交易完成后通知 SaveManager（买石/卖石） */
+	void NotifySaveManagerTransaction();
 	void ShowNotification(const FString& Message);
 	void DeferredRegisterBPrompt();
 

@@ -158,6 +158,19 @@ void UClcMainMenuWidget::HandleQuitClicked()
 void UClcMainMenuWidget::HandleDeleteSaveClicked()
 {
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 删除存档"));
+	if (MenuSubsystem.IsValid())
+	{
+		const bool bDeleted = MenuSubsystem->DeleteSave(TEXT("AutoSave"));
+		if (bDeleted)
+		{
+			UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 删档成功"));
+			RefreshSaveSlots();
+		}
+		else
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMainMenuWidget] 没有可删除的存档"));
+		}
+	}
 }
 
 void UClcMainMenuWidget::HandleGoldSliderChanged(float Value)

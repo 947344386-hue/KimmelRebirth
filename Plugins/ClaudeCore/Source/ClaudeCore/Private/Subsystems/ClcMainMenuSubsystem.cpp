@@ -114,17 +114,18 @@ void UClcMainMenuSubsystem::StartNewGame(const FClcSessionConfig& Config)
 
 	HideMainMenu();
 
-	// 委托给 GameInstance
-	if (UWorld* World = GetWorld())
+	// 委托给 GameInstance——通过 GetWorld() 拿 GameInstance（ULocalPlayerSubsystem 没有直接 GetGameInstance）
+	UWorld* World = GetWorld();
+	UGameInstance* RawGI = World ? World->GetGameInstance() : nullptr;
+	UClcGameInstance* GI = Cast<UClcGameInstance>(RawGI);
+	if (GI)
 	{
-		if (UClcGameInstance* GI = Cast<UClcGameInstance>(World->GetGameInstance()))
-		{
-			GI->StartNewGame(Config);
-		}
-		else
-		{
-			UE_LOG(LogClaudeCore, Error, TEXT("[ClcMainMenu] StartNewGame —— GameInstance 不是 UClcGameInstance！"));
-		}
+		GI->StartNewGame(Config);
+	}
+	else
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcMainMenu] StartNewGame —— GameInstance 不是 UClcGameInstance！（实际类型: %s）"),
+			RawGI ? *RawGI->GetClass()->GetName() : TEXT("null"));
 	}
 }
 

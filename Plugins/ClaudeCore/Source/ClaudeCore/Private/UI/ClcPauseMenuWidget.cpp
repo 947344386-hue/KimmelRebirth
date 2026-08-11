@@ -23,6 +23,13 @@ void UClcPauseMenuWidget::SetOwningSubsystem(UClcPauseMenuSubsystem* InSubsystem
 	MenuSubsystem = InSubsystem;
 }
 
+void UClcPauseMenuWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	// 布局在 NativeOnInitialized 构建（参照 TeleportMenuWidget），此时 WidgetTree 已就绪
+	BuildDefaultLayout();
+}
+
 void UClcPauseMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -31,25 +38,12 @@ void UClcPauseMenuWidget::NativeConstruct()
 		WidgetTree && WidgetTree->RootWidget ? *WidgetTree->RootWidget->GetName() : TEXT("null"),
 		(int32)GetVisibility());
 
-	// 无 WBP → 创建 C++ 默认布局
-	if (!WidgetTree || !WidgetTree->RootWidget)
-	{
-		BuildDefaultLayout();
-		UE_LOG(LogClaudeCore, Log, TEXT("[ClcPauseMenuWidget] BuildDefaultLayout done —— RootWidget=%s"),
-			WidgetTree && WidgetTree->RootWidget ? *WidgetTree->RootWidget->GetName() : TEXT("null"));
-	}
-
-	// 强制可见：UserWidget 默认 Visibility 可能是 Collapsed（Visibility=4），
-	// AddToViewport 后不渲染也不响应输入——必须在布局构建后显式设为 SelfHitTestInvisible。
-	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcPauseMenuWidget] After SetVisibility —— Visibility=%d"), (int32)GetVisibility());
-
-	// 绑按钮
-	if (ResumeButton)    ResumeButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleResumeClicked);
-	if (SaveButton)      SaveButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleSaveClicked);
-	if (LoadButton)      LoadButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleLoadClicked);
-	if (MainMenuButton)  MainMenuButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleMainMenuClicked);
-	if (QuitButton)      QuitButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleQuitClicked);
+	// 绑按钮（Remove 再 Add 防重复，参照 TeleportMenuWidget）
+	if (ResumeButton)    { ResumeButton->OnClicked.RemoveDynamic(this, &UClcPauseMenuWidget::HandleResumeClicked); ResumeButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleResumeClicked); }
+	if (SaveButton)      { SaveButton->OnClicked.RemoveDynamic(this, &UClcPauseMenuWidget::HandleSaveClicked); SaveButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleSaveClicked); }
+	if (LoadButton)      { LoadButton->OnClicked.RemoveDynamic(this, &UClcPauseMenuWidget::HandleLoadClicked); LoadButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleLoadClicked); }
+	if (MainMenuButton)  { MainMenuButton->OnClicked.RemoveDynamic(this, &UClcPauseMenuWidget::HandleMainMenuClicked); MainMenuButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleMainMenuClicked); }
+	if (QuitButton)      { QuitButton->OnClicked.RemoveDynamic(this, &UClcPauseMenuWidget::HandleQuitClicked); QuitButton->OnClicked.AddDynamic(this, &UClcPauseMenuWidget::HandleQuitClicked); }
 }
 
 void UClcPauseMenuWidget::NativeDestruct()

@@ -119,9 +119,6 @@ bool UClcPauseMenuSubsystem::OpenMenu()
 
 	MenuWidget->SetOwningSubsystem(this);
 	MenuWidget->AddToViewport(150);
-	// AddToViewport 之后强制设可见——NativeConstruct 阶段 GetVisibility 仍返回 CDO 默认值(Collapsed)，
-	// 真正的 Slate 可见性要在加入 viewport 之后才会生效。
-	MenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcPauseMenu] Widget added to viewport, bIsFocusable=%d, Visibility=%d, IsInViewport=%d"),
 		(int32)MenuWidget->IsFocusable(), (int32)MenuWidget->GetVisibility(), (int32)MenuWidget->IsInViewport());
 

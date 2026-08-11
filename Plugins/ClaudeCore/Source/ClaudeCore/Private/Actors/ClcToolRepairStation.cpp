@@ -17,8 +17,9 @@
 
 AClcToolRepairStation::AClcToolRepairStation()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.1f;
+	// 交互提示和 F 键路由已下沉到 UClcInteractionComponent，本站无 Tick 工作
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.TickInterval = 0.0f;
 
 	// 无缩放根
 	StationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("StationRoot"));
@@ -62,16 +63,6 @@ void AClcToolRepairStation::BeginPlay()
 	// aim 模式下选中完全由交互组件中心球扫决定，不需要 OnQueryCanSelect 委托
 }
 
-void AClcToolRepairStation::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-	// 交互提示和 F 键路由已下沉到 UClcInteractionComponent——本站只需实现
-	// IClcInteractable::GetInteractionPrompt / OnInteract。
-	// 此 Tick 保留为空，供 BP 覆写事件等后续使用。
-	// 按键边沿保留用于兼容——交互组件路由优先选 SelectedActor，
-	// 修理站作为 fallback 保留 OnInteract 入口。
-}
 
 void AClcToolRepairStation::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {

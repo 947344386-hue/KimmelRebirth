@@ -155,9 +155,6 @@ public:
         MID->SetScalarParameterValue(TEXT("ShellRoughness"), Entry->DefaultRoughness);
         MID->SetScalarParameterValue(TEXT("ShellMetallic"), Entry->DefaultMetallic);
 
-        UE_LOG(LogClaudeCore, Log,
-            TEXT("[ShellTexture] Injected %d/3 into MID (Type=%d, Name=%s, Rough=%.2f)"),
-            Transferred, ShellTypeIndex, *Entry->ShellName.ToString(), Entry->DefaultRoughness);
 
         return Transferred;
     }

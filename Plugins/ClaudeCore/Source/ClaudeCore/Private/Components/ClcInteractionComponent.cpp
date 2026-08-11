@@ -177,7 +177,14 @@ void UClcInteractionComponent::UpdateInteraction()
 	// F 键路由由这里统一处理；各站点不再各自维护 PromptHandle 和 Tick 按键轮询。
 	{
 		const bool bShouldShow = !bInExclusiveContext && Selected != nullptr;
-		const FText PromptText = bShouldShow ? Cast<IClcInteractable>(Selected)->GetInteractionPrompt() : FText::GetEmpty();
+		FText PromptText = FText::GetEmpty();
+		if (bShouldShow)
+		{
+			if (IClcInteractable* I = Cast<IClcInteractable>(Selected))
+			{
+				PromptText = I->GetInteractionPrompt();
+			}
+		}
 
 		if (bShouldShow && SelectedPromptHandle == 0)
 		{

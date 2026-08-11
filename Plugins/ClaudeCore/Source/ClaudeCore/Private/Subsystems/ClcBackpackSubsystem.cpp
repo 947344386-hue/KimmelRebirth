@@ -326,7 +326,7 @@ void UClcBackpackSubsystem::RefreshHud()
 	}
 }
 
-// ---- IClcStoneCarrier ----
+// ---- 背包/金币数据访问 ----
 
 TArray<FClcStoneRuntimeData> UClcBackpackSubsystem::GetStones() const
 {
@@ -402,23 +402,31 @@ bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 
 void UClcBackpackSubsystem::ShowNotification(const FString& Message)
 {
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 2.5f, FColor::Yellow, Message);
-	}
 }
 
 void UClcBackpackSubsystem::GMAddGold(int32 Amount)
 {
 	Gold += Amount;
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green,
-			FString::Printf(TEXT("[GM] Added %d gold. Total: %d"), Amount, Gold));
-	}
 	if (BackpackWidget && bIsOpen)
 	{
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
+}
+
+// ---- 存档序列化 ----
+
+void UClcBackpackSubsystem::RestoreFromSaveData(const FClcSaveData& Data)
+{
+	Stones = Data.SavedStones;
+	Gold = Data.SavedGold;
+	TotalEarned = Data.SavedTotalEarned;
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 从存档恢复 —— Gold=%d, Stones=%d"), Gold, Stones.Num());
+	RefreshHud();
+}
+
+void UClcBackpackSubsystem::SetSessionConfig(const FClcSessionConfig& Config)
+{
+	Gold = Config.StartingGold;
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 会话配置已应用 —— StartingGold=%d, Difficulty=%d"), Config.StartingGold, static_cast<uint8>(Config.Difficulty));
 }

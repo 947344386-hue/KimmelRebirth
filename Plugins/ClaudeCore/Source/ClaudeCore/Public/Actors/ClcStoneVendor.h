@@ -3,8 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
-#include "Interfaces/ClcInteractable.h"
+#include "Actors/ClcInteractableStation.h"
 #include "Data/ClcJadeTypes.h"
 #include "Data/ClcHaggleConfig.h"
 #include "UI/ClcVendorHUD.h"
@@ -35,7 +34,7 @@ class AClcCuttingStone;
  *           HUDWidgetClass、FillLight 档位、OnStoneSold/OnEnter/OnExit（音效特效）
  */
 UCLASS(Blueprintable, ClassGroup = (Clc))
-class CLAUDECORE_API AClcStoneVendor : public AActor, public IClcInteractable
+class CLAUDECORE_API AClcStoneVendor : public AClcInteractableStation, public IClcInteractable
 {
 	GENERATED_BODY()
 
@@ -100,10 +99,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* VendorCamera;
 
-	/** 自适应补光——展示时照亮石头；位置/锥角/颜色在 BP 的 FillLight 组件上调 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USpotLightComponent* FillLight;
-
 	/** NPC 站位锚点（蓝图可拖动）——箭头位置=NPC 站位，箭头朝向=NPC 面朝方向；NpcMesh 挂其下并在运行时贴地 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components", meta = (AllowPrivateAccess = "true"))
 	UArrowComponent* NpcSpawnPoint;
@@ -149,14 +144,6 @@ protected:
 	/** 相机距石头距离 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
 	float CameraDistance = 200.0f;
-
-	/** 长按右键放大倍率（2.0=放大2倍，只改 FOV） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config", meta = (ClampMin = "1.0", ClampMax = "8.0"))
-	float AimZoomFactor = 2.0f;
-
-	/** 放大过渡速度（越大越快，10≈0.1秒到位） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config", meta = (ClampMin = "1.0", ClampMax = "30.0"))
-	float AimZoomSpeed = 10.0f;
 
 	/** WASD 旋转速度倍率 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|Config")
@@ -209,10 +196,6 @@ protected:
 	/** 展示/选石时的补光强度（看清石头） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|FillLight", meta = (ClampMin = "0.0"))
 	float FillLightDisplayIntensity = 5000.0f;
-
-	/** 补光强度过渡速度（越大越快，0=瞬切） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcVendor|FillLight", meta = (ClampMin = "0.0"))
-	float FillLightTransitionSpeed = 10.0f;
 
 	// ---- tips 文案（EditAnywhere 便于策划改，运行时格式化） ----
 
@@ -331,17 +314,6 @@ private:
 
 	FClcStoneRuntimeData ActiveStoneData;
 
-	// ---- 缓存引用 ----
-
-	UPROPERTY()
-	UClcBackpackSubsystem* CachedBackpack = nullptr;
-
-	UPROPERTY()
-	TWeakObjectPtr<APawn> PlayerInRange;
-
-	UPROPERTY()
-	TWeakObjectPtr<APlayerController> CachedPC;
-
 	// ---- HUD ----
 
 	UPROPERTY()
@@ -364,11 +336,6 @@ private:
 
 	float HUDPushTimer = 0.0f;
 
-	// ---- 补光过渡 ----
-
-	float CurrentFillLightIntensity = 0.0f;
-	float TargetFillLightIntensity = 0.0f;
-
 	// ---- 输入边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
 
 	bool bExitKeyPrev = false;
@@ -376,9 +343,6 @@ private:
 	bool bRKeyPrev = false;
 	bool bResetRotationPending = false;
 	bool bBackpackWasOpen = false;
-
-	/** 进入展示时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
-	float BaseFOV = 90.0f;
 
 	/** 按键提示句柄：进入范围注册 F（出售），离开/EndPlay 注销 */
 	int32 VendorPromptHandle = 0;
@@ -388,7 +352,6 @@ private:
 
 	// ---- 内部流程 ----
 
-	void CachePlayerRefs();
 	void EnterSellMode();
 	void ExitSellMode();
 	void PlaceStoneOnVendor(int32 StoneIndex);
@@ -433,7 +396,6 @@ private:
 	/** 状态动画播完后回 Idle 的定时器 */
 	FTimerHandle NpcReturnIdleTimer;
 	void ProcessStoneOnBenchInput(float DeltaTime);
-	void UpdateAimZoom(float DeltaTime);
 
 	// ---- HUD ----
 	void CreateVendorHUD();
@@ -441,22 +403,16 @@ private:
 	void PushVendorHUDData();
 
 	// ---- 背包 ----
-	void BindToBackpackWidget();
-	UFUNCTION()
-	void OnBackpackStoneSelected(int32 StoneIndex);
+	virtual void OnBackpackStoneSelected(int32 StoneIndex) override;
 
 	// ---- 光标 ----
 	void SetVendorCursor(bool bVisible);
 
 	// ---- 补光 ----
-	void UpdateFillLightTarget();
-	void TickFillLight(float DeltaTime);
+	virtual void UpdateFillLightTarget() override;
+	virtual UCameraComponent* GetAimZoomCamera() const override;
 
 	// ---- 委托 / 触发器 ----
-
-	/** InteractionIndicator 委托——背包有石头返回 true（选中态），否则 false（范围内态） */
-	UFUNCTION()
-	bool QueryCanSelect();
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,

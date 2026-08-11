@@ -286,6 +286,21 @@ struct CLAUDECORE_API FClcStoneRuntimeData
 	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
 	int32 TotalSettledValue = 0;
 
+	/**
+	 * 原石 3D 玉肉总体积（cm³）——切石预算锚点（方案1: 3D 独立定价）。
+	 * 上台 Initialize 时从 VoxelField 实测写入，序列化保存。
+	 * 0=尚未上台或旧存档 → CalculateCutPieceValue 回退 2D TheoreticalValue。
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float OriginalJadeVolume = 0.0f;
+
+	/**
+	 * 原石 3D 总体积（cm³）——切石尺寸比例基准。
+	 * 上台 Initialize 时从 VoxelField 实测写入，序列化保存。
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "ClcStone")
+	float OriginalTotalVolume = 0.0f;
+
 
 	/** 遮罩 RT 像素缓冲区（256×256 字节），退出工作台时保存，再进入时恢复 */
 	UPROPERTY()

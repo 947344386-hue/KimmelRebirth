@@ -53,6 +53,9 @@ void UClcOpeningMaskComponent::ResetMask()
 	OpenedImpurityPixelCount = 0;
 	OpenedCrackPixelCount = 0;
 	UploadMaskToGPU();
+	// mask 清空，最大绿色连通域归零并标记需重算
+	bLargestGreenDirty = true;
+	CachedLargestGreenPixels = 0;
 }
 
 void UClcOpeningMaskComponent::SaveMaskToData(FClcStoneRuntimeData& OutData) const
@@ -86,6 +89,8 @@ void UClcOpeningMaskComponent::RestoreMaskFromData(const FClcStoneRuntimeData& I
 		EnsureMaskRT();
 		UploadMaskToGPU();
 		ensure(RevealTex || CachedDistribution.Data.Num() > 0);
+		// 从存档恢复后 mask 已变化，最大绿色连通域需重算
+		bLargestGreenDirty = true;
 	}
 	else
 	{
@@ -536,6 +541,9 @@ FClcStoneOpeningResult UClcOpeningMaskComponent::GrindAtUV(float UV_U, float UV_
 	Result.NewCrackFraction = NewCrackPixels * PixelToFraction;
 	Result.NewBlackFraction = NewBlackPixels * PixelToFraction;
 
+	// 擦石改变了 mask，最大绿色连通域需重算
+	bLargestGreenDirty = true;
+
 	return Result;
 }
 
@@ -606,9 +614,20 @@ float UClcOpeningMaskComponent::GetExposedCrackRatio() const
 
 int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
 {
+	// dirty gate：未擦石变更时直接返回缓存，避免每 0.3s HUD 推送全量 BFS
+	if (!bLargestGreenDirty)
+	{
+		return CachedLargestGreenPixels;
+	}
+
 	const int32 Res = MaskResolution;
 	const int32 Total = Res * Res;
-	if (Total == 0 || MaskBuffer.Num() < Total) return 0;
+	if (Total == 0 || MaskBuffer.Num() < Total)
+	{
+		CachedLargestGreenPixels = 0;
+		bLargestGreenDirty = false;
+		return 0;
+	}
 
 	TArray<bool> Visited;
 	Visited.Init(false, Total);
@@ -674,5 +693,7 @@ int32 UClcOpeningMaskComponent::ComputeLargestGreenConnectedComponent() const
 		LargestSize = FMath::Max(LargestSize, ComponentSize);
 	}
 
+	CachedLargestGreenPixels = LargestSize;
+	bLargestGreenDirty = false;
 	return LargestSize;
 }

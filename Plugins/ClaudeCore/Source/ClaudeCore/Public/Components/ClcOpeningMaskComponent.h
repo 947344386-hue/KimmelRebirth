@@ -139,7 +139,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	float GetExposedCrackRatio() const;
 
-	/** 计算当前已擦石绿色像素的最大连通域像素数（4连通 BFS，每 0.3s 调一次性能无忧） */
+	/** 计算当前已擦石绿色像素的最大连通域像素数（4连通 BFS）。
+	 *  带 dirty gate：仅 GrindAtUV/RestoreMaskFromData 后首次调用做全量 BFS，后续读缓存。
+	 *  原每 0.3s 由 GetStoneData 调一次，现在仅擦石实际变更时重算。 */
 	UFUNCTION(BlueprintCallable, Category = "Opening")
 	int32 ComputeLargestGreenConnectedComponent() const;
 
@@ -189,4 +191,8 @@ private:
 
 	int32 CachedSeed = 0;
 	EClcJadeGrade CachedGrade = EClcJadeGrade::Bean;
+
+	// ---- 最大绿色连通域缓存（dirty gate，避免每 0.3s HUD 推送全量 BFS）----
+	mutable int32 CachedLargestGreenPixels = -1;	// -1 = 脏，需重算
+	mutable bool bLargestGreenDirty = true;
 };

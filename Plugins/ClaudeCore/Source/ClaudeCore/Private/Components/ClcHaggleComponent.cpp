@@ -121,8 +121,8 @@ void UClcHaggleComponent::RequestEsc()
 	switch (Phase)
 	{
 	case EClcHagglePhase::Selection:
-		// 选择阶段 Esc：取消整个讨价，回查看（不锁价）
-		Resolve(EClcHaggleOutcome::Cancelled);
+		// 方案4: Selection 阶段 Esc → 按 BasePrice 强行成交，不复退回查看
+		ChooseAccept();
 		break;
 	case EClcHagglePhase::Playing:
 		// QTE 阶段 Esc：只要还没失败（按错/超时），可回退到选档/直接售出

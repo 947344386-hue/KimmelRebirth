@@ -3,16 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Actors/ClcInteractableStation.h"
 #include "Data/ClcJadeTypes.h"
 #include "UI/ClcCuttingTableHUD.h"
-#include "Interfaces/ClcInteractable.h"
 #include "ClcCuttingTable.generated.h"
 
 class AClcCuttingStone;
 class APlayerController;
 class APawn;
-class IClcStoneCarrier;
 class UBoxComponent;
 class UCameraComponent;
 class UClcBackpackSubsystem;
@@ -28,7 +26,7 @@ class UDecalComponent;
 class UMaterialInstanceDynamic;
 
 UCLASS(Blueprintable)
-class CLAUDECORE_API AClcCuttingTable : public AActor, public IClcInteractable
+class CLAUDECORE_API AClcCuttingTable : public AClcInteractableStation, public IClcInteractable
 {
 	GENERATED_BODY()
 
@@ -93,13 +91,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UClcInteractionIndicator> InteractionIndicator;
-
-	/**
-	 * 自适应补光——按当前状态/工位调节强度，避免太暗看不见石头细节。
-	 * 位置/锥角/颜色等直接在 BP 的 FillLight 组件上调；这里只暴露强度档位。
-	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<USpotLightComponent> FillLight;
 
 	/**
 	 * 切刀瞄准线贴花——投影到石头表面显示一条沿切割平面的发光线 + 两端横标，
@@ -259,10 +250,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|FillLight", meta = (ClampMin = "0.0"))
 	float StoneOnBenchFillLightIntensity = 7000.0f;
 
-	/** 补光强度过渡速度（越大越快，0=瞬切，建议 8~12） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CuttingTable|FillLight", meta = (ClampMin = "0.0"))
-	float FillLightTransitionSpeed = 10.0f;
-
 	UFUNCTION(BlueprintNativeEvent, Category = "CuttingTable|Events")
 	void OnEnterCuttingMode();
 
@@ -306,10 +293,6 @@ private:
 	TObjectPtr<UClcCuttingTableHUD> HUDWidget;
 
 	FClcStoneRuntimeData ActiveStoneData;
-	TWeakObjectPtr<APawn> PlayerInRange;
-	TWeakObjectPtr<APlayerController> CachedPC;
-	TWeakObjectPtr<UObject> CachedCarrierObj;
-	IClcStoneCarrier* CachedCarrier = nullptr;
 	FVector StoneBaseWorldLocation = FVector::ZeroVector;
 	FVector MovementAxisWorld = FVector::ForwardVector;
 	float StoneOffset = 0.0f;
@@ -319,7 +302,6 @@ private:
 	bool bExitKeyPrev = false;
 	bool bBackpackKeyPrev = false;
 	bool bCutKeyPrev = false;
-	bool bPawnInputDisabled = false;
 	double LastEnterToastTime = 0.0;
 
 	// ---- 切割动画循环状态 ----
@@ -342,18 +324,12 @@ private:
 	TWeakObjectPtr<UProceduralMeshComponent> LastCutAwayPiece;
 	FTimerHandle CutPieceCleanupHandle;
 
-	/** 补光当前强度（每帧平滑追向 Target） */
-	float CurrentFillLightIntensity = 0.0f;
-	/** 补光目标强度（由 UpdateFillLightTarget 按状态算出） */
-	float TargetFillLightIntensity = 0.0f;
-
-	/** 切刀瞄准线贴花 MID——运行时调 Color/Opacity 按四态配色 */
+	/** 切刀瞄准线贴花 MID——运行时调 Color/Opacity 配色 */
 	UPROPERTY()
 	UMaterialInstanceDynamic* AimDecalMID = nullptr;
 	/** 上次配色状态缓存，避免每帧重复 SetVectorParameterValue */
 	uint8 LastAimDecalState = 255;
 
-	void CachePlayerRefs();
 	void EnterCuttingMode();
 	void ExitCuttingMode();
 	void ProcessCuttingInput(float DeltaTime);
@@ -370,7 +346,6 @@ private:
 	bool PlaceStoneOnBench(int32 StoneIndex);
 	void RemoveStoneFromBench();
 	void DestroyCuttingStone();
-	void BindToBackpackWidget();
 	void UnbindFromBackpackWidget();
 	void SetCuttingInputMode();
 	bool IsStoneEligible(const FClcStoneRuntimeData& StoneData) const;
@@ -388,23 +363,17 @@ private:
 	void DestroyHUD();
 	void PushHUDData();
 	EClcCutSizeState ComputeCutSizeState(float& OutRatio) const;
-	UClcBackpackSubsystem* GetBackpack() const;
+	UClcBackpackSubsystem* GetBackpack() const { return CachedBackpack; }
 
-	UFUNCTION()
-	void OnBackpackStoneSelected(int32 StoneIndex);
+	virtual void OnBackpackStoneSelected(int32 StoneIndex) override;
 
-	UFUNCTION()
-	bool QueryCanSelect();
-
-	// 以下成员已废弃，保留声明以兼容现有调用（实际逻辑已迁移到 UClcInteractionComponent）
-	bool IsLookedAtByPlayer() const;
+	// ---- 基类虚钩子 ----
+	virtual bool IsStoneSelectable(const FClcStoneRuntimeData& Stone) const override;
 
 	// ---- 自适应补光 ----
 
 	/** 按当前状态重算目标强度 */
-	void UpdateFillLightTarget();
-	/** 每帧把当前强度平滑追向目标并应用到 FillLight */
-	void TickFillLight(float DeltaTime);
+	virtual void UpdateFillLightTarget() override;
 	/** 按石头实时 Bounds 把 AimDecal 放到顶部，并沿世界向下投影 */
 	bool UpdateAimDecalTransform();
 	/** 按切块合理性四态刷新 AimDecal 颜色/透明度（与 HUD 同源） */

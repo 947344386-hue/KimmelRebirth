@@ -82,6 +82,23 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 		}
 	}
 
+	// 方案1: 3D 体素场独立定价——把原石玉肉总体积/总体积写入 RuntimeData，定价函数不再依赖 2D T
+	CachedStoneData.OriginalJadeVolume  = static_cast<float>(OriginalJade)  * VoxelField.VoxelVolume;
+	CachedStoneData.OriginalTotalVolume = static_cast<float>(TotalVoxels)   * VoxelField.VoxelVolume;
+
+	// === [CALIB] 上台时同时打印 2D+3D 对照 ===
+	{
+		const FClcStoneInternalData& D = StoneData.Internal;
+		FString GradeStr = TEXT("?");
+		if (const UEnum* E = StaticEnum<EClcJadeGrade>())
+			GradeStr = E->GetDisplayNameTextByValue(static_cast<int32>(D.Grade)).ToString();
+		const float GradeMult =
+			D.Grade == EClcJadeGrade::Glass ? 8.0f :
+			D.Grade == EClcJadeGrade::Ice ? 4.0f :
+			D.Grade == EClcJadeGrade::Glutinous ? 2.0f : 1.0f;
+		const float B3D = CachedStoneData.OriginalJadeVolume * 0.30f * GradeMult * 1.3f;
+	}
+
 	// ---- 3. 恢复存档：先回放 CutPlanes 到体素场（先体素后 mesh，确保采样正确） ----
 	CutPlanes.Reset();
 	if (StoneData.CutPlanes.Num() > 0)
@@ -91,7 +108,6 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 		{
 			VoxelField.ApplyCut(P.Normal, P.Distance, P.bRemovedNegative);
 		}
-		UE_LOG(LogClaudeCore, Log, TEXT("[ClcCuttingStone] Restored %d cut planes."), CutPlanes.Num());
 	}
 
 	// 回放后以体素场为权威重算累计切走/剩余统计
@@ -409,10 +425,6 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	// ---- 7. 切走块位置缓存（飞金币动效用） ----
 	LastCutPieceWorldCenter = CutMesh->GetComponentTransform().TransformPosition(-PlaneDistance * PlaneNormal);
 
-	UE_LOG(LogClaudeCore, Log,
-		TEXT("[ClcCuttingStone] Cut d=%.2f removeNeg=%d -> away total=%d jade=%d crack=%d | remain vol=%.1fcm3"),
-		PlaneDistance, static_cast<int32>(bActuallyRemoveNeg), OutCutAwayTotal,
-		OutCutAwayJade, OutCutAwayCrack, CachedStoneData.RemainingVolume);
 	return true;
 }
 

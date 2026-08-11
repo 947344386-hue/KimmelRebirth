@@ -561,20 +561,14 @@ FClcStoneVoxelField3D FClcStoneVoxelField3D::Generate(int32 Seed, UStaticMesh* M
 		FVoxelNoise3D Noise;
 		Noise.Init(VoxelMakeSubSeed(Seed, 100));
 
-		UE_LOG(LogClaudeCore, Log,
-			TEXT("[VoxelGen] Seed=%d Coverage=%.1f%% Occ=%d Target=%d CrackBudget=%d ImpBudget=%d"),
-			Seed, TargetCoverage * 100.0f, TotalOccupied, TargetVoxels, CrackBudget, ImpurityBudget);
 
 		GeneratePlanesOrStrands(Result.Data, Result.OccupancyMask, Res, Rng, Noise, CrackBudget);
-		UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step1 Crack leftover=%d"), CrackBudget);
 
 		GenerateImpurityDiffusion(Result.Data, Result.OccupancyMask, Res, Rng, Noise, ImpurityBudget);
-		UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step2 Impurity leftover=%d"), ImpurityBudget);
 
 		if (ImpurityBudget > 0)
 		{
 			GenerateSkinInfiltration(Result.Data, Result.OccupancyMask, Res, Rng, Noise, ImpurityBudget);
-			UE_LOG(LogClaudeCore, Log, TEXT("[VoxelGen] Step3 SkinInfiltration leftover=%d"), ImpurityBudget);
 		}
 	}
 

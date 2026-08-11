@@ -1,0 +1,160 @@
+// Copyright ClaudeCore. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/SaveGame.h"
+#include "Data/ClcJadeTypes.h"
+#include "ClcSessionTypes.generated.h"
+
+/**
+ * 难度预设——影响起始金币、购买溢价系数、衰减权重等
+ */
+UENUM(BlueprintType)
+enum class EClcDifficultyPreset : uint8
+{
+	Easy    UMETA(DisplayName = "简单模式"),   // 起始金 100k，溢价系数×0.6，衰减权重×0.5
+	Normal  UMETA(DisplayName = "标准模式"),   // 起始金 50k， 溢价系数×1.0，衰减权重×0.8
+	Hard    UMETA(DisplayName = "困难模式"),   // 起始金 20k， 溢价系数×1.5，衰减权重×1.0
+	Custom  UMETA(DisplayName = "自定义"),     // 手动调参
+};
+
+/** 预设对应的黄金乘数 */
+inline float ClcDifficultyGoldMultiplier(EClcDifficultyPreset Preset)
+{
+	switch (Preset)
+	{
+	case EClcDifficultyPreset::Easy:   return 2.0f;
+	case EClcDifficultyPreset::Normal: return 1.0f;
+	case EClcDifficultyPreset::Hard:   return 0.4f;
+	default: return 1.0f;
+	}
+}
+
+/** 预设对应的溢价/衰减惩罚乘数（越高越难） */
+inline float ClcDifficultyPenaltyMultiplier(EClcDifficultyPreset Preset)
+{
+	switch (Preset)
+	{
+	case EClcDifficultyPreset::Easy:   return 0.6f;
+	case EClcDifficultyPreset::Normal: return 1.0f;
+	case EClcDifficultyPreset::Hard:   return 1.5f;
+	default: return 1.0f;
+	}
+}
+
+/**
+ * 会话配置——玩家在开局界面预设的参数。
+ * 打包启动后由主菜单 Widget 填写，新游戏时注入子系统。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcSessionConfig
+{
+	GENERATED_BODY()
+
+	/** 起始金币（默认 50000，UI 滑条范围 1000~500000） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
+	int32 StartingGold = 50000;
+
+	/** 难度预设 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
+	EClcDifficultyPreset Difficulty = EClcDifficultyPreset::Normal;
+
+	/** 难度系数（Custom 模式手动设；其他模式由预设自动填充） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float DifficultyMultiplier = 1.0f;
+
+	/** 存档槽位名（空=新游戏未保存，非空=继续游戏） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
+	FString SaveSlotName;
+
+	/** 是否新游戏（false=来自存档恢复） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
+	bool bIsNewGame = true;
+
+	/** 游戏关卡路径（默认 Map_JadePlayTest） */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
+	FString GameLevelPath = TEXT("/Game/JadeBetting/Level/Map_JadePlayTest");
+};
+
+
+/**
+ * 存档全量数据——序列化到 USaveGame。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcSaveData
+{
+	GENERATED_BODY()
+
+	// 背包
+	UPROPERTY(SaveGame)
+	TArray<struct FClcStoneRuntimeData> SavedStones;
+	UPROPERTY(SaveGame)
+	int32 SavedGold = 0;
+	UPROPERTY(SaveGame)
+	int32 SavedTotalEarned = 0;
+
+	// 工具——用 int32 存 key（EClcRepairableTool/EClcToolUpgrade 的值，用于 UPROPERTY 序列化兼容）
+	UPROPERTY(SaveGame)
+	TMap<int32, float> SavedDurability;
+	UPROPERTY(SaveGame)
+	TMap<int32, float> SavedMaxDurability;
+	UPROPERTY(SaveGame)
+	TSet<int32> SavedUpgrades;
+
+	// 任务
+	UPROPERTY(SaveGame)
+	TMap<FName, int32> SavedQuestStates;
+
+	// 会话
+	UPROPERTY(SaveGame)
+	FClcSessionConfig SessionConfig;
+
+	// 元数据
+	UPROPERTY(SaveGame)
+	FDateTime SaveTimestamp;
+	UPROPERTY(SaveGame)
+	FString SaveVersion = TEXT("1.0");
+	UPROPERTY(SaveGame)
+	FString LevelName;
+	UPROPERTY(SaveGame)
+	float PlayTimeHours = 0.0f;
+};
+
+/**
+ * 存档元数据——菜单存档列表展示用，不含全量数据。
+ * 由 SaveManager 在枚举存档时读取 USaveGame 的元数据字段填充。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcSaveMetaData
+{
+	GENERATED_BODY()
+
+	/** 槽位名（即文件名，不含路径/扩展名） */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	FString SlotName;
+
+	/** 存档时间戳 */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	FDateTime SaveTimestamp;
+
+	/** 存档时金币 */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	int32 Gold = 0;
+
+	/** 存档时背包石头数 */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	int32 StoneCount = 0;
+
+	/** 累计游戏时长（小时） */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	float PlayTimeHours = 0.0f;
+
+	/** 存档时所在关卡名（路径最后一段） */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	FString LevelName;
+
+	/** 存档版本号 */
+	UPROPERTY(BlueprintReadOnly, Category = "Save")
+	FString SaveVersion;
+};

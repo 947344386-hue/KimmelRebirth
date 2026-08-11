@@ -126,27 +126,52 @@ namespace
 	int32 PlaceOrganisms(TArray<uint8>& Map, int32 Res, FRandomStream& Rng,
 		int32 Count, float TargetCoverage)
 	{
+		// 方案3: 缺陷体聚类到 2~3 个独立象限区域，各聚类内部繁殖，区域间保留纯净玉肉走廊。
+		// 效果：开第一窗可能落在纯净区（乐观）或缺陷区（悲观），后续开窗发现完全不同区域，
+		// 每窗有新信息增量——破坏"一窗定终身"。
 		const int32 Total = Res * Res;
 		const int32 TargetPixels = FMath::RoundToInt(Total * FMath::Clamp(TargetCoverage, 0.0f, 0.95f));
 		if (Count < 1) Count = 1;
 
-		// 随机权重分配预算
+		// 2~3 个独立缺陷聚类（象限分隔），各占 UV 空间一块独立区域
+		const int32 NumClusters = FMath::Clamp(FMath::Min(Count, 3), 2, 3);
+		TArray<TPair<int32, int32>> ClusterSeeds;
+		ClusterSeeds.SetNum(NumClusters);
+		const int32 InnerMargin = Res / 5;
+		for (int32 I = 0; I < NumClusters; ++I)
+		{
+			ClusterSeeds[I] = TPair<int32, int32>(
+				RandRange(Rng, InnerMargin, Res - 1 - InnerMargin),
+				RandRange(Rng, InnerMargin, Res - 1 - InnerMargin));
+		}
+
+		// 各聚类权重随机
 		TArray<float> Weights;
-		Weights.SetNumZeroed(Count);
+		Weights.SetNumZeroed(NumClusters);
 		float WSum = 0.0f;
-		for (int32 I = 0; I < Count; ++I)
+		for (int32 I = 0; I < NumClusters; ++I)
 		{
 			Weights[I] = Rng.FRand() + 0.15f;
 			WSum += Weights[I];
 		}
 
 		int32 Placed = 0;
-		for (int32 I = 0; I < Count && Placed < TargetPixels; ++I)
+		for (int32 I = 0; I < NumClusters && Placed < TargetPixels; ++I)
 		{
-			const int32 Budget = FMath::RoundToInt(static_cast<float>(TargetPixels) * (Weights[I] / WSum));
-			const int32 SX = RandRange(Rng, BorderMargin + 8, Res - 9 - BorderMargin);
-			const int32 SY = RandRange(Rng, BorderMargin + 8, Res - 9 - BorderMargin);
-			Placed += GrowOrganism(Map, Res, Rng, SX, SY, Budget);
+			const int32 ClusterBudget = FMath::RoundToInt(static_cast<float>(TargetPixels) * (Weights[I] / WSum));
+			const int32 OrgCount = Count / NumClusters + (I < Count % NumClusters ? 1 : 0);
+			const int32 BudgetPerOrg = FMath::Max(16, ClusterBudget / FMath::Max(1, OrgCount));
+			const int32 Jitter = Res / 6;
+			for (int32 J = 0; J < OrgCount && Placed < TargetPixels; ++J)
+			{
+				const int32 SX = FMath::Clamp(
+					ClusterSeeds[I].Key + Rng.RandRange(-Jitter, Jitter),
+					BorderMargin + 4, Res - 5 - BorderMargin);
+				const int32 SY = FMath::Clamp(
+					ClusterSeeds[I].Value + Rng.RandRange(-Jitter, Jitter),
+					BorderMargin + 4, Res - 5 - BorderMargin);
+				Placed += GrowOrganism(Map, Res, Rng, SX, SY, BudgetPerOrg);
+			}
 		}
 		return Placed;
 	}

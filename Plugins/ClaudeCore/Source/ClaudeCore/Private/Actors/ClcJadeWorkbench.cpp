@@ -25,7 +25,6 @@
 #include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcWorkbenchHUD.h"
-#include "Interfaces/ClcStoneCarrier.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/GameInstance.h"
@@ -139,9 +138,7 @@ void AClcJadeWorkbench::Tick(float DeltaTime)
 		{
 			bExitKeyPrev = true;
 			// 背包开着 → 关背包，不退出工作台
-			UClcBackpackSubsystem* BP = CachedCarrierObj.IsValid()
-				? Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get())
-				: nullptr;
+			UClcBackpackSubsystem* BP = CachedBackpack;
 			if (BP && BP->IsBackpackOpen())
 			{
 				BP->ToggleBackpack();
@@ -314,12 +311,9 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 
 	// ---- 背包打开时跳过工具操作 ----
 	bool bBackpackOpen = false;
-	if (CachedCarrierObj.IsValid())
+	if (UClcBackpackSubsystem* BP = CachedBackpack)
 	{
-		if (auto BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
-		{
-			bBackpackOpen = BP->IsBackpackOpen();
-		}
+		bBackpackOpen = BP->IsBackpackOpen();
 	}
 
 	if (!bBackpackOpen && CurrentTool)
@@ -375,25 +369,22 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 	}
 
 	// ---- 背包开闭状态轮询（B 键开关由全局 IA_Backpack 处理，这里只响应变化） ----
-	if (CachedCarrierObj.IsValid())
+	if (UClcBackpackSubsystem* BP = CachedBackpack)
 	{
-		if (auto BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
+		const bool bNowOpen = BP->IsBackpackOpen();
+		if (bNowOpen != bBackpackWasOpen)
 		{
-			const bool bNowOpen = BP->IsBackpackOpen();
-			if (bNowOpen != bBackpackWasOpen)
+			if (bNowOpen)
 			{
-				if (bNowOpen)
-				{
-					// 背包刚开——绑定选石委托，用户可在背包里换石头
-					BindToBackpackWidget();
-				}
-				else
-				{
-					// 背包刚关——擦石模式需要光标做打磨
-					SetWorkbenchCursor(true);
-				}
-				bBackpackWasOpen = bNowOpen;
+				// 背包刚开——绑定选石委托，用户可在背包里换石头
+				BindToBackpackWidget();
 			}
+			else
+			{
+				// 背包刚关——擦石模式需要光标做打磨
+				SetWorkbenchCursor(true);
+			}
+			bBackpackWasOpen = bNowOpen;
 		}
 	}
 }
@@ -402,15 +393,9 @@ void AClcJadeWorkbench::ProcessStoneOnBenchInput(float DeltaTime)
 // 右键 FOV 放大
 // ============================================================
 
-void AClcJadeWorkbench::UpdateAimZoom(float DeltaTime)
+UCameraComponent* AClcJadeWorkbench::GetAimZoomCamera() const
 {
-	if (!WorkCamera) return;
-
-	const bool bAimDown = CachedPC.IsValid() && CachedPC->IsInputKeyDown(EKeys::RightMouseButton);
-	const float TargetFOV = bAimDown ? (BaseFOV / AimZoomFactor) : BaseFOV;
-	const float CurrentFOV = WorkCamera->FieldOfView;
-	const float NewFOV = FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimZoomSpeed);
-	WorkCamera->SetFieldOfView(NewFOV);
+	return WorkCamera;
 }
 
 // ============================================================
@@ -549,27 +534,6 @@ void AClcJadeWorkbench::UpdateFillLightTarget()
 		: FlashlightIdleFillLightIntensity;
 }
 
-void AClcJadeWorkbench::TickFillLight(float DeltaTime)
-{
-	if (!FillLight) return;
-
-	UpdateFillLightTarget();
-
-	if (FillLightTransitionSpeed <= 0.0f || DeltaTime <= 0.0f)
-	{
-		CurrentFillLightIntensity = TargetFillLightIntensity;
-	}
-	else
-	{
-		CurrentFillLightIntensity = FMath::FInterpTo(
-			CurrentFillLightIntensity, TargetFillLightIntensity, DeltaTime, FillLightTransitionSpeed);
-	}
-
-	FillLight->SetIntensity(CurrentFillLightIntensity);
-	// 强度趋近 0 时关掉组件，省光照开销
-	FillLight->SetVisibility(CurrentFillLightIntensity > KINDA_SMALL_NUMBER);
-}
-
 // ============================================================
 // 触发器
 // ============================================================
@@ -584,7 +548,7 @@ void AClcJadeWorkbench::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedCom
 			PlayerInRange = Pawn;
 			CachePlayerRefs();
 			// 进入工作台范围——满足交互条件（背包有石头）才一次性飘字提示按 F 使用
-			if (CachedCarrier && CachedCarrier->GetStones().Num() > 0)
+			if (CachedBackpack && CachedBackpack->GetStones().Num() > 0)
 			{
 				const double Now = FPlatformTime::Seconds();
 				if (Now - LastEnterToastTime > 3.0)
@@ -619,31 +583,11 @@ void AClcJadeWorkbench::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp,
 // 进入 / 退出
 // ============================================================
 
-void AClcJadeWorkbench::CachePlayerRefs()
-{
-	if (APawn* Pawn = PlayerInRange.Get())
-	{
-		CachedPC = Cast<APlayerController>(Pawn->GetController());
-	}
-
-	if (CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			if (UClcBackpackSubsystem* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
-			{
-				CachedCarrierObj = BP;
-				CachedCarrier = static_cast<IClcStoneCarrier*>(BP);
-			}
-		}
-	}
-}
-
 void AClcJadeWorkbench::EnterOpeningMode()
 {
-	if (!CachedPC.IsValid() || !CachedCarrier) return;
+	if (!CachedPC.IsValid() || !CachedBackpack) return;
 
-	if (CachedCarrier->GetStones().Num() == 0)
+	if (CachedBackpack->GetStones().Num() == 0)
 	{
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcWorkbench] Player has no stones."));
 		if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
@@ -659,7 +603,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	OnEnterOpeningMode();
 
 	// 打开背包
-	UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get());
+	UClcBackpackSubsystem* BP = CachedBackpack;
 	if (BP && !BP->IsBackpackOpen())
 	{
 		BP->ToggleBackpack();
@@ -678,9 +622,7 @@ void AClcJadeWorkbench::EnterOpeningMode()
 void AClcJadeWorkbench::ExitOpeningMode()
 {
 	// 关闭背包
-	UClcBackpackSubsystem* BP = CachedCarrierObj.IsValid()
-		? Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get())
-		: nullptr;
+	UClcBackpackSubsystem* BP = CachedBackpack;
 	if (BP && BP->IsBackpackOpen())
 	{
 		BP->ToggleBackpack();
@@ -765,40 +707,9 @@ void AClcJadeWorkbench::SetWorkbenchCursor(bool bVisible)
 // 背包交互
 // ============================================================
 
-void AClcJadeWorkbench::BindToBackpackWidget()
-{
-	if (!CachedCarrierObj.IsValid()) return;
-
-	UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get());
-	if (!BP) return;
-
-	UClcBackpackWidget* Widget = BP->GetBackpackWidget();
-	if (!Widget) return;
-
-	Widget->OnStoneSelected.RemoveDynamic(this, &AClcJadeWorkbench::OnBackpackStoneSelected);
-	Widget->OnStoneSelected.AddDynamic(this, &AClcJadeWorkbench::OnBackpackStoneSelected);
-}
-
 // ============================================================
 // InteractionIndicator 委托
 // ============================================================
-
-bool AClcJadeWorkbench::QueryCanSelect()
-{
-	// 背包有石头 → 选中态；空背包 → 仅范围内态
-	APlayerController* PC = CachedPC.IsValid()
-		? CachedPC.Get()
-		: UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	if (!PC || !PC->GetLocalPlayer()) return false;
-
-	if (UClcBackpackSubsystem* BP = PC->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>())
-	{
-		return BP->GetStones().Num() > 0;
-	}
-	return false;
-}
-
-// IsLookedAtByPlayer / CachedInteractionComp 已删除——F 键路由由 UClcInteractionComponent 统一接管
 
 // ============================================================
 // IClcInteractable
@@ -827,9 +738,9 @@ bool AClcJadeWorkbench::OnInteract(AActor* Interactor)
 void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 {
 	// 锁价石头不能上工作台擦石——飘 tips 拦截，背包保持打开让玩家选别的
-	if (CachedCarrier)
+	if (CachedBackpack)
 	{
-		TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
+		TArray<FClcStoneRuntimeData> AllStones = CachedBackpack->GetStones();
 		if (AllStones.IsValidIndex(StoneIndex) && AllStones[StoneIndex].bHaggleResolved)
 		{
 			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
@@ -855,7 +766,7 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 		PlaceStoneOnBench(StoneIndex);
 
 		// 关闭背包，恢复打磨用光标
-		UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get());
+		UClcBackpackSubsystem* BP = CachedBackpack;
 		if (BP && BP->IsBackpackOpen())
 		{
 			BP->ToggleBackpack();
@@ -866,7 +777,7 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 	else if (CurrentState == EClcWorkbenchState::StoneOnBench)
 	{
 		// 先关闭背包
-		UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get());
+		UClcBackpackSubsystem* BP = CachedBackpack;
 		if (BP && BP->IsBackpackOpen())
 		{
 			BP->ToggleBackpack();
@@ -888,9 +799,9 @@ void AClcJadeWorkbench::OnBackpackStoneSelected(int32 StoneIndex)
 
 void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 {
-	if (!CachedCarrier) return;
+	if (!CachedBackpack) return;
 
-	TArray<FClcStoneRuntimeData> AllStones = CachedCarrier->GetStones();
+	TArray<FClcStoneRuntimeData> AllStones = CachedBackpack->GetStones();
 	if (!AllStones.IsValidIndex(StoneIndex))
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] Invalid stone index: %d"), StoneIndex);
@@ -901,12 +812,9 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	ActiveStoneData = AllStones[StoneIndex];
 
 	// 从背包移除（保持索引一致）
-	if (CachedCarrierObj.IsValid())
+	if (UClcBackpackSubsystem* BP = CachedBackpack)
 	{
-		if (UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
-		{
-			BP->RemoveStone(StoneIndex);
-		}
+		BP->RemoveStone(StoneIndex);
 	}
 
 	// Spawn AClcOpeningStone
@@ -926,12 +834,9 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcWorkbench] Failed to spawn OpeningStone!"));
 		// 回滚：石头已从背包移除，Spawn 失败时归还，避免玩家资产丢失
-		if (CachedCarrierObj.IsValid())
+		if (UClcBackpackSubsystem* BP = CachedBackpack)
 		{
-			if (UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
-			{
-				BP->AddStone(ActiveStoneData);
-			}
+			BP->AddStone(ActiveStoneData);
 		}
 		return;
 	}
@@ -948,12 +853,9 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 		OpeningStone->Destroy();
 		OpeningStone = nullptr;
 		// 回滚：石头已从背包移除，初始化失败时归还，避免玩家资产丢失
-		if (CachedCarrierObj.IsValid())
+		if (UClcBackpackSubsystem* BP = CachedBackpack)
 		{
-			if (UClcBackpackSubsystem* BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
-			{
-				BP->AddStone(ActiveStoneData);
-			}
+			BP->AddStone(ActiveStoneData);
 		}
 		return;
 	}
@@ -974,12 +876,9 @@ void AClcJadeWorkbench::PlaceStoneOnBench(int32 StoneIndex)
 	HUDPushTimer = HUDPushInterval;
 
 	// 初始化背包状态监听——B 键开关背包交给全局 IA_Backpack，这里只轮询响应
-	if (CachedCarrierObj.IsValid())
+	if (UClcBackpackSubsystem* BP = CachedBackpack)
 	{
-		if (auto BP = Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()))
-		{
-			bBackpackWasOpen = BP->IsBackpackOpen();
-		}
+		bBackpackWasOpen = BP->IsBackpackOpen();
 	}
 
 	CurrentState = EClcWorkbenchState::StoneOnBench;
@@ -1010,9 +909,9 @@ void AClcJadeWorkbench::RemoveStoneFromBench()
 	}
 
 	// 放回背包
-	if (CachedCarrier)
+	if (CachedBackpack)
 	{
-		CachedCarrier->AddStone(ActiveStoneData);
+		CachedBackpack->AddStone(ActiveStoneData);
 	}
 
 	// 销毁 Actor

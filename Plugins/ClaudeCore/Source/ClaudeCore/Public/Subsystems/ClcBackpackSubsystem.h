@@ -4,15 +4,15 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/LocalPlayerSubsystem.h"
-#include "Interfaces/ClcStoneCarrier.h"
 #include "Data/ClcJadeTypes.h"
+#include "Data/ClcSessionTypes.h"
 #include "ClcBackpackSubsystem.generated.h"
 
 class UClcBackpackWidget;
 class UClcBackpackHudWidget;
 
 UCLASS()
-class CLAUDECORE_API UClcBackpackSubsystem : public ULocalPlayerSubsystem, public IClcStoneCarrier
+class CLAUDECORE_API UClcBackpackSubsystem : public ULocalPlayerSubsystem
 {
 	GENERATED_BODY()
 
@@ -20,13 +20,13 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	// ---- IClcStoneCarrier (pure virtual) ----
-	virtual TArray<FClcStoneRuntimeData> GetStones() const override;
-	virtual int32 AddStone(const FClcStoneRuntimeData& StoneData) override;
-	virtual bool RemoveStone(int32 StoneIndex) override;
-	virtual int32 GetGold() const override;
-	virtual void AddGold(int32 Amount) override;
-	virtual bool SpendGold(int32 Amount) override;
+	// ---- 背包/金币数据访问 ----
+	TArray<FClcStoneRuntimeData> GetStones() const;
+	int32 AddStone(const FClcStoneRuntimeData& StoneData);
+	bool RemoveStone(int32 StoneIndex);
+	int32 GetGold() const;
+	void AddGold(int32 Amount);
+	bool SpendGold(int32 Amount);
 
 	UFUNCTION(BlueprintCallable, Category = "ClcBackpack")
 	void ToggleBackpack();
@@ -53,6 +53,14 @@ public:
 
 	/** 背包槽位上限（外部判满用，如购买前检查） */
 	static constexpr int32 MAX_STONE_SLOTS = 200;
+
+	// ---- 存档序列化 ----
+
+	/** 从存档数据恢复背包状态 */
+	void RestoreFromSaveData(const struct FClcSaveData& Data);
+
+	/** 应用会话配置（新游戏启动时调用） */
+	void SetSessionConfig(const struct FClcSessionConfig& Config);
 
 private:
 	void ShowNotification(const FString& Message);

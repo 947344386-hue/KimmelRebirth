@@ -1,7 +1,6 @@
-// Copyright ClaudeCore. All Rights Reserved.
-
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "ClcLog.h"
+#include "Data/ClcSessionTypes.h"
 #include "Engine/World.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
@@ -119,4 +118,26 @@ float UClcToolDurabilitySubsystem::GetDurabilityRatio(EClcRepairableTool ToolTyp
 {
 	const float Max = GetMaxDurability(ToolType);
 	return Max > 0.0f ? GetDurability(ToolType) / Max : 0.0f;
+}
+
+// ---- 存档序列化 ----
+
+void UClcToolDurabilitySubsystem::RestoreFromSaveData(const FClcSaveData& Data)
+{
+	for (const auto& Pair : Data.SavedDurability)
+	{
+		DurabilityStore.Add(static_cast<EClcRepairableTool>(Pair.Key), Pair.Value);
+	}
+	for (const auto& Pair : Data.SavedMaxDurability)
+	{
+		MaxDurabilityStore.Add(static_cast<EClcRepairableTool>(Pair.Key), Pair.Value);
+	}
+
+	OwnedUpgrades.Reset();
+	for (int32 Val : Data.SavedUpgrades)
+	{
+		OwnedUpgrades.Add(static_cast<EClcToolUpgrade>(Val));
+	}
+
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcToolDurability] Load OK"));
 }

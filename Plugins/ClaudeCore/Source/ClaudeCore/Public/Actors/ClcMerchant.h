@@ -9,6 +9,7 @@
 
 class AClcStoneStall;
 class AClcStone;
+class UClcInteractionComponent;
 class UClcMerchantConfig;
 class UClcMerchantAnimConfig;
 class UClcMerchantBubbleConfig;
@@ -133,6 +134,10 @@ private:
 	ETalkState CurrentTalkState = ETalkState::Enter;
 	UPROPERTY()
 	TWeakObjectPtr<APawn> PlayerInRange;
+
+	/** 缓存角色上的交互组件，避免 TickAimedStone 每 0.1s FindComponentByClass 扫描 */
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UClcInteractionComponent> CachedInteractionComp;
 
 	/** 缓存的整摊声称档位——商人一旦决定演某档就稳定，避免每帧重 roll 跳变；档位变化时失效 */
 	EClcStallTier CachedClaimedTier = EClcStallTier::Mid;

@@ -21,8 +21,9 @@
 
 AClcToolUpgradeStation::AClcToolUpgradeStation()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.TickInterval = 0.1f;
+	// F 键提示与路由已由 UClcInteractionComponent 统一管理，本站无 Tick 工作
+	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.TickInterval = 0.0f;
 
 	StationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("StationRoot"));
 	RootComponent = StationRoot;
@@ -70,15 +71,6 @@ void AClcToolUpgradeStation::BeginPlay()
 
 	TriggerSphere->OnComponentBeginOverlap.AddDynamic(this, &AClcToolUpgradeStation::OnTriggerBeginOverlap);
 	TriggerSphere->OnComponentEndOverlap.AddDynamic(this, &AClcToolUpgradeStation::OnTriggerEndOverlap);
-}
-
-void AClcToolUpgradeStation::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-	// F 键提示与路由已由 UClcInteractionComponent 统一管理。
-	// 本站只需实现 IClcInteractable::GetInteractionPrompt / OnInteract。
-	// 如果 bMenuOpen，交互组件会忽略本站（bInExclusiveContext）
 }
 
 void AClcToolUpgradeStation::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -155,8 +147,6 @@ void AClcToolUpgradeStation::OpenMenu()
 	CachedPC->bShowMouseCursor = true;
 	CachedPC->SetIgnoreMoveInput(true);
 	CachedPC->SetIgnoreLookInput(true);
-	bOwnsInputState = true;
-
 	bMenuOpen = true;
 	OnUpgradeMenuOpened();
 
@@ -175,7 +165,7 @@ void AClcToolUpgradeStation::CloseMenu()
 		MenuWidget = nullptr;
 	}
 
-	if (CachedPC.IsValid() && bOwnsInputState)
+	if (CachedPC.IsValid())
 	{
 		UWidgetBlueprintLibrary::SetInputMode_GameOnly(CachedPC.Get());
 		CachedPC->bShowMouseCursor = false;
@@ -183,7 +173,6 @@ void AClcToolUpgradeStation::CloseMenu()
 		CachedPC->SetIgnoreLookInput(false);
 	}
 
-	bOwnsInputState = false;
 	bMenuOpen = false;
 	OnUpgradeMenuClosed();
 }

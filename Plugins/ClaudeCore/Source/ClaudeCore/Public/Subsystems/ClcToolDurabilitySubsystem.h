@@ -7,6 +7,8 @@
 #include "Tools/ClcStoneTool.h"
 #include "ClcToolDurabilitySubsystem.generated.h"
 
+struct FClcSaveData;
+
 /**
  * 工具耐久持久化子系统 —— 跨工作台会话保存每种工具的当前耐久。
  *
@@ -82,6 +84,11 @@ public:
 	/** 耐久比例（0~1，用于 UI） */
 	UFUNCTION(BlueprintCallable, Category = "ClcToolDurability")
 	float GetDurabilityRatio(EClcRepairableTool ToolType) const;
+
+	// ---- 存档序列化 ----
+
+	/** 从存档数据恢复到 Subsystem */
+	void RestoreFromSaveData(const struct FClcSaveData& Data);
 
 private:
 	/** 每种工具的当前耐久 */

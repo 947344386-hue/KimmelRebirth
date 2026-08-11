@@ -26,6 +26,9 @@
 UClcEagleEyeComponent::UClcEagleEyeComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	// 本组件 Tick 只做：首帧 Q 提示注册（成功后短路）、CD 倒计时、扫描销毁计时——均低频逻辑，
+	// 0.2s 间隔足够，避免每帧轮询首帧注册和 float 递减。
+	PrimaryComponentTick.TickInterval = 0.2f;
 }
 
 void UClcEagleEyeComponent::BeginPlay()

@@ -100,7 +100,6 @@ public:
             ++Transferred;
         }
 
-        UE_LOG(LogClaudeCore, Log, TEXT("[ClcJadeTexture] Injected %d/6 textures into MID"), Transferred);
         return Transferred;
     }
 };

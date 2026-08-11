@@ -20,7 +20,6 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Math/RandomStream.h"
 #include "Math/RotationMatrix.h"
-#include "Interfaces/ClcStoneCarrier.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
@@ -282,27 +281,9 @@ bool AClcCuttingTable::OnInteract(AActor* Interactor)
 	return CurrentState != EClcCuttingTableState::Inactive;
 }
 
-void AClcCuttingTable::CachePlayerRefs()
-{
-	if (APawn* Pawn = PlayerInRange.Get())
-	{
-		CachedPC = Cast<APlayerController>(Pawn->GetController());
-	}
-
-	if (!CachedPC.IsValid()) return;
-	if (ULocalPlayer* LocalPlayer = CachedPC->GetLocalPlayer())
-	{
-		if (UClcBackpackSubsystem* Backpack = LocalPlayer->GetSubsystem<UClcBackpackSubsystem>())
-		{
-			CachedCarrierObj = Backpack;
-			CachedCarrier = static_cast<IClcStoneCarrier*>(Backpack);
-		}
-	}
-}
-
 void AClcCuttingTable::EnterCuttingMode()
 {
-	if (!CachedPC.IsValid() || !CachedCarrier || CurrentState != EClcCuttingTableState::Inactive)
+	if (!CachedPC.IsValid() || !CachedBackpack || CurrentState != EClcCuttingTableState::Inactive)
 	{
 		return;
 	}
@@ -324,7 +305,7 @@ void AClcCuttingTable::EnterCuttingMode()
 	{
 		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 		{
-			const bool bEmpty = CachedCarrier->GetStones().IsEmpty();
+			const bool bEmpty = CachedBackpack->GetStones().IsEmpty();
 			Toast->AddLog(bEmpty ? TEXT("背包空，无可解石的石头")
 				: TEXT("背包中没有可解石的石头"), 2.2f, FLinearColor::Yellow);
 		}
@@ -454,7 +435,10 @@ bool AClcCuttingTable::StartCutCinematic()
 {
 	if (!CuttingStone || !CachedPC.IsValid()) return false;
 	if (CurrentState != EClcCuttingTableState::StoneOnBench) return false;
-	if (BladePhase != EBladePhase::Idle) return false; // 循环中防重复
+	if (BladePhase != EBladePhase::Idle) return false;
+
+	// 机械性检查统一走 CanCutNow（BladePoint/穿透平面/刀片耐久）——避免两套逻辑分叉
+	if (!CanCutNow()) return false;
 
 	FClcStoneRuntimeData StoneData;
 	if (!CuttingStone->GetStoneData(StoneData)) return false;
@@ -467,30 +451,10 @@ bool AClcCuttingTable::StartCutCinematic()
 		return false;
 	}
 
-	UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld());
-	if (!Durability) return false;
-	Durability->InitTool(EClcRepairableTool::Blade, BladeMaxDurability);
-	const float CurrentDurability = Durability->GetDurability(EClcRepairableTool::Blade);
-	if (CurrentDurability + KINDA_SMALL_NUMBER < BladeDurabilityPerCut)
-	{
-		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
-		{
-			Toast->AddLog(TEXT("解石刀耐久不足，需前往修理站修复"), 2.5f, FLinearColor::Red);
-		}
-		return false;
-	}
-
 	// ---- 缓存刀口平面（升刀动画会移动 BladePoint，预判和实际切割必须共用同一平面） ----
+	// CanCutAtWorldPlane 已由 CanCutNow() 用同一组值验证过，这里只管缓存
 	PendingCutPlanePoint = BladePoint->GetComponentLocation();
 	PendingCutPlaneNormal = MovementAxisWorld;
-	if (!CuttingStone->CanCutAtWorldPlane(PendingCutPlanePoint, PendingCutPlaneNormal))
-	{
-		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
-		{
-			Toast->AddLog(TEXT("刀口未穿过剩余主体，请调整石位"), 1.8f, FLinearColor::Yellow);
-		}
-		return false;
-	}
 
 	// ---- 预判切走侧（不修改场），据此选相机 ----
 	bool bWillRemoveNegative = false;
@@ -515,14 +479,6 @@ bool AClcCuttingTable::StartCutCinematic()
 		? LeftCutCamera
 		: RightCutCamera;
 	ActiveCutCamera = WatchCam;
-
-	UE_LOG(LogClaudeCore, Log,
-		TEXT("[ClcCuttingTable][CutCamera] removeNeg=%d direction=%s leftScore=%.1f rightScore=%.1f selected=%s"),
-		bWillRemoveNegative ? 1 : 0,
-		*CutAwayDirection.ToString(),
-		LeftCameraScore,
-		RightCameraScore,
-		WatchCam ? *WatchCam->GetName() : TEXT("NULL"));
 
 	// 先全清 Active 防残留，再激活目标相机
 	if (WorkCamera) WorkCamera->SetActive(false);
@@ -665,24 +621,9 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	const float CutRatio = CutAwayTotal > 0
 		? static_cast<float>(CutAwayTotal) / static_cast<float>(CutAwayTotal + RemainingTotal)
 		: 0.0f;
-	UE_LOG(LogClaudeCore, Log,
-		TEXT("[ClcCuttingTable][CutResult] negRemoved=%d awayTotal=%d remainTotal=%d cutRatio=%.1f%% volume=%.0fcm³ jade=%d crack=%d imp=%d"),
-		bActuallyRemovedNegOnRetry ? 1 : 0,
-		CutAwayTotal,
-		RemainingTotal,
-		CutRatio * 100.0f,
-		CutVolume,
-		CutAwayJade,
-		CutAwayCrack,
-		CutAwayImpurity);
 
 	// ---- 切下块物理掉落 ----
 	UProceduralMeshComponent* OtherHalf = CuttingStone->GetLastOtherHalf();
-	UE_LOG(LogClaudeCore, Warning,
-		TEXT("[ClcCuttingTable][CutPhys] enter: OtherHalf=%s bRegistered=%d IsSimPhys=%d"),
-		OtherHalf ? *OtherHalf->GetName() : TEXT("NULL"),
-		OtherHalf ? OtherHalf->IsRegistered() : -1,
-		OtherHalf ? OtherHalf->IsSimulatingPhysics() : -1);
 	if (OtherHalf)
 	{
 		// UE 明确禁止 ComplexAsSimple 三角网格参与动态模拟。
@@ -731,11 +672,6 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 			OtherHalf->SetSimulatePhysics(true);
 			OtherHalf->SetEnableGravity(true);
 			OtherHalf->WakeRigidBody(NAME_None);
-			UE_LOG(LogClaudeCore, Warning,
-				TEXT("[ClcCuttingTable][CutPhys] simple convex: bounds=%s IsSimPhys=%d IsGravity=%d"),
-				*LocalBounds.GetSize().ToString(),
-				OtherHalf->IsSimulatingPhysics(),
-				OtherHalf->IsGravityEnabled());
 
 			// ---- 推出方向：朝相机水平方向 + 随机扰动 ----
 			FVector CameraDirection =
@@ -789,18 +725,22 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 			}
 			OtherHalf->AddAngularImpulseInRadians(
 				TipAxis * CutPieceTipAngularSpeed, NAME_None, true);
-
-			UE_LOG(LogClaudeCore, Log,
-				TEXT("[ClcCuttingTable][CutPhys] camera push: camera=%s dir=%s speed=%.1f(%.0f+%.1f*%.0f) lift=%.1f angular=%.2f"),
-				ActiveCutCamera.IsValid() ? *ActiveCutCamera->GetName() : TEXT("NULL"),
-				*CameraDirection.ToString(),
-				SpeedMag, CutPieceBaseSpeed, CutPieceVolumeSpeedK, EffVolume,
-				CutPieceLiftSpeed, CutPieceTipAngularSpeed);
 		}
 		else
 		{
 			UE_LOG(LogClaudeCore, Error,
 				TEXT("[ClcCuttingTable][CutPhys] OtherHalf has no valid local bounds"));
+		}
+
+		// 方案1: 每次切割前先清掉上一刀的碎块，防止连切两刀后第一刀碎块永不被销毁
+		if (LastCutAwayPiece.IsValid())
+		{
+			LastCutAwayPiece->DestroyComponent();
+			LastCutAwayPiece.Reset();
+		}
+		if (CutPieceCleanupHandle.IsValid() && GetWorld())
+		{
+			GetWorld()->GetTimerManager().ClearTimer(CutPieceCleanupHandle);
 		}
 
 		LastCutAwayPiece = OtherHalf;
@@ -823,15 +763,6 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	{
 		if (UClcStoneMarketSubsystem* Market = GI->GetSubsystem<UClcStoneMarketSubsystem>())
 		{
-			UE_LOG(LogClaudeCore, Log,
-				TEXT("[CutBudget][Input] away=%d jade=%d crack=%d imp=%d voxVol=%.3f totalVox=%d | "
-				"T=%.1f Consumed=%d ExpJ=%d RemJ=%d"),
-				CutAwayTotal, CutAwayJade, CutAwayCrack, CutAwayImpurity,
-				VoxelVol, CuttingStone->GetTotalVoxels(),
-				ActiveStoneData.Internal.TheoreticalValue,
-				ActiveStoneData.ConsumedCutBudget,
-				static_cast<int32>(ActiveStoneData.ExposedJadeVolume),
-				static_cast<int32>(ActiveStoneData.RemainingJadeVolume));
 
 			PieceGold = Market->CalculateCutPieceValue(
 				ActiveStoneData, CutAwayTotal, CutAwayJade,
@@ -848,9 +779,9 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	// 同步 ActiveStoneData（ApplyCutSettlement 已更新石头 Actor 本地副本）
 	CuttingStone->GetStoneData(ActiveStoneData);
 
-	if (PieceGold > 0 && CachedCarrier)
+	if (PieceGold > 0 && CachedBackpack)
 	{
-		CachedCarrier->AddGold(PieceGold);
+		CachedBackpack->AddGold(PieceGold);
 
 		if (CachedPC.IsValid())
 		{
@@ -921,24 +852,27 @@ void AClcCuttingTable::FinishCutCinematic()
 
 void AClcCuttingTable::CleanupLastCutPiece()
 {
+	if (CutPieceCleanupHandle.IsValid() && GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(CutPieceCleanupHandle);
+	}
 	if (UProceduralMeshComponent* Piece = LastCutAwayPiece.Get())
 	{
 		Piece->DestroyComponent();
 	}
 	LastCutAwayPiece.Reset();
-	CutPieceCleanupHandle.Invalidate();
 }
 
 bool AClcCuttingTable::PlaceStoneOnBench(int32 StoneIndex)
 {
-	if (!CachedCarrier || !StoneSpawnPoint) return false;
+	if (!CachedBackpack || !StoneSpawnPoint) return false;
 
-	const TArray<FClcStoneRuntimeData> Stones = CachedCarrier->GetStones();
+	const TArray<FClcStoneRuntimeData> Stones = CachedBackpack->GetStones();
 	if (!Stones.IsValidIndex(StoneIndex)) return false;
 	if (!IsStoneEligible(Stones[StoneIndex])) return false;
 
 	ActiveStoneData = Stones[StoneIndex];
-	if (!CachedCarrier->RemoveStone(StoneIndex))
+	if (!CachedBackpack->RemoveStone(StoneIndex))
 	{
 		return false;
 	}
@@ -953,7 +887,7 @@ bool AClcCuttingTable::PlaceStoneOnBench(int32 StoneIndex)
 	auto Rollback = [this]()
 	{
 		DestroyCuttingStone();
-		if (CachedCarrier && CachedCarrier->AddStone(ActiveStoneData) < 0)
+		if (CachedBackpack && CachedBackpack->AddStone(ActiveStoneData) < 0)
 		{
 			UE_LOG(LogClaudeCore, Error, TEXT("[ClcCuttingTable] Failed to return stone after placement error."));
 		}
@@ -1010,7 +944,7 @@ void AClcCuttingTable::RemoveStoneFromBench()
 		ActiveStoneData = UpdatedData;
 	}
 
-	if (CachedCarrier && CachedCarrier->AddStone(ActiveStoneData) < 0)
+	if (CachedBackpack && CachedBackpack->AddStone(ActiveStoneData) < 0)
 	{
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcCuttingTable] Failed to return active stone to backpack."));
 	}
@@ -1038,8 +972,8 @@ void AClcCuttingTable::DestroyCuttingStone()
 
 void AClcCuttingTable::OnBackpackStoneSelected(int32 StoneIndex)
 {
-	if (!CachedCarrier) return;
-	const TArray<FClcStoneRuntimeData> Stones = CachedCarrier->GetStones();
+	if (!CachedBackpack) return;
+	const TArray<FClcStoneRuntimeData> Stones = CachedBackpack->GetStones();
 	if (!Stones.IsValidIndex(StoneIndex)) return;
 
 	const FClcStoneRuntimeData& Selected = Stones[StoneIndex];
@@ -1075,18 +1009,6 @@ void AClcCuttingTable::OnBackpackStoneSelected(int32 StoneIndex)
 	}
 }
 
-void AClcCuttingTable::BindToBackpackWidget()
-{
-	if (UClcBackpackSubsystem* Backpack = GetBackpack())
-	{
-		if (UClcBackpackWidget* Widget = Backpack->GetBackpackWidget())
-		{
-			Widget->OnStoneSelected.RemoveDynamic(this, &AClcCuttingTable::OnBackpackStoneSelected);
-			Widget->OnStoneSelected.AddDynamic(this, &AClcCuttingTable::OnBackpackStoneSelected);
-		}
-	}
-}
-
 void AClcCuttingTable::UnbindFromBackpackWidget()
 {
 	if (UClcBackpackSubsystem* Backpack = GetBackpack())
@@ -1112,8 +1034,8 @@ bool AClcCuttingTable::IsStoneEligible(const FClcStoneRuntimeData& StoneData) co
 
 bool AClcCuttingTable::HasEligibleStone() const
 {
-	if (!CachedCarrier) return false;
-	for (const FClcStoneRuntimeData& Stone : CachedCarrier->GetStones())
+	if (!CachedBackpack) return false;
+	for (const FClcStoneRuntimeData& Stone : CachedBackpack->GetStones())
 	{
 		if (IsStoneEligible(Stone)) return true;
 	}
@@ -1171,7 +1093,7 @@ bool AClcCuttingTable::IsRemainingStoneInStandardRange() const
 
 bool AClcCuttingTable::SellRemainingStone()
 {
-	if (!CuttingStone || !CachedCarrier || !CachedPC.IsValid()) return false;
+	if (!CuttingStone || !CachedBackpack || !CachedPC.IsValid()) return false;
 
 	FClcStoneRuntimeData StoneData;
 	if (!CuttingStone->GetStoneData(StoneData)) return false;
@@ -1187,7 +1109,7 @@ bool AClcCuttingTable::SellRemainingStone()
 
 	if (SellPrice > 0)
 	{
-		CachedCarrier->AddGold(SellPrice);
+		CachedBackpack->AddGold(SellPrice);
 
 		const FVector WorldPos = CuttingStone->GetCutPieceWorldLocation();
 		FVector2D ScreenPos;
@@ -1378,32 +1300,9 @@ void AClcCuttingTable::PushHUDData()
 	HUDWidget->RefreshData(Data);
 }
 
-UClcBackpackSubsystem* AClcCuttingTable::GetBackpack() const
+bool AClcCuttingTable::IsStoneSelectable(const FClcStoneRuntimeData& Stone) const
 {
-	return CachedCarrierObj.IsValid() ? Cast<UClcBackpackSubsystem>(CachedCarrierObj.Get()) : nullptr;
-}
-
-bool AClcCuttingTable::QueryCanSelect()
-{
-	APlayerController* PlayerController = CachedPC.IsValid()
-		? CachedPC.Get() : UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	if (!PlayerController || !PlayerController->GetLocalPlayer()) return false;
-
-	if (UClcBackpackSubsystem* Backpack =
-		PlayerController->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>())
-	{
-		for (const FClcStoneRuntimeData& Stone : Backpack->GetStones())
-		{
-			if (IsStoneEligible(Stone)) return true;
-		}
-	}
-	return false;
-}
-
-bool AClcCuttingTable::IsLookedAtByPlayer() const
-{
-	// F 键路由已迁移到 UClcInteractionComponent::HandleInteractInput
-	return false;
+	return IsStoneEligible(Stone);
 }
 
 void AClcCuttingTable::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,
@@ -1444,8 +1343,8 @@ void AClcCuttingTable::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, 
 
 	PlayerInRange.Reset();
 	CachedPC.Reset();
-	CachedCarrierObj.Reset();
-	CachedCarrier = nullptr;
+	CachedBackpack = nullptr;
+	CachedBackpack = nullptr;
 }
 
 void AClcCuttingTable::OnEnterCuttingMode_Implementation()
@@ -1463,7 +1362,6 @@ void AClcCuttingTable::OnEnterCuttingMode_Implementation()
 		if (CachedPC.IsValid())
 		{
 			Pawn->DisableInput(CachedPC.Get());
-			bPawnInputDisabled = true;
 		}
 	}
 }
@@ -1477,14 +1375,10 @@ void AClcCuttingTable::OnExitCuttingMode_Implementation()
 		if (APawn* Pawn = CachedPC->GetPawn())
 		{
 			Pawn->SetActorHiddenInGame(false);
-			if (bPawnInputDisabled)
-			{
-				Pawn->EnableInput(CachedPC.Get());
-			}
+			Pawn->EnableInput(CachedPC.Get());
 			CachedPC->SetViewTargetWithBlend(Pawn, 0.2f);
 		}
 	}
-	bPawnInputDisabled = false;
 }
 
 void AClcCuttingTable::OnStonePlaced_Implementation(const FClcStoneInternalData& StoneData)
@@ -1521,26 +1415,6 @@ void AClcCuttingTable::UpdateFillLightTarget()
 		TargetFillLightIntensity = StoneOnBenchFillLightIntensity;
 		return;
 	}
-}
-
-void AClcCuttingTable::TickFillLight(float DeltaTime)
-{
-	if (!FillLight) return;
-
-	UpdateFillLightTarget();
-
-	if (FillLightTransitionSpeed <= 0.0f || DeltaTime <= 0.0f)
-	{
-		CurrentFillLightIntensity = TargetFillLightIntensity;
-	}
-	else
-	{
-		CurrentFillLightIntensity = FMath::FInterpTo(
-			CurrentFillLightIntensity, TargetFillLightIntensity, DeltaTime, FillLightTransitionSpeed);
-	}
-
-	FillLight->SetIntensity(CurrentFillLightIntensity);
-	FillLight->SetVisibility(CurrentFillLightIntensity > KINDA_SMALL_NUMBER);
 }
 
 bool AClcCuttingTable::UpdateAimDecalTransform()
@@ -1603,10 +1477,8 @@ void AClcCuttingTable::UpdateAimDecalColor(EClcCutSizeState State)
 	// 懒创建 MID（材质未配置时静默跳过，不阻塞配色逻辑）
 	if (!AimDecalMID && AimDecal)
 	{
-		UE_LOG(LogClaudeCore, Log, TEXT("[AimDecal] Loading material: %s"), *AimDecalMaterialPath);
 		if (UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, *AimDecalMaterialPath))
 		{
-			UE_LOG(LogClaudeCore, Log, TEXT("[AimDecal] Material loaded OK, creating MID"));
 			AimDecal->SetDecalMaterial(Mat);
 			AimDecalMID = AimDecal->CreateDynamicMaterialInstance();
 		}

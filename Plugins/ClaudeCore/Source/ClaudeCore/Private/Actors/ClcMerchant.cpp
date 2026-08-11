@@ -382,7 +382,13 @@ void AClcMerchant::TickAimedStone()
 	// 收敛路径：角色挂了 UClcInteractionComponent 时，读其唯一中心球扫结果，
 	// 不再自做 5000 球扫——单 trace/单容差，消除旧"Indicator 选中但商人细射线擦边没中→气泡偶尔没种水"的分叉。
 	// 中心组件 LookDistance(默认 6000) ≥ 旧 5000，商人长距离瞄准反应不缩短。
-	if (UClcInteractionComponent* InterComp = Pawn ? Pawn->FindComponentByClass<UClcInteractionComponent>() : nullptr)
+	UClcInteractionComponent* InterComp = CachedInteractionComp.Get();
+	if ((!InterComp || !InterComp->IsValidLowLevelFast()) && Pawn)
+	{
+		InterComp = Pawn->FindComponentByClass<UClcInteractionComponent>();
+		CachedInteractionComp = InterComp;
+	}
+	if (InterComp)
 	{
 		AActor* LookedAt = InterComp->GetLookedAtActor();
 		AClcStone* HitStone = nullptr;
@@ -610,15 +616,6 @@ void AClcMerchant::Tick(float DeltaTime)
 		if (bInRange && PlayerInRange.IsValid())
 		{
 			DrawDebugPoint(GetWorld(), PlayerInRange->GetActorLocation(), 20.f, FColor::Green, false, 0.15f);
-		}
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(
-				4321, 0.15f, bInRange ? FColor::Green : FColor::Yellow,
-				FString::Printf(TEXT("[TalkTrigger] %s  Center=(%.0f,%.0f,%.0f)  R=%.0f  bEagleEye=%d"),
-					bInRange ? TEXT("IN RANGE ✓") : TEXT("OUT ✗"),
-					TriggerCenter.X, TriggerCenter.Y, TriggerCenter.Z, Radius,
-					bEagleEyeActive ? 1 : 0));
 		}
 	}
 #endif

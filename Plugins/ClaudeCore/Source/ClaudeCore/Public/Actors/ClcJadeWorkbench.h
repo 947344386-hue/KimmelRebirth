@@ -3,9 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Actors/ClcInteractableStation.h"
 #include "Data/ClcJadeTypes.h"
-#include "Interfaces/ClcInteractable.h"
 #include "ClcJadeWorkbench.generated.h"
 
 /** 工具模式（BP 可用 Switch on EClcToolMode） */
@@ -38,7 +37,7 @@ struct FClcWorkbenchHUDData;
  * 每帧做鼠标 LineTrace，命中石头时把结果传给当前工具的 OnUpdate。
  */
 UCLASS()
-class CLAUDECORE_API AClcJadeWorkbench : public AActor, public IClcInteractable
+class CLAUDECORE_API AClcJadeWorkbench : public AClcInteractableStation, public IClcInteractable
 {
 	GENERATED_BODY()
 
@@ -106,13 +105,6 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UClcInteractionIndicator* InteractionIndicator;
 
-	/**
-	 * 自适应补光——按当前状态/工具调节强度，避免太亮或太暗。
-	 * 位置/锥角/颜色等直接在 BP 的 FillLight 组件上调；这里只暴露强度档位。
-	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USpotLightComponent* FillLight;
-
 	// ---- 配置 ----
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
@@ -123,9 +115,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FKey ExitKey = FKey("Escape");
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
-	FKey BackpackKey = FKey("B");
 
 	/** 工具切换键（循环：擦石器 ⇄ 手电筒） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
@@ -141,14 +130,6 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
 	FText InteractionPrompt = FText::FromString(TEXT("Press [F] to use Workbench"));
-
-	/** 长按右键放大倍率（2.0=放大2倍，只改 FOV，不碰擦石/工具/手电筒） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "8.0"))
-	float AimZoomFactor = 2.0f;
-
-	/** 放大过渡速度（越大越快，10≈0.1秒到位） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config", meta = (ClampMin = "1.0", ClampMax = "30.0"))
-	float AimZoomSpeed = 10.0f;
 
 	/** 擦石材质路径（AClcOpeningStone 初始化时加载） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|Config")
@@ -179,10 +160,6 @@ protected:
 	/** 手电筒开灯透视时的补光强度（压暗，让手电光锥和 X-ray 突出） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
 	float FlashlightActiveFillLightIntensity = 800.0f;
-
-	/** 补光强度过渡速度（越大越快，0=瞬切，建议 8~12） */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Workbench|FillLight", meta = (ClampMin = "0.0"))
-	float FillLightTransitionSpeed = 10.0f;
 
 	// ---- 工具蓝图槽位（指定 BP 子类来覆写参数 / Mesh / 表现） ----
 
@@ -249,11 +226,6 @@ private:
 	/** 种水是否已暴露（首次开到绿时设为 true） */
 	bool bGradeRevealed = false;
 
-	/** 补光当前强度（每帧平滑追向 Target） */
-	float CurrentFillLightIntensity = 0.0f;
-	/** 补光目标强度（由 UpdateFillLightTarget 按状态算出） */
-	float TargetFillLightIntensity = 0.0f;
-
 private:
 	enum class EClcWorkbenchState : uint8
 	{
@@ -268,9 +240,6 @@ private:
 	AClcStoneTool* CurrentTool = nullptr;
 
 	bool bLeftMousePrev = false;
-
-	/** 进入擦石时缓存的基础 FOV（右键放大基于此值缩放，退出时恢复） */
-	float BaseFOV = 90.0f;
 
 	// ---- 按键边沿检测（自维护，避免输入模式切换重置 WasInputKeyJustPressed） ----
 	bool bExitKeyPrev = false;
@@ -299,27 +268,14 @@ private:
 
 	FClcStoneRuntimeData ActiveStoneData;
 
-	UPROPERTY()
-	TWeakObjectPtr<APawn> PlayerInRange;
-
-	UPROPERTY()
-	TWeakObjectPtr<APlayerController> CachedPC;
-
-	TWeakObjectPtr<UObject> CachedCarrierObj;
-	class IClcStoneCarrier* CachedCarrier = nullptr;
-
 	// ---- 内部流程 ----
 
-	void CachePlayerRefs();
 	void EnterOpeningMode();
 	void ExitOpeningMode();
 	void PlaceStoneOnBench(int32 StoneIndex);
 	void RemoveStoneFromBench();
 	void DestroyOpeningStone();
-	void BindToBackpackWidget();
 	void ProcessStoneOnBenchInput(float DeltaTime);
-	/** 长按右键 FOV 放大（独立于工具，纯视觉拉近） */
-	void UpdateAimZoom(float DeltaTime);
 	void SetWorkbenchCursor(bool bVisible);
 
 	// ---- 工具管理 ----
@@ -332,16 +288,10 @@ private:
 	// ---- 自适应补光 ----
 
 	/** 按当前状态/工具/手电开关重算目标强度 */
-	void UpdateFillLightTarget();
-	/** 每帧把当前强度平滑追向目标并应用到 FillLight */
-	void TickFillLight(float DeltaTime);
+	virtual void UpdateFillLightTarget() override;
+	virtual UCameraComponent* GetAimZoomCamera() const override;
 
-	UFUNCTION()
-	void OnBackpackStoneSelected(int32 StoneIndex);
-
-	/** InteractionIndicator 委托——背包有石头返回 true（选中态），否则 false（范围内态） */
-	UFUNCTION()
-	bool QueryCanSelect();
+	virtual void OnBackpackStoneSelected(int32 StoneIndex) override;
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other,

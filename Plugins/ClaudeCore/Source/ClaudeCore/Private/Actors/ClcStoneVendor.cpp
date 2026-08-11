@@ -430,22 +430,6 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 // 进入 / 退出展示
 // ============================================================
 
-void AClcStoneVendor::CachePlayerRefs()
-{
-	if (APawn* Pawn = PlayerInRange.Get())
-	{
-		CachedPC = Cast<APlayerController>(Pawn->GetController());
-	}
-
-	if (CachedPC.IsValid())
-	{
-		if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
-		{
-			CachedBackpack = LP->GetSubsystem<UClcBackpackSubsystem>();
-		}
-	}
-}
-
 void AClcStoneVendor::EnterSellMode()
 {
 	if (!CachedPC.IsValid() || !CachedBackpack) return;
@@ -938,32 +922,6 @@ void AClcStoneVendor::ProcessStoneOnBenchInput(float DeltaTime)
 	}
 }
 
-void AClcStoneVendor::UpdateAimZoom(float DeltaTime)
-{
-	if (!VendorCamera) return;
-
-	const bool bAimDown = CachedPC.IsValid() && CachedPC->IsInputKeyDown(EKeys::RightMouseButton);
-	const float TargetFOV = bAimDown ? (BaseFOV / AimZoomFactor) : BaseFOV;
-	const float CurrentFOV = VendorCamera->FieldOfView;
-	const float NewFOV = FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, AimZoomSpeed);
-	VendorCamera->SetFieldOfView(NewFOV);
-}
-
-// ============================================================
-// 背包交互
-// ============================================================
-
-void AClcStoneVendor::BindToBackpackWidget()
-{
-	if (!CachedBackpack) return;
-
-	UClcBackpackWidget* Widget = CachedBackpack->GetBackpackWidget();
-	if (!Widget) return;
-
-	Widget->OnStoneSelected.RemoveDynamic(this, &AClcStoneVendor::OnBackpackStoneSelected);
-	Widget->OnStoneSelected.AddDynamic(this, &AClcStoneVendor::OnBackpackStoneSelected);
-}
-
 void AClcStoneVendor::OnBackpackStoneSelected(int32 StoneIndex)
 {
 	// AwaitingStone：首次选石 → 上台
@@ -1030,25 +988,9 @@ void AClcStoneVendor::UpdateFillLightTarget()
 		: FillLightDisplayIntensity;
 }
 
-void AClcStoneVendor::TickFillLight(float DeltaTime)
+UCameraComponent* AClcStoneVendor::GetAimZoomCamera() const
 {
-	if (!FillLight) return;
-
-	UpdateFillLightTarget();
-
-	if (FillLightTransitionSpeed <= 0.0f || DeltaTime <= 0.0f)
-	{
-		CurrentFillLightIntensity = TargetFillLightIntensity;
-	}
-	else
-	{
-		CurrentFillLightIntensity = FMath::FInterpTo(
-			CurrentFillLightIntensity, TargetFillLightIntensity, DeltaTime, FillLightTransitionSpeed);
-	}
-
-	FillLight->SetIntensity(CurrentFillLightIntensity);
-	// 强度趋近 0 时关掉组件，省光照开销
-	FillLight->SetVisibility(CurrentFillLightIntensity > KINDA_SMALL_NUMBER);
+	return VendorCamera;
 }
 
 // ============================================================
@@ -1278,21 +1220,6 @@ void AClcStoneVendor::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, A
 // ============================================================
 // InteractionIndicator 委托
 // ============================================================
-
-bool AClcStoneVendor::QueryCanSelect()
-{
-	// 背包有石头 → 选中态；空背包 → 仅范围内态
-	APlayerController* PC = CachedPC.IsValid()
-		? CachedPC.Get()
-		: UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	if (!PC || !PC->GetLocalPlayer()) return false;
-
-	if (UClcBackpackSubsystem* BP = PC->GetLocalPlayer()->GetSubsystem<UClcBackpackSubsystem>())
-	{
-		return BP->GetStones().Num() > 0;
-	}
-	return false;
-}
 
 // ============================================================
 // BlueprintNativeEvent 默认实现（蓝图可覆写）

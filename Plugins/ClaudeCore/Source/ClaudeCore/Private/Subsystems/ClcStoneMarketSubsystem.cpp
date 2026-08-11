@@ -515,7 +515,11 @@ int32 UClcStoneMarketSubsystem::CalculateHagglePrice(int32 BasePrice, float Rati
 }
 
 // ============================================================
-// 解石（3D 体积）定价
+// 解石（3D 体积）定价 —— 方案1: 3D 体素场独立锚定
+// B_3D = OriginalJadeVolume × PricePerUnitVolume × GradeMultiplier × CutValueMultiplier
+// 切块价 = GrossPieceBudget × SizeFactor × PurityFactor × CompactnessFactor（不再 ×0.4）
+// 薄片 SizeFactor=0 → 不消耗预算，份额留给后续切块
+// 2D TheoreticalValue 仅作旧存档回退（OriginalJadeVolume=0 时 fallback）
 // ============================================================
 
 int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeData& StoneData,
@@ -529,24 +533,33 @@ int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeDat
 
 	if (!StoneConfig || CutAwayTotal <= 0 || TotalVoxels <= 0)
 	{
-		UE_LOG(LogClaudeCore, Warning,
-			TEXT("[CutBudget][ZERO-1] cfg=%d away=%d totalVox=%d"),
-			StoneConfig != nullptr, CutAwayTotal, TotalVoxels);
 		return 0;
 	}
 
-	// ---- 1. 预算锚点 ----
-	// T=理论全开价值，M=切石放大系数，B=完整切块总预算（预算守恒分摊）。
-	// 注意：T 基于 2D 表皮计算（有机缺陷体分布），而本刀切走的是 3D 体素采样。
-	// 当表皮瑕疵重但内部玉好时，2D 锚定的总预算偏低——此为已知局限，后续可考虑用
-	// 3D 体素场直接重算全石理论价值作为锚点。
-	const float T = FMath::Max(0.0f, StoneData.Internal.TheoreticalValue);
-	const float M = FMath::Max(0.0f, StoneConfig->CutValueMultiplier);
-	const int32 B = FMath::RoundToInt(T * M);
-	if (B <= 0)
+	// ---- 1. 预算锚点 B_3D（3D 体素场玉肉体积 × 单价 × 种水 × 放大系数） ----
+	// 优先 3D（方案1）；OriginalJadeVolume=0（旧存档）时回退 2D T。
+	const bool bHas3D = StoneData.OriginalJadeVolume > KINDA_SMALL_NUMBER;
+	float B;
+	if (bHas3D)
 	{
-		UE_LOG(LogClaudeCore, Warning,
-			TEXT("[CutBudget][ZERO-2] T=%.1f M=%.2f B=%d"), T, M, B);
+		// 3D 独立定价：玉肉体积 × 单价 × 种水系数 × 放大
+		const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+			? StoneConfig->GradeValueMultiplier
+			: GetDefaultGradeValueMultipliers();
+		const float* GradeMult = ValueMults.Find(StoneData.Internal.Grade);
+		const float C_sw = GradeMult ? *GradeMult : 1.0f;
+		B = StoneData.OriginalJadeVolume * StoneConfig->PricePerUnitVolume
+			* C_sw * FMath::Max(0.0f, StoneConfig->CutValueMultiplier);
+	}
+	else
+	{
+		// 旧存档回退：2D T × 放大系数（兼容 2026-08-11 前数据）
+		const float T = FMath::Max(0.0f, StoneData.Internal.TheoreticalValue);
+		const float M = FMath::Max(0.0f, StoneConfig->CutValueMultiplier);
+		B = T * M;
+	}
+	if (B <= KINDA_SMALL_NUMBER)
+	{
 		return 0;
 	}
 
@@ -555,9 +568,6 @@ int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeDat
 	const float OriginalJade = StoneData.ExposedJadeVolume + StoneData.RemainingJadeVolume;
 	if (OriginalJade <= 0.0f)
 	{
-		UE_LOG(LogClaudeCore, Warning,
-			TEXT("[CutBudget][ZERO-3] ExpJade=%.1f RemJade=%.1f OrigJade=%.1f"),
-			StoneData.ExposedJadeVolume, StoneData.RemainingJadeVolume, OriginalJade);
 		return 0;
 	}
 
@@ -570,20 +580,16 @@ int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeDat
 	const int32 PriorConsumed = FMath::Max(StoneData.ConsumedCutBudget, TargetBefore);
 	const int32 GrossPieceBudget = FMath::Max(0, TargetAfter - PriorConsumed);
 
-	OutConsumedBudgetAfter = FMath::Max(PriorConsumed, TargetAfter);
-
 	// ---- 3. 三大修正因子 ----
 	const float Ratio = TotalVoxels > 0
 		? static_cast<float>(CutAwayTotal) / static_cast<float>(TotalVoxels)
 		: 0.0f;
 	const float SizeFactor = ComputeCutSizeFactor(Ratio, StoneConfig);
 
-	// 硬地板或尺寸因子已归零 -> 直接 0 金，但预算照常消耗
+	// 薄片（SizeFactor=0）：不消耗预算，份额留给后续切块（方案1修正）
 	if (SizeFactor <= 0.0f)
 	{
-		UE_LOG(LogClaudeCore, Warning,
-			TEXT("[CutBudget][ZERO-5] Ratio=%.3f SizeFactor=%.3f (away=%d/%d)"),
-			Ratio, SizeFactor, CutAwayTotal, TotalVoxels);
+		OutConsumedBudgetAfter = StoneData.ConsumedCutBudget;
 		return 0;
 	}
 
@@ -592,50 +598,49 @@ int32 UClcStoneMarketSubsystem::CalculateCutPieceValue(const FClcStoneRuntimeDat
 	const float CompactnessFactor = ComputeCompactnessFactor(
 		CutAwayJade, VoxelVolume, PieceJadeBoundingBox);
 
-	// ---- 4. 粗料折算 ----
-	const float RoughDiscount = StoneConfig->RoughStoneDiscount; // 默认 0.4
+	// ---- 4. 结算（方案1: 废除 RoughStoneDiscount 全局折扣） ----
+	OutConsumedBudgetAfter = FMath::Max(PriorConsumed, TargetAfter);
 	const float DynamicValue = static_cast<float>(GrossPieceBudget)
-		* RoughDiscount * SizeFactor * PurityFactor * CompactnessFactor;
+		* SizeFactor * PurityFactor * CompactnessFactor;
 	const int32 PieceGold = FMath::RoundToInt(DynamicValue);
-
-	UE_LOG(LogClaudeCore, Log,
-		TEXT("[CutBudget] Ratio=%.3f T=%.1f B=%d M=%.2f Rough=%.2f | "
-		"Size=%.3f Purity=%.3f Compact=%.3f | "
-		"JadePct=%.1f%% CrackW=%.1f ImpurityW=%.1f | "
-		"gross=%d ConsumedB4=%d ConsumedAfter=%d => gold=%d"),
-		Ratio, T, B, M, RoughDiscount,
-		SizeFactor, PurityFactor, CompactnessFactor,
-		CutAwayTotal > 0 ? 100.0f * static_cast<float>(CutAwayJade) / static_cast<float>(CutAwayTotal) : 0.0f,
-		StoneConfig->CrackPenaltyWeight, StoneConfig->ImpurityPenaltyWeight,
-		GrossPieceBudget, StoneData.ConsumedCutBudget, OutConsumedBudgetAfter, PieceGold);
 
 	return PieceGold;
 }
 
 int32 UClcStoneMarketSubsystem::CalculateCutStoneSalePrice(const FClcStoneRuntimeData& StoneData) const
 {
-	// 剩余主体回收价 = TheoreticalValue x 剩余玉肉份额 x 历史纯度溢价 x 粗料折现
-	const float T = FMath::Max(0.0f, StoneData.Internal.TheoreticalValue);
+	// 方案1: 3D 独立定价——剩余主体回收价 = B_3D × 剩余玉肉份额 × 历史纯度溢价
+	const bool bHas3D = StoneData.OriginalJadeVolume > KINDA_SMALL_NUMBER;
+	const float TotalValue = bHas3D
+		? [&]()
+		{
+			const TMap<EClcJadeGrade, float>& ValueMults = StoneConfig->GradeValueMultiplier.Num() > 0
+				? StoneConfig->GradeValueMultiplier
+				: GetDefaultGradeValueMultipliers();
+			const float* GM = ValueMults.Find(StoneData.Internal.Grade);
+			return StoneData.OriginalJadeVolume * StoneConfig->PricePerUnitVolume
+				* (GM ? *GM : 1.0f) * FMath::Max(0.0f, StoneConfig->CutValueMultiplier);
+		}()
+		: FMath::Max(0.0f, StoneData.Internal.TheoreticalValue);
+
 	const float OriginalJade = StoneData.ExposedJadeVolume + StoneData.RemainingJadeVolume;
 	if (OriginalJade <= 0.0f) return 0;
 
 	const float RemainingRatio = StoneData.RemainingJadeVolume / OriginalJade;
 
-	// 历史已切开部分的累计纯度 (ExposedJade / ExposedCutVolume)
-	float HistoricalPurity = 0.5f; // 默认中性值（未切时）
+	// 历史已切开部分的累计纯度
+	float HistoricalPurity = 0.5f;
 	if (StoneData.ExposedCutVolume > 0.0f)
 	{
 		HistoricalPurity = FMath::Clamp(
 			StoneData.ExposedJadeVolume / StoneData.ExposedCutVolume, 0.0f, 1.0f);
 	}
 
-	// 纯度溢价乘子：历史全是高质量翡翠 -> 剩余主体最高 1.3 倍溢价；全是垃圾 -> 打 0.7 折
+	// 纯度溢价乘子
 	const float PremiumMultiplier = FMath::Lerp(0.7f, 1.3f, HistoricalPurity);
 
-	// 粗料折现系数：与切块定价共享同一折扣基准，避免剩余主体反向贵于单刀
-	const float RoughDiscount = StoneConfig ? StoneConfig->RoughStoneDiscount : 0.4f;
-
-	return FMath::RoundToInt(T * RemainingRatio * PremiumMultiplier * RoughDiscount);
+	// 方案1: 废除 RoughStoneDiscount 全局折扣
+	return FMath::RoundToInt(TotalValue * RemainingRatio * PremiumMultiplier);
 }
 
 int32 UClcStoneMarketSubsystem::CalculatePurchasePrice(const FClcStoneInternalData& Data) const
@@ -698,7 +703,7 @@ void UClcStoneMarketSubsystem::DebugValidateGeneration(int32 Count)
 		AvgCrack += Data.CrackRatio;
 		AvgPatch += Data.LargestGreenPatchRatio;
 
-		// 模拟“全开”：所有玉肉/杂质/裂纹都暴露
+		// 模拟"全开"：所有玉肉/杂质/裂纹都暴露
 		FClcStoneRuntimeData RT;
 		RT.Internal = Data;
 		const float SA = Data.SurfaceArea;
@@ -713,20 +718,7 @@ void UClcStoneMarketSubsystem::DebugValidateGeneration(int32 Count)
 		const int32 Theo = FMath::RoundToInt(Data.TheoreticalValue);
 		const int32 Delta = FMath::Abs(SaleFull - Theo);
 
-		FString GradeName = TEXT("?");
-		if (const UEnum* E = StaticEnum<EClcJadeGrade>())
-		{
-			GradeName = E->GetDisplayNameTextByValue(static_cast<int32>(Data.Grade)).ToString();
-		}
-
-		UE_LOG(LogClaudeCore, Warning,
-			TEXT("[Validate] Seed=%d [%s] | 玉=%.1f%% 裂=%.1f%% 最大连续玉=%.0f%% | 全开售价=%d 理论=%d Δ=%d"),
-			Data.Seed, *GradeName,
-			Data.GreenRatio * 100.0f, Data.CrackRatio * 100.0f,
-			Data.LargestGreenPatchRatio * 100.0f,
-			SaleFull, Theo, Delta);
-
-		if (Delta <= 1) ++ConvergedCount; // 四舍五入容差
+		if (Delta <= 1) ++ConvergedCount;
 		if (Delta > MaxDelta) { MaxDelta = Delta; WorstSeed = Data.Seed; }
 	}
 

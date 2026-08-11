@@ -108,22 +108,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
 	float GamblingKCoefficient = 0.8f;
 
-	/** 隐藏溢价系数（购买标价时，理论价值乘以该系数打入标价） */
+	/** 购买标价 = 基础价 + T × 溢价系数。全开回收价=T，溢价<1 则全开有利润，赌性来自赌价/讨价还价。
+	 *  方案2 修正: 0.25 拉大极品/废石价差（~68x vs 旧版 ~20x），T 信号从 15%→25% */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float HiddenPremiumFactor = 0.15f;
+	float HiddenPremiumFactor = 0.25f;
 
-	/** 石头标价的基础系数（乘以表面积，再叠加隐藏溢价） */
+	/** 石头标价的基础系数（元/cm²，默认 0.03——控制低质石的价格地板） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing")
-	float BasePricePerArea = 0.1f;
+	float BasePricePerArea = 0.03f;
 
-	// ---- 解石定价参数（以 Internal.TheoreticalValue 为唯一经济锚点） ----
+	// ---- 解石定价参数（方案1: 3D 体素场独立锚定，不再依赖 2D Internal.TheoreticalValue） ----
+	// B_3D = OriginalJadeVolume × PricePerUnitVolume × GradeMultiplier × CutValueMultiplier
+	// 2D T 仅作为旧存档回退和购买价的锚点。
+
+	/** 3D 体素玉肉单价（金币/cm³）——对标 PricePerUnitArea=2.0/cm²，按 40cm 特征长度 ratio 标定。
+	 *  0.30 → 中位石头(100000cm³玉) × 糯种(2.0) × 1.3 ≈ 78000 预算，三因子后持平擦窗 T。 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.001"))
+	float PricePerUnitVolume = 0.30f;
 
 	/** 切块最小有价值比例（占原石总体素比）——低于此比例的切块实际金币归零，防薄片速切。
-	 *  注意：毛预算仍会被消耗，不会由后续切块补回。默认 0.05 = 5% 原石体积。 */
+	 *  方案1 修正：薄片不消耗预算（ConsumedCutBudget 不前进），预算留给后续切块。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MinCutRatioForValue = 0.05f;
 
-	/** 切石相对擦石的收益放大系数——Internal.TheoreticalValue × 此系数 = 完整切块总预算。
+	/** 切石收益放大系数——3D 玉肉总预算 × 此系数 = 完整切块总预算。
 	 *  标准切法全部切完时，切块累计金币精确收敛到此预算；剩余主体回收只领取理论价份额（不乘此系数）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting", meta = (ClampMin = "0.0"))
 	float CutValueMultiplier = 1.3f;
@@ -150,9 +158,9 @@ public:
 
 	// ---- 切块纯度与缺陷惩罚参数 ----
 
-	/** 板料/粗料折现系数——毛预算先乘此系数再叠加各因子，解决 T 锚定导致单刀通胀过高。默认 0.4。 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RoughStoneDiscount = 0.4f;
+	/** @deprecated 方案1 已废除——切石定价不再乘此全局折扣。保留字段兼容旧 DA 序列化。 */
+	UPROPERTY()
+	float RoughStoneDiscount_DEPRECATED = 0.4f;
 
 	/** 纯度指数映射幂次——JadePurity 做 pow(..., PurityExponent) 非线性映射。>1 压低中低纯度切块，<1 反之。默认 1.5。 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pricing|Cutting|Purity", meta = (ClampMin = "0.1", ClampMax = "5.0"))

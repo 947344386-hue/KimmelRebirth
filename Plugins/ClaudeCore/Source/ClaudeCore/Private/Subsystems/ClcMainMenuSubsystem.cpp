@@ -114,9 +114,9 @@ void UClcMainMenuSubsystem::StartNewGame(const FClcSessionConfig& Config)
 
 	HideMainMenu();
 
-	// 委托给 GameInstance——通过 GetWorld() 拿 GameInstance（ULocalPlayerSubsystem 没有直接 GetGameInstance）
-	UWorld* World = GetWorld();
-	UGameInstance* RawGI = World ? World->GetGameInstance() : nullptr;
+	// 委托给 GameInstance
+	// 注意：ULocalPlayerSubsystem 没有直接 GetGameInstance()，走 LocalPlayer → GetGameInstance
+	UGameInstance* RawGI = GetLocalPlayer() ? GetLocalPlayer()->GetGameInstance() : nullptr;
 	UClcGameInstance* GI = Cast<UClcGameInstance>(RawGI);
 	if (GI)
 	{

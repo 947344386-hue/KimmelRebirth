@@ -64,7 +64,7 @@ void UClcMainMenuWidget::RefreshSaveSlots()
 		TArray<FClcSaveMetaData> Slots = MenuSubsystem->GetSaveSlots();
 		const bool bHasSaves = Slots.Num() > 0;
 
-		// 有存档 → 隐藏"无存档"提示，启用继续按钮
+		// 有存档 → 隐藏"无存档"提示，启用继续按钮和删档按钮
 		if (NoSavesText)
 		{
 			NoSavesText->SetVisibility(bHasSaves ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
@@ -72,6 +72,10 @@ void UClcMainMenuWidget::RefreshSaveSlots()
 		if (ContinueButton)
 		{
 			ContinueButton->SetIsEnabled(bHasSaves);
+		}
+		if (DeleteSaveButton)
+		{
+			DeleteSaveButton->SetVisibility(bHasSaves ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		}
 	}
 }

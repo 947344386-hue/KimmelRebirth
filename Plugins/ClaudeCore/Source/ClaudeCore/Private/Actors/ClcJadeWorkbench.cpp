@@ -22,6 +22,7 @@
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcWorkbenchHUD.h"
@@ -648,6 +649,15 @@ void AClcJadeWorkbench::ExitOpeningMode()
 			if (UClcLogToastSubsystem* LT = ClcGetLogToast(CachedPC))
 			{
 				LT->AddLog(TEXT("擦石进度已保存"), 2.0f, FLinearColor(0.f, 1.f, 1.f));
+			}
+
+			// 通知任务系统：擦石完成 +1
+			if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+			{
+				if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				{
+					QS->NotifyObjectiveProgress(EClcQuestObjectiveType::UseWorkbench, 1);
+				}
 			}
 		}
 	}

@@ -9,6 +9,7 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Components/ClcInteractionComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -167,6 +168,12 @@ void AClcToolRepairStation::ExecuteRepair(APlayerController* PC)
 	if (DuraSys)
 	{
 		DuraSys->RestoreDurabilityMask(RepairableTools);
+	}
+
+	// 通知任务系统：成功修理 +1
+	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+	{
+		QS->NotifyObjectiveProgress(EClcQuestObjectiveType::RepairTool, 1);
 	}
 
 	// Toast 提示

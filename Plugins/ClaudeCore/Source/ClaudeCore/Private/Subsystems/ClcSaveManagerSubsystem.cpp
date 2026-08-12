@@ -3,6 +3,7 @@
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "ClcGameInstance.h"
 #include "ClcLog.h"
 #include "Data/ClcSessionTypes.h"
@@ -198,6 +199,10 @@ FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const
 			if (TD->OwnsUpgrade(Upg)) Data.SavedUpgrades.Add(static_cast<int32>(Upg));
 		}
 	}
+	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+	{
+		QS->SerializeForSave(Data.SavedQuestStates);
+	}
 	if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
 		Data.SessionConfig = ClcGI->GetSessionConfig();
 
@@ -227,6 +232,8 @@ void UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
 		BP->RestoreFromSaveData(Data);
 	if (UClcToolDurabilitySubsystem* TD = LP->GetSubsystem<UClcToolDurabilitySubsystem>())
 		TD->RestoreFromSaveData(Data);
+	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+		QS->RestoreFromSaveData(Data, /*bIsNewGame=*/false);
 
 	// 玩家坐标缓存到 GameInstance，等关卡加载后 Pawn 就绪再应用
 	// （此处可能还在旧关卡，Pawn 不可用）

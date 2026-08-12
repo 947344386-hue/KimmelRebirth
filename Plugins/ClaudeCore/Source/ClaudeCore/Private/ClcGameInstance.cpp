@@ -7,6 +7,7 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcPauseMenuSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "UObject/UObjectGlobals.h"
@@ -102,6 +103,11 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 				{
 					BP->SetSessionConfig(CurrentSessionConfig);
 				}
+				// 新游戏：接取所有链首任务
+				if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				{
+					QS->AcceptAllQuests();
+				}
 			}
 		}
 
@@ -111,7 +117,7 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 			SM->SetAutoSaveEnabled(true);
 		}
 
-		// 关卡切换后重建常驻 HUD + 重绑 PauseMenu 输入
+		// 关卡切换后重建常驻 HUD + 重绑 PauseMenu 输入 + 重建任务追踪面板
 		if (const ULocalPlayer* LP = GetFirstGamePlayer())
 		{
 			if (UClcBackpackSubsystem* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
@@ -121,6 +127,10 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 			if (UClcPauseMenuSubsystem* PM = LP->GetSubsystem<UClcPauseMenuSubsystem>())
 			{
 				PM->RefreshInputBinding();
+			}
+			if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+			{
+				QS->RebuildTracker();
 			}
 		}
 

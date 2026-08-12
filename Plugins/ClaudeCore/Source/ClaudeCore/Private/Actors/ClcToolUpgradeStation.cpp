@@ -10,6 +10,7 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Actors/ClcFacilityManager.h"
 #include "UI/ClcToolUpgradeMenuWidget.h"
 #include "GameFramework/Pawn.h"
@@ -252,6 +253,18 @@ void AClcToolUpgradeStation::ExecutePurchase(int32 ItemIndex)
 		return;
 	}
 	DuraSys->GrantUpgrade(Item.Type);
+
+	// 通知任务系统：刷新解锁升级绝对型目标
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* QuestLP = CachedPC->GetLocalPlayer())
+		{
+			if (UClcQuestSubsystem* QS = QuestLP->GetSubsystem<UClcQuestSubsystem>())
+			{
+				QS->NotifyObjectiveProgress(EClcQuestObjectiveType::UnlockUpgrade, 0);
+			}
+		}
+	}
 
 	if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 	{

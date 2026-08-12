@@ -9,6 +9,8 @@
 #include "UI/ClcStoneInfoWidget.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "ClcDeveloperSettings.h"
 #include "Materials/MaterialInterface.h"
 #include "Data/ClcShellTextureConfig.h"
@@ -19,7 +21,6 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
-#include "Subsystems/ClcStoneMarketSubsystem.h"
 
 AClcStone::AClcStone()
 {
@@ -192,6 +193,12 @@ bool AClcStone::OnInteract(AActor* Interactor)
 	}
 
 	Backpack->AddStone(RuntimeData);
+
+	// 通知任务系统：购买原石 +1
+	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+	{
+		QS->NotifyObjectiveProgress(EClcQuestObjectiveType::BuyStones, 1);
+	}
 
 	if (UClcLogToastSubsystem* LT = LP->GetSubsystem<UClcLogToastSubsystem>())
 	{

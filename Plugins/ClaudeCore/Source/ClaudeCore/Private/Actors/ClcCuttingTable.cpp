@@ -25,6 +25,7 @@
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcStoneConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcCuttingTableHUD.h"
@@ -609,6 +610,18 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 	}
 	bCutExecutedThisCycle = true;
 
+	// 通知任务系统：解石完成 +1
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+			{
+				QS->NotifyObjectiveProgress(EClcQuestObjectiveType::CutStones, 1);
+			}
+		}
+	}
+
 	// 记录实际移除侧（ExecuteCut 内部自动选了较小侧，这里从 LastCutPieceWorldCenter 反推）
 	const FVector CutPieceLoc = CuttingStone->GetCutPieceWorldLocation();
 	const bool bActuallyRemovedNegOnRetry = FVector::DotProduct(
@@ -1110,6 +1123,18 @@ bool AClcCuttingTable::SellRemainingStone()
 	if (SellPrice > 0)
 	{
 		CachedBackpack->AddGold(SellPrice);
+
+		// 通知任务系统：卖出石头 +1
+		if (CachedPC.IsValid())
+		{
+			if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+			{
+				if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				{
+					QS->NotifyObjectiveProgress(EClcQuestObjectiveType::SellStones, 1);
+				}
+			}
+		}
 
 		const FVector WorldPos = CuttingStone->GetCutPieceWorldLocation();
 		FVector2D ScreenPos;

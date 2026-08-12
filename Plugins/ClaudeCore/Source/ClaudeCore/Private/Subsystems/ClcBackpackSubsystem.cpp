@@ -3,6 +3,7 @@
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "ClcLog.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcBackpackHudWidget.h"
@@ -256,6 +257,14 @@ void UClcBackpackSubsystem::AddGold(int32 Amount)
 	}
 	RefreshHud();
 	NotifySaveManagerGoldChanged();
+	// 通知任务系统刷新绝对型目标（EarnGold/ReachGoldTotal）
+	if (const ULocalPlayer* LP = GetLocalPlayer())
+	{
+		if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+		{
+			QS->NotifyObjectiveProgress(EClcQuestObjectiveType::EarnGold, 0);
+		}
+	}
 }
 
 bool UClcBackpackSubsystem::SpendGold(int32 Amount)
@@ -269,6 +278,14 @@ bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 	}
 	RefreshHud();
 	NotifySaveManagerGoldChanged();
+	// 持有金币变动可能触发 ReachGoldTotal（下降也可能达成低阈值目标）
+	if (const ULocalPlayer* LP = GetLocalPlayer())
+	{
+		if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+		{
+			QS->NotifyObjectiveProgress(EClcQuestObjectiveType::ReachGoldTotal, 0);
+		}
+	}
 	return true;
 }
 
@@ -298,8 +315,8 @@ void UClcBackpackSubsystem::RestoreFromSaveData(const FClcSaveData& Data)
 void UClcBackpackSubsystem::SetSessionConfig(const FClcSessionConfig& Config)
 {
 	Gold = Config.StartingGold;
-	// 新游戏开局：累计收益重置为起始金币（== 当前 Gold）
-	TotalEarned = Config.StartingGold;
+	// 起始资金不是玩家赚取的收益；赚钱任务从 0 开始累计。
+	TotalEarned = 0;
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] 会话配置已应用 —— StartingGold=%d, Difficulty=%d"), Config.StartingGold, static_cast<uint8>(Config.Difficulty));
 	RefreshHud();
 }

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Data/ClcJadeTypes.h"
+#include "Quest/ClcQuestTypes.h"
 #include "ClcSessionTypes.generated.h"
 
 /**
@@ -104,7 +105,7 @@ struct CLAUDECORE_API FClcSaveData
 
 	// 任务
 	UPROPERTY(SaveGame)
-	TMap<FName, int32> SavedQuestStates;
+	TMap<FName, FClcQuestRuntimeState> SavedQuestStates;
 
 	// 会话
 	UPROPERTY(SaveGame)

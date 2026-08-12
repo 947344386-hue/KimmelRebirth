@@ -1,4 +1,5 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "ClcLog.h"
 #include "Data/ClcSessionTypes.h"
 #include "Engine/World.h"
@@ -52,7 +53,22 @@ void UClcToolDurabilitySubsystem::SetDurability(EClcRepairableTool ToolType, flo
 	if (ToolType == EClcRepairableTool::None) return;
 	const float* MaxVal = MaxDurabilityStore.Find(ToolType);
 	if (!MaxVal) return;
-	DurabilityStore.Add(ToolType, FMath::Clamp(Value, 0.0f, *MaxVal));
+
+	const float OldValue = GetDurability(ToolType);
+	const float NewValue = FMath::Clamp(Value, 0.0f, *MaxVal);
+	DurabilityStore.Add(ToolType, NewValue);
+
+	// 耐久下降 → 通知任务系统刷新 ToolDamaged 绝对型目标
+	if (NewValue < OldValue - KINDA_SMALL_NUMBER)
+	{
+		if (const ULocalPlayer* LP = GetLocalPlayer())
+		{
+			if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+			{
+				QS->NotifyObjectiveProgress(EClcQuestObjectiveType::ToolDamaged, 0);
+			}
+		}
+	}
 }
 
 void UClcToolDurabilitySubsystem::RestoreDurability(EClcRepairableTool ToolType)

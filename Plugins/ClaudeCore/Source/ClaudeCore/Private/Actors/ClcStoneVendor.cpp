@@ -361,6 +361,18 @@ void AClcStoneVendor::CompleteSellWithPrice(int32 Price)
 		CachedBackpack->AddGold(Price);
 	}
 
+	// 通知任务系统：卖出石头 +1
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+			{
+				QS->NotifyObjectiveProgress(EClcQuestObjectiveType::SellStones, 1);
+			}
+		}
+	}
+
 	// 销毁台上石头
 	DestroyBenchStone();
 

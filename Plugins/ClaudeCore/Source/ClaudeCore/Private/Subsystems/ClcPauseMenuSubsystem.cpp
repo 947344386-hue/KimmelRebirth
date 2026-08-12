@@ -130,9 +130,11 @@ bool UClcPauseMenuSubsystem::OpenMenu()
 	bOwnsInputState = true;
 	PC->bShowMouseCursor = true;
 
-	FInputModeUIOnly InputMode;
+	// GameAndUI 模式：UI 接收输入 + 保留编辑器快捷键（F11 等），角色输入由 SetIgnoreMoveInput 屏蔽
+	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(MenuWidget->TakeWidget());
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
 	PC->SetInputMode(InputMode);
 	// 设键盘焦点：菜单打开时接收 Esc 关闭事件，NativeOnKeyDown 才能触发
 	MenuWidget->SetKeyboardFocus();

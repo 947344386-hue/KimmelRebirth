@@ -73,11 +73,21 @@ void UClcMainMenuSubsystem::ShowMainMenu()
 	MenuWidget->InitializeMenu(this);
 	MenuWidget->AddToViewport(0);  // ZOrder 0——全屏最底层
 
-	// 切换到纯 UI 输入模式
-	FInputModeUIOnly InputMode;
-	InputMode.SetWidgetToFocus(MenuWidget->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	PC->SetInputMode(InputMode);
+	// 编辑器/PIE 环境用 GameAndUI（保留 F11、编辑器快捷键）；打包后用 UIOnly（完全屏蔽游戏输入）
+	if (GIsEditor)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(MenuWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+	}
+	else
+	{
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(MenuWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+	}
 	PC->bShowMouseCursor = true;
 
 	bMenuVisible = true;

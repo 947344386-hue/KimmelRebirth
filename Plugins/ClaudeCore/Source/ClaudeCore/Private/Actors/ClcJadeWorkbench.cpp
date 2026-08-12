@@ -599,8 +599,21 @@ void AClcJadeWorkbench::EnterOpeningMode()
 	}
 
 	CurrentState = EClcWorkbenchState::AwaitingStone;
-	HidePrompt();  // 向后兼容：BP 端如有文字提示则隐藏
-	if (InteractionIndicator) InteractionIndicator->bHidden = true;  // 擦石模式隐藏小白点（切相机避免碍事）
+	HidePrompt();
+	if (InteractionIndicator) InteractionIndicator->bHidden = true;
+
+	// 隐藏常驻 UI，避免与擦石台 HUD 冲突
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(false);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(false);
+
 	OnEnterOpeningMode();
 
 	// 打开背包
@@ -675,6 +688,18 @@ void AClcJadeWorkbench::ExitOpeningMode()
 
 	// 恢复小白点（玩家还在范围内会自动显示）
 	if (InteractionIndicator) InteractionIndicator->bHidden = false;
+
+	// 恢复常驻 UI
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(true);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(true);
 
 	OnExitOpeningMode();
 

@@ -312,6 +312,14 @@ void UClcBackpackSubsystem::RestoreFromSaveData(const FClcSaveData& Data)
 	}
 }
 
+void UClcBackpackSubsystem::SetHudVisible(bool bVisible)
+{
+	if (HudWidget)
+	{
+		HudWidget->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
 void UClcBackpackSubsystem::SetSessionConfig(const FClcSessionConfig& Config)
 {
 	Gold = Config.StartingGold;

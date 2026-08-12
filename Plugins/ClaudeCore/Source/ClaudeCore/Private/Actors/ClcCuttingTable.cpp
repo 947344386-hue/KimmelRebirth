@@ -315,6 +315,19 @@ void AClcCuttingTable::EnterCuttingMode()
 
 	CurrentState = EClcCuttingTableState::AwaitingStone;
 	InteractionIndicator->bHidden = true;
+
+	// 隐藏常驻 UI，避免与解石台 HUD 冲突
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(false);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(false);
+
 	OnEnterCuttingMode();
 
 	if (UClcBackpackSubsystem* Backpack = GetBackpack())
@@ -359,6 +372,18 @@ void AClcCuttingTable::ExitCuttingMode()
 	InteractionIndicator->bHidden = false;
 	OnExitCuttingMode();
 	SetCuttingInputMode();
+
+	// 恢复常驻 UI
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(true);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(true);
 
 	bExitKeyPrev = false;
 	bBackpackKeyPrev = false;

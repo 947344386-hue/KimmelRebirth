@@ -3,6 +3,7 @@
 #include "Subsystems/ClcPauseMenuSubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
+#include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "UI/ClcPauseMenuWidget.h"
 #include "ClcGameInstance.h"
 #include "ClcLog.h"
@@ -35,6 +36,17 @@ void UClcPauseMenuSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			EnsureInputBinding();
 			return true;
 		}));
+
+	// 注册 Esc 暂停提示到左下角 KeyPrompt UI
+	if (ULocalPlayer* LP = GetLocalPlayer())
+	{
+		if (UClcKeyPromptSubsystem* KP = LP->GetSubsystem<UClcKeyPromptSubsystem>())
+		{
+			KP->RegisterKeyPrompt(EKeys::Escape,
+				NSLOCTEXT("ClcPause", "EscPrompt", "暂停"),
+				FName("System"), 999);
+		}
+	}
 }
 
 void UClcPauseMenuSubsystem::Deinitialize()

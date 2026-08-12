@@ -65,6 +65,9 @@ public:
 	/** 关卡切换后 GameInstance 调用：重建常驻 HUD */
 	void RebuildHud();
 
+	/** 显/隐常驻金币条（工作台独占流程中隐藏，避免与流程 HUD 冲突） */
+	void SetHudVisible(bool bVisible);
+
 private:
 	/** 金币变动后通知 SaveManager */
 	void NotifySaveManagerGoldChanged();

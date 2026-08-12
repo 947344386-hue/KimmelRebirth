@@ -104,9 +104,9 @@ struct CLAUDECORE_API FClcQuestData
         switch (ObjectiveType)
         {
         case EClcQuestObjectiveType::CutStones:
-            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_CutStones", "解石 {0} 块"), FText::AsNumber(ObjectiveParam));
+            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_CutStones", "尝试解石 {0} 次"), FText::AsNumber(ObjectiveParam));
         case EClcQuestObjectiveType::UseWorkbench:
-            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_UseWorkbench", "擦石 {0} 次"), FText::AsNumber(ObjectiveParam));
+            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_UseWorkbench", "尝试擦石 {0} 次"), FText::AsNumber(ObjectiveParam));
         case EClcQuestObjectiveType::BuyStones:
             return FText::Format(NSLOCTEXT("ClcQuest", "Auto_BuyStones", "购买 {0} 块原石"), FText::AsNumber(ObjectiveParam));
         case EClcQuestObjectiveType::SellStones:
@@ -116,13 +116,13 @@ struct CLAUDECORE_API FClcQuestData
         case EClcQuestObjectiveType::UnlockUpgrade:
             if (ObjectiveParam == 0)
             {
-                return NSLOCTEXT("ClcQuest", "Auto_UnlockCombinedTool", "解锁手电擦石器");
+                return NSLOCTEXT("ClcQuest", "Auto_UnlockCombinedTool", "前往升级台-升级手电擦石器");
             }
             if (ObjectiveParam == 1)
             {
-                return NSLOCTEXT("ClcQuest", "Auto_UnlockCuttingTable", "解锁解石台");
+                return NSLOCTEXT("ClcQuest", "Auto_UnlockCuttingTable", "前往升级台-升级解石台");
             }
-            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_UnlockUpgrade", "解锁升级 #{0}"), FText::AsNumber(ObjectiveParam));
+            return FText::Format(NSLOCTEXT("ClcQuest", "Auto_UnlockUpgrade", "前往升级台-升级 #{0}"), FText::AsNumber(ObjectiveParam));
         case EClcQuestObjectiveType::EarnGold:
             return FText::Format(NSLOCTEXT("ClcQuest", "Auto_EarnGold", "累计赚 {0} 金币"), FText::AsNumber(ObjectiveParam));
         case EClcQuestObjectiveType::ReachGoldTotal:

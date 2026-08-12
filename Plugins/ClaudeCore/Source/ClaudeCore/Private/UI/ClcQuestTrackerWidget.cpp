@@ -89,18 +89,61 @@ void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory 
 		}
 	}
 
-	const TMap<FName, FClcQuestRuntimeState>& States = Subsystem->GetRuntimeStates();
-
-	for (const auto& Pair : States)
+	// 先收集匹配任务，按 ObjectiveType → 显示名长度排序，再构建 UI 行
+	TArray<FName> SortedIDs;
 	{
-		const FClcQuestData* Def = Subsystem->FindQuestDef(Pair.Key);
-		if (!Def) continue;
-		if (Def->Category != Category) continue;
-		if (Pair.Value.State != EClcQuestState::Active) continue;
-		if (!Def->bShowOnTracker) continue;
+		const TMap<FName, FClcQuestRuntimeState>& States = Subsystem->GetRuntimeStates();
+		for (const auto& Pair : States)
+		{
+			const FClcQuestData* Def = Subsystem->FindQuestDef(Pair.Key);
+			if (!Def) continue;
+			if (Def->Category != Category) continue;
+			if (Pair.Value.State != EClcQuestState::Active) continue;
+			if (!Def->bShowOnTracker) continue;
+			SortedIDs.Add(Pair.Key);
+		}
+		SortedIDs.Sort([Subsystem](FName A, FName B)
+		{
+			const FClcQuestData* DefA = Subsystem->FindQuestDef(A);
+			const FClcQuestData* DefB = Subsystem->FindQuestDef(B);
+			if (!DefA || !DefB) return false;
 
-		// 一行：任务名 + 进度。名称带 QuestID，刷新后对象名不冲突。
-		const FString QuestName = Pair.Key.ToString();
+			// 排序优先级：增量型 > 绝对次数型 > 绝对布尔型，同级按显示名长度
+			auto Rank = [](EClcQuestObjectiveType T) -> int32
+			{
+				switch (T)
+				{
+				case EClcQuestObjectiveType::CutStones:
+				case EClcQuestObjectiveType::UseWorkbench:
+				case EClcQuestObjectiveType::BuyStones:
+				case EClcQuestObjectiveType::SellStones:
+				case EClcQuestObjectiveType::RepairTool:
+					return 0; // 增量型
+				case EClcQuestObjectiveType::EarnGold:
+				case EClcQuestObjectiveType::ReachGoldTotal:
+					return 1; // 绝对次数型
+				case EClcQuestObjectiveType::UnlockUpgrade:
+				case EClcQuestObjectiveType::ToolDamaged:
+					return 2; // 绝对布尔型
+				default:
+					return 3;
+				}
+			};
+			const int32 RankA = Rank(DefA->ObjectiveType);
+			const int32 RankB = Rank(DefB->ObjectiveType);
+			if (RankA != RankB) return RankA < RankB;
+			const int32 LenA = DefA->GetDisplayName().ToString().Len();
+			const int32 LenB = DefB->GetDisplayName().ToString().Len();
+			return LenA < LenB;
+		});
+	}
+
+	for (FName QuestID : SortedIDs)
+	{
+		const FClcQuestData* Def = Subsystem->FindQuestDef(QuestID);
+		if (!Def) continue;
+
+		const FString QuestName = QuestID.ToString();
 		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
 			UHorizontalBox::StaticClass(), FName(*(TEXT("QuestRow_") + QuestName)));
 
@@ -120,7 +163,7 @@ void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory 
 		}
 
 		// 进度文本（绝对型由 Subsystem 实时从 Backpack 读）
-		const FString ProgressText = Subsystem->GetQuestProgressText(Pair.Key);
+		const FString ProgressText = Subsystem->GetQuestProgressText(QuestID);
 
 		UTextBlock* ProgressTB = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(), FName(*(TEXT("QuestProgress_") + QuestName)));

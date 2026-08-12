@@ -426,6 +426,14 @@ void UClcQuestSubsystem::RebuildTracker()
 	DeferredCreateTracker();
 }
 
+void UClcQuestSubsystem::SetTrackerVisible(bool bVisible)
+{
+	if (TrackerWidget)
+	{
+		TrackerWidget->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
 void UClcQuestSubsystem::DeferredCreateTracker()
 {
 	if (TrackerWidget) return;

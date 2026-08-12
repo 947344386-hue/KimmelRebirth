@@ -83,6 +83,9 @@ public:
     /** 刷新追踪面板显示（进度变化时调用） */
     void RefreshTracker();
 
+    /** 显/隐追踪面板（工作台独占流程中隐藏，避免与流程 HUD 冲突） */
+    void SetTrackerVisible(bool bVisible);
+
 private:
     /** 加载 DA_QuestConfig 到 QuestDefs */
     void LoadQuestConfig();

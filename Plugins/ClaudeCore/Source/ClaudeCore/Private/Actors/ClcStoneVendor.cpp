@@ -23,6 +23,7 @@
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
+#include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcVendorHUD.h"
@@ -454,7 +455,19 @@ void AClcStoneVendor::EnterSellMode()
 	}
 	if (InteractionIndicator) InteractionIndicator->bHidden = true;
 
-	OnEnterSellMode(); // 切相机 + 锁输入（_Implementation）
+	// 隐藏常驻 UI，避免与出售台 HUD 冲突
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(false);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(false);
+
+	OnEnterSellMode();
 
 	// 打开背包
 	if (!CachedBackpack->IsBackpackOpen())
@@ -518,7 +531,19 @@ void AClcStoneVendor::ExitSellMode()
 	// 恢复小白点（玩家还在范围内会自动显示）
 	if (InteractionIndicator) InteractionIndicator->bHidden = false;
 
-	OnExitSellMode(); // 恢复相机 + 输入（_Implementation）
+	// 恢复常驻 UI
+	if (CachedPC.IsValid())
+	{
+		if (const ULocalPlayer* LP = CachedPC->GetLocalPlayer())
+		{
+			if (auto* QS = LP->GetSubsystem<UClcQuestSubsystem>())
+				QS->SetTrackerVisible(true);
+		}
+	}
+	if (CachedBackpack)
+		CachedBackpack->SetHudVisible(true);
+
+	OnExitSellMode();
 
 	// NPC 反馈：退出出售模式（主动离开；售空退出时已在 OnNpcSold 中处理）
 	OnNpcExitSellMode(/*bSoldAll=*/false);

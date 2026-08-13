@@ -7,6 +7,7 @@
 #include "ClcPauseMenuSubsystem.generated.h"
 
 class UClcPauseMenuWidget;
+class UClcSaveSlotListWidget;
 class UInputAction;
 class UEnhancedInputComponent;
 
@@ -50,8 +51,25 @@ private:
 	void EnsureInputBinding();
 	void RemoveInputBinding();
 
+	/** 打开 2 级槽位列表（Save=选槽写档 / Load=选槽读档） */
+	void OpenSlotList(bool bLoadMode);
+
+	/** 槽位列表结果回调 */
+	UFUNCTION()
+	void HandleSlotPicked(const FString& SlotName);
+
+	/** 关闭 2 级槽位列表 */
+	void CloseSlotList();
+
 	UPROPERTY(Transient)
 	TObjectPtr<UClcPauseMenuWidget> MenuWidget;
+
+	/** 2 级槽位列表 Widget（手动存档/读取） */
+	UPROPERTY(Transient)
+	TObjectPtr<UClcSaveSlotListWidget> SlotListWidget;
+
+	/** 槽位列表当前模式（Load=读档 / Save=写档） */
+	bool bSlotListLoadMode = false;
 
 	TSubclassOf<UClcPauseMenuWidget> MenuWidgetClass;
 

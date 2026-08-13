@@ -139,10 +139,10 @@ void UClcMainMenuWidget::HandleStartClicked()
 
 void UClcMainMenuWidget::HandleContinueClicked()
 {
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 继续游戏"));
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 继续游戏——打开存档选择"));
 	if (MenuSubsystem.IsValid())
 	{
-		MenuSubsystem->ContinueGame(TEXT("AutoSave"));
+		MenuSubsystem->OpenContinueSlotList();
 	}
 }
 
@@ -157,19 +157,10 @@ void UClcMainMenuWidget::HandleQuitClicked()
 
 void UClcMainMenuWidget::HandleDeleteSaveClicked()
 {
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 删除存档"));
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 删除存档——打开槽位选择"));
 	if (MenuSubsystem.IsValid())
 	{
-		const bool bDeleted = MenuSubsystem->DeleteSave(TEXT("AutoSave"));
-		if (bDeleted)
-		{
-			UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] 删档成功"));
-			RefreshSaveSlots();
-		}
-		else
-		{
-			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMainMenuWidget] 没有可删除的存档"));
-		}
+		MenuSubsystem->OpenDeleteSlotList();
 	}
 }
 

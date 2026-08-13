@@ -40,10 +40,6 @@ struct CLAUDECORE_API FClcSlotSaveState
 	/** 展示名 */
 	UPROPERTY(SaveGame)
 	FString DisplayName;
-
-	/** Mesh 稳定索引——从 StallConfig 表查找，避免 TSoftObjectPtr 跨版本失效 */
-	UPROPERTY(SaveGame)
-	int32 MeshIndex = 0;
 };
 
 /**
@@ -57,10 +53,6 @@ struct CLAUDECORE_API FClcStallSaveState
 	/** 关卡中唯一标识（对应 GetPathName，与 AClcStoneStall::GetStallId() 一致） */
 	UPROPERTY(SaveGame)
 	FName StallId;
-
-	/** 当前批次种子（换批档口购买时更新） */
-	UPROPERTY(SaveGame)
-	int32 BatchSeed = 0;
 
 	/** 各槽位状态 */
 	UPROPERTY(SaveGame)

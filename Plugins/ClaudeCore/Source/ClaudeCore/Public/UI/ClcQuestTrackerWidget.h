@@ -10,6 +10,7 @@
 class UVerticalBox;
 class UTextBlock;
 class UClcQuestSubsystem;
+class UClcQuestEntryWidget;
 
 /**
  * 左侧常驻任务追踪面板 —— 主/支线分组显示。
@@ -50,6 +51,10 @@ protected:
 	/** 支线任务列表容器 */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcQuest")
 	TObjectPtr<UVerticalBox> SideQuestList;
+
+	/** 任务行控件类（BP 换肤入口，在 WBP_QuestTracker 的 Class Defaults 里设） */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ClcQuest|UI")
+	TSubclassOf<UClcQuestEntryWidget> EntryWidgetClass;
 
 private:
 	void BuildDefaultLayout();

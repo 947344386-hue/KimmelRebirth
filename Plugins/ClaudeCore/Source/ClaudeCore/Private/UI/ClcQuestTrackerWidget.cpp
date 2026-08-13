@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcQuestTrackerWidget.h"
+#include "UI/ClcQuestEntryWidget.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "Quest/ClcQuestTypes.h"
 #include "Blueprint/WidgetTree.h"
@@ -8,8 +9,6 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Styling/SlateColor.h"
 
@@ -17,6 +16,7 @@ UClcQuestTrackerWidget::UClcQuestTrackerWidget(const FObjectInitializer& ObjectI
 	: Super(ObjectInitializer)
 {
 	SetVisibility(ESlateVisibility::HitTestInvisible);
+	EntryWidgetClass = UClcQuestEntryWidget::StaticClass();
 }
 
 void UClcQuestTrackerWidget::NativeOnInitialized()
@@ -98,14 +98,16 @@ void UClcQuestTrackerWidget::RefreshDisplay(UClcQuestSubsystem* Subsystem)
 
 void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory Category, UClcQuestSubsystem* Subsystem)
 {
-	// 动态行不仅从 Panel 脱离，也从 WidgetTree 移除，避免多次刷新后旧行残留。
+	// 动态行由 CreateWidget 创建、不在 WidgetTree 里（不能用 WidgetTree->RemoveWidget，
+	// 否则触发 ensure）。逐个 RemoveFromParent 保证行的 NativeDestruct 正常执行。
 	for (int32 Index = List->GetChildrenCount() - 1; Index >= 0; --Index)
 	{
 		if (UWidget* Child = List->GetChildAt(Index))
 		{
-			WidgetTree->RemoveWidget(Child);
+			Child->RemoveFromParent();
 		}
 	}
+	List->ClearChildren();
 
 	// 先收集匹配任务，按 ObjectiveType → 显示名长度排序，再构建 UI 行
 	TArray<FName> SortedIDs;
@@ -161,40 +163,25 @@ void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory 
 		const FClcQuestData* Def = Subsystem->FindQuestDef(QuestID);
 		if (!Def) continue;
 
-		const FString QuestName = QuestID.ToString();
-		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(), FName(*(TEXT("QuestRow_") + QuestName)));
+		const FClcQuestRuntimeState* State = Subsystem->FindRuntimeState(QuestID);
+		if (!State) continue;
 
-		UTextBlock* NameTB = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), FName(*(TEXT("QuestName_") + QuestName)));
+		FClcQuestEntryView View;
+		View.QuestID = QuestID;
 		// 显示名：留空时由 GetDisplayName 按 ObjectiveType+ObjectiveParam 自动生成
-		NameTB->SetText(Def->GetDisplayName());
-		NameTB->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.9f, 0.9f)));
-		{
-			FSlateFontInfo Font = NameTB->GetFont();
-			Font.Size = 13;
-			NameTB->SetFont(Font);
-		}
-		if (UHorizontalBoxSlot* NSlot = Row->AddChildToHorizontalBox(NameTB))
-		{
-			NSlot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
-		}
-
+		View.DisplayName = Def->GetDisplayName();
 		// 进度文本（绝对型由 Subsystem 实时从 Backpack 读）
-		const FString ProgressText = Subsystem->GetQuestProgressText(QuestID);
+		View.ProgressText = Subsystem->GetQuestProgressText(QuestID);
+		View.CurrentProgress = State->CurrentProgress;
+		View.ObjectiveParam = Def->ObjectiveParam;
+		View.ObjectiveType = Def->ObjectiveType;
+		View.Category = Category;
 
-		UTextBlock* ProgressTB = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(), FName(*(TEXT("QuestProgress_") + QuestName)));
-		ProgressTB->SetText(FText::FromString(ProgressText));
-		ProgressTB->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f)));
-		{
-			FSlateFontInfo Font = ProgressTB->GetFont();
-			Font.Size = 13;
-			ProgressTB->SetFont(Font);
-		}
-		Row->AddChildToHorizontalBox(ProgressTB);
+		UClcQuestEntryWidget* Entry = CreateWidget<UClcQuestEntryWidget>(GetOwningPlayer(), EntryWidgetClass);
+		if (!Entry) continue;
 
-		if (UVerticalBoxSlot* RowSlot = List->AddChildToVerticalBox(Row))
+		Entry->SetupEntry(View);
+		if (UVerticalBoxSlot* RowSlot = List->AddChildToVerticalBox(Entry))
 		{
 			RowSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 0.0f));
 		}

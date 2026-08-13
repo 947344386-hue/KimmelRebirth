@@ -5,6 +5,7 @@
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "UI/ClcPauseMenuWidget.h"
+#include "UI/ClcSaveSlotListWidget.h"
 #include "ClcGameInstance.h"
 #include "ClcLog.h"
 #include "Engine/World.h"
@@ -187,38 +188,92 @@ void UClcPauseMenuSubsystem::ResumeGame() { CloseMenu(); }
 
 void UClcPauseMenuSubsystem::ManualSave()
 {
-	UWorld* World = GetWorld();
-	if (!World) return;
-	UGameInstance* GI = World->GetGameInstance();
-	if (!GI) return;
-	UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>();
-	if (!SM) return;
-
-	if (SM->SaveGame(UClcSaveManagerSubsystem::AutoSaveSlotName))
-	{
-		if (const ULocalPlayer* LP = GetLocalPlayer())
-			if (UClcLogToastSubsystem* Toast = LP->GetSubsystem<UClcLogToastSubsystem>())
-				Toast->AddLog(TEXT("游戏已保存"), 2.0f, FLinearColor(0.2f, 0.8f, 0.2f));
-	}
+	OpenSlotList(/*bLoadMode=*/false);
 }
 
 void UClcPauseMenuSubsystem::LoadSave()
 {
-	UWorld* World = GetWorld();
-	if (!World) return;
-	UGameInstance* GI = World->GetGameInstance();
-	if (!GI) return;
-	UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>();
-	if (!SM || !SM->HasAnySave())
+	OpenSlotList(/*bLoadMode=*/true);
+}
+
+void UClcPauseMenuSubsystem::OpenSlotList(bool bLoadMode)
+{
+	APlayerController* PC = GetPlayerController();
+	if (!PC) return;
+
+	UClcSaveManagerSubsystem* SM = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			SM = GI->GetSubsystem<UClcSaveManagerSubsystem>();
+		}
+	}
+	if (!SM) return;
+
+	// 已有列表则先关（防重入）
+	CloseSlotList();
+
+	// 约定路径 WBP 换皮（无 WBP 时回退 C++ 默认布局）
+	TSubclassOf<UClcSaveSlotListWidget> SlotListClass =
+		LoadClass<UClcSaveSlotListWidget>(nullptr,
+			TEXT("/Game/JadeBetting/UI/WBP_SaveSlotList.WBP_SaveSlotList_C"));
+	if (!SlotListClass) SlotListClass = UClcSaveSlotListWidget::StaticClass();
+
+	SlotListWidget = CreateWidget<UClcSaveSlotListWidget>(PC, SlotListClass);
+	if (!SlotListWidget) return;
+
+	bSlotListLoadMode = bLoadMode;
+	SlotListWidget->InitSlotList(SM, bLoadMode ? EClcSaveSlotListMode::Load : EClcSaveSlotListMode::Save);
+	SlotListWidget->OnSlotPicked.AddDynamic(this, &UClcPauseMenuSubsystem::HandleSlotPicked);
+	SlotListWidget->AddToViewport(160);
+	SlotListWidget->SetKeyboardFocus();
+}
+
+void UClcPauseMenuSubsystem::HandleSlotPicked(const FString& SlotName)
+{
+	const bool bWasLoadMode = bSlotListLoadMode;
+	CloseSlotList();
+
+	if (SlotName.IsEmpty())
+	{
+		return; // 玩家点了返回
+	}
+
+	// 保存模式：写档已在 Widget 内完成，这里提示即可
+	if (!bWasLoadMode)
 	{
 		if (const ULocalPlayer* LP = GetLocalPlayer())
+		{
 			if (UClcLogToastSubsystem* Toast = LP->GetSubsystem<UClcLogToastSubsystem>())
-				Toast->AddLog(TEXT("没有可用的存档"), 3.0f, FLinearColor(0.9f, 0.7f, 0.1f));
+			{
+				Toast->AddLog(FString::Printf(TEXT("游戏已保存到 %s"), *SlotName),
+					2.0f, FLinearColor(0.2f, 0.8f, 0.2f));
+			}
+		}
 		return;
 	}
-	CloseMenu();
-	if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
-		ClcGI->LoadAndResumeGame(UClcSaveManagerSubsystem::AutoSaveSlotName);
+
+	// 读档模式：关闭暂停菜单并加载所选槽位
+	{
+		UWorld* World = GetWorld();
+		UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+		if (!GI) return;
+		CloseMenu();
+		if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
+		{
+			ClcGI->LoadAndResumeGame(SlotName);
+		}
+	}
+}
+
+void UClcPauseMenuSubsystem::CloseSlotList()
+{
+	if (SlotListWidget)
+	{
+		SlotListWidget->RemoveFromParent();
+		SlotListWidget = nullptr;
+	}
 }
 
 void UClcPauseMenuSubsystem::GoToMainMenu()

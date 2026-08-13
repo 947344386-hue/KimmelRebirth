@@ -435,7 +435,6 @@ void AClcStoneStall::CollectSlots(TArray<FClcSlotSaveState>& OutSlots) const
 		Slot.EffectiveScale = Stone->GetActorScale3D().GetMax();
 		Slot.EffectivePurchasePrice = RT.Internal.PurchasePrice;
 		Slot.DisplayName = RT.DisplayName;
-		Slot.MeshIndex = -1;
 	}
 }
 
@@ -476,7 +475,12 @@ void AClcStoneStall::RestoreFromSlots(const TArray<FClcSlotSaveState>& Slots)
 		InternalData.MeshScale = Slot.EffectiveScale;
 		InternalData.DistributionMap.Data.Empty(); // 运行时按需重建
 
-		UStaticMesh* Mesh = MeshCfg->GetRandomMesh();
+		// 优先用存档里的原始 Mesh（StoneMesh 生成时确定），加载失败才随机兜底
+		UStaticMesh* Mesh = Slot.InternalData.StoneMesh.LoadSynchronous();
+		if (!Mesh && MeshCfg)
+		{
+			Mesh = MeshCfg->GetRandomMesh();
+		}
 		const float MeshRadius = Mesh ? Mesh->GetBounds().SphereRadius : 50.0f;
 		const float Scale = FMath::Min(Slot.EffectiveScale, CellSize / (MeshRadius * 2.0f));
 

@@ -3,6 +3,7 @@
 #include "Subsystems/ClcMainMenuSubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "UI/ClcMainMenuWidget.h"
+#include "UI/ClcSaveSlotListWidget.h"
 #include "ClcGameInstance.h"
 #include "ClcLog.h"
 #include "Kismet/GameplayStatics.h"
@@ -155,6 +156,75 @@ void UClcMainMenuSubsystem::ContinueGame(const FString& SlotName)
 		{
 			UE_LOG(LogClaudeCore, Error, TEXT("[ClcMainMenu] ContinueGame —— GameInstance 不是 UClcGameInstance！"));
 		}
+}
+
+void UClcMainMenuSubsystem::OpenContinueSlotList()
+{
+	OpenSlotList(EClcSaveSlotListMode::Load);
+}
+
+void UClcMainMenuSubsystem::OpenDeleteSlotList()
+{
+	OpenSlotList(EClcSaveSlotListMode::Delete);
+}
+
+void UClcMainMenuSubsystem::OpenSlotList(EClcSaveSlotListMode Mode)
+{
+	APlayerController* PC = GetPlayerController();
+	if (!PC) return;
+
+	UWorld* W = GetWorld();
+	UGameInstance* GI = W ? W->GetGameInstance() : nullptr;
+	UClcSaveManagerSubsystem* SM = GI ? GI->GetSubsystem<UClcSaveManagerSubsystem>() : nullptr;
+	if (!SM) return;
+
+	// Delete 模式没有存档时直接返回
+	if (Mode == EClcSaveSlotListMode::Delete && !SM->HasAnySave())
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcMainMenu] OpenSlotList —— 没有可删除的存档"));
+		return;
+	}
+
+	CloseSlotList();
+
+	// 约定路径 WBP 换皮（无 WBP 时回退 C++ 默认布局）
+	TSubclassOf<UClcSaveSlotListWidget> SlotListClass =
+		LoadClass<UClcSaveSlotListWidget>(nullptr,
+			TEXT("/Game/JadeBetting/UI/WBP_SaveSlotList.WBP_SaveSlotList_C"));
+	if (!SlotListClass) SlotListClass = UClcSaveSlotListWidget::StaticClass();
+
+	SlotListWidget = CreateWidget<UClcSaveSlotListWidget>(PC, SlotListClass);
+	if (!SlotListWidget) return;
+
+	SlotListWidget->InitSlotList(SM, Mode);
+	SlotListWidget->OnSlotPicked.AddDynamic(this, &UClcMainMenuSubsystem::HandleSlotPicked);
+	SlotListWidget->AddToViewport(160);
+	SlotListWidget->SetKeyboardFocus();
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenu] Slot list opened (mode=%d)"), (int32)Mode);
+}
+
+void UClcMainMenuSubsystem::HandleSlotPicked(const FString& SlotName)
+{
+	CloseSlotList();
+	if (SlotName.IsEmpty())
+	{
+		// 玩家关闭列表——删除可能改过存档集合，刷新主菜单状态
+		if (MenuWidget)
+		{
+			MenuWidget->RefreshSaveSlots();
+		}
+		return;
+	}
+	ContinueGame(SlotName);
+}
+
+void UClcMainMenuSubsystem::CloseSlotList()
+{
+	if (SlotListWidget)
+	{
+		SlotListWidget->RemoveFromParent();
+		SlotListWidget = nullptr;
+	}
 }
 
 void UClcMainMenuSubsystem::QuitGame()

@@ -10,9 +10,9 @@
 /**
  * 存档管理子系统 —— GameInstanceSubsystem。
  *
- * 支持多槽位：AutoSave（自动保存，1 个）+ 手动槽位 slot_0~slot_N-1（默认 3 个）。
- * 自动保存：5 分钟定时器 / 金币变动阈值 / 交易完成 / 关卡转换前。
- * 手动保存：游戏内暂停菜单"手动存档"写入独立槽位。
+ * 槽位两类：
+ *  - AutoSave：自动保存槽（1 个），定时/事件触发自动覆盖
+ *  - ManualSlot_0 ~ ManualSlot_N-1：手动槽位（默认 5 个），玩家在 2 级 UI 中选择写入/读取
  */
 UCLASS()
 class CLAUDECORE_API UClcSaveManagerSubsystem : public UGameInstanceSubsystem
@@ -25,9 +25,15 @@ public:
 
 	static const FString AutoSaveSlotName;
 
+	/** 手动槽位名前缀（ManualSlot_0 ~ ManualSlot_{Max-1}） */
+	static const FString ManualSlotPrefix;
+
+	/** 组装手动槽位名 */
+	static FString MakeManualSlotName(int32 Index);
+
 	// ---- 槽位查询 ----
 
-	/** 获取所有存档槽位元数据（AutoSave + 手动槽位） */
+	/** 获取所有存档槽位元数据（AutoSave + 所有手动槽位） */
 	UFUNCTION(BlueprintCallable, Category = "ClcSave")
 	TArray<FClcSaveMetaData> GetSaveSlots() const;
 
@@ -89,9 +95,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "ClcSave")
 	int32 AutoSaveGoldDeltaThreshold = 5000;
 
-	/** 手动槽位数上限（默认 3，游戏内暂停菜单使用） */
+	/** 手动槽位数上限（默认 5，玩家手动存档可选槽位） */
 	UPROPERTY(EditDefaultsOnly, Category = "ClcSave", meta = (ClampMin = "1"))
-	int32 MaxSaveSlots = 3;
+	int32 MaxSaveSlots = 5;
 
 	// ---- 运行时状态 ----
 

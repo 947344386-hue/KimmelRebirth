@@ -17,6 +17,12 @@
 #include "Engine/LocalPlayer.h"
 
 const FString UClcSaveManagerSubsystem::AutoSaveSlotName = TEXT("AutoSave");
+const FString UClcSaveManagerSubsystem::ManualSlotPrefix = TEXT("ManualSlot_");
+
+FString UClcSaveManagerSubsystem::MakeManualSlotName(int32 Index)
+{
+	return FString::Printf(TEXT("%s%d"), *ManualSlotPrefix, Index);
+}
 
 void UClcSaveManagerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -44,12 +50,23 @@ TArray<FClcSaveMetaData> UClcSaveManagerSubsystem::GetSaveSlots() const
 	TArray<FClcSaveMetaData> Slots;
 	if (UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0))
 		Slots.Add(ReadMetaData(AutoSaveSlotName));
+	for (int32 i = 0; i < MaxSaveSlots; ++i)
+	{
+		const FString SlotName = MakeManualSlotName(i);
+		if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+			Slots.Add(ReadMetaData(SlotName));
+	}
 	return Slots;
 }
 
 bool UClcSaveManagerSubsystem::HasAnySave() const
 {
-	return UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0);
+	if (UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0)) return true;
+	for (int32 i = 0; i < MaxSaveSlots; ++i)
+	{
+		if (UGameplayStatics::DoesSaveGameExist(MakeManualSlotName(i), 0)) return true;
+	}
+	return false;
 }
 
 // ---- 保存/加载 ----
@@ -130,8 +147,8 @@ bool UClcSaveManagerSubsystem::DeleteSave(const FString& SlotName)
 void UClcSaveManagerSubsystem::TriggerAutoSave()
 {
 	if (!bAutoSaveEnabled) return;
-	if (CurrentSlot.IsEmpty()) CurrentSlot = AutoSaveSlotName;
-	SaveGame(CurrentSlot);
+	// 自动保存永远写 AutoSave 槽，不随手动存档/读档改变目标
+	SaveGame(AutoSaveSlotName);
 }
 
 void UClcSaveManagerSubsystem::SetAutoSaveEnabled(bool bEnabled)
@@ -143,15 +160,14 @@ void UClcSaveManagerSubsystem::SetAutoSaveEnabled(bool bEnabled)
 
 void UClcSaveManagerSubsystem::NotifyGoldChanged(int32 NewGold)
 {
-	if (!bAutoSaveEnabled || CurrentSlot.IsEmpty()) return;
+	if (!bAutoSaveEnabled) return;
 	if (FMath::Abs(NewGold - LastAutoSavedGold) >= AutoSaveGoldDeltaThreshold)
-		SaveGame(CurrentSlot);
+		SaveGame(AutoSaveSlotName);
 }
 
 void UClcSaveManagerSubsystem::NotifyTransactionCompleted()
 {
-	if (CurrentSlot.IsEmpty()) CurrentSlot = AutoSaveSlotName;
-	SaveGame(CurrentSlot);
+	SaveGame(AutoSaveSlotName);
 }
 
 // ---- 内部 ----

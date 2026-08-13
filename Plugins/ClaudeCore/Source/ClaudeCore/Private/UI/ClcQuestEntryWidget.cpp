@@ -67,14 +67,11 @@ void UClcQuestEntryWidget::ApplyWidgetVisibility()
 	}
 	if (ProgressBar)
 	{
-		// 进度条仅主线 + 增量型目标显示
-		const bool bIncremental =
-			CachedObjectiveType == EClcQuestObjectiveType::CutStones ||
-			CachedObjectiveType == EClcQuestObjectiveType::UseWorkbench ||
-			CachedObjectiveType == EClcQuestObjectiveType::BuyStones ||
-			CachedObjectiveType == EClcQuestObjectiveType::SellStones ||
-			CachedObjectiveType == EClcQuestObjectiveType::RepairTool;
-		const bool bShowBar = bIncremental && CachedCategory == EClcQuestCategory::MainQuest;
+		// 进度条仅主线 + 绝对数值型目标显示
+		const bool bAbsoluteNumeric =
+			CachedObjectiveType == EClcQuestObjectiveType::EarnGold ||
+			CachedObjectiveType == EClcQuestObjectiveType::ReachGoldTotal;
+		const bool bShowBar = bAbsoluteNumeric && CachedCategory == EClcQuestCategory::MainQuest;
 		ProgressBar->SetVisibility(bShowBar ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 }

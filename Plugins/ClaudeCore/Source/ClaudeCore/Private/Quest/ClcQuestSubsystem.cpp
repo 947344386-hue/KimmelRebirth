@@ -155,6 +155,35 @@ FString UClcQuestSubsystem::GetQuestProgressText(FName QuestID) const
 	return FString::Printf(TEXT("%d/%d"), Cur, Def->ObjectiveParam);
 }
 
+int32 UClcQuestSubsystem::GetQuestProgressValue(FName QuestID) const
+{
+	const FClcQuestData* Def = QuestDefs.Find(QuestID);
+	const FClcQuestRuntimeState* State = RuntimeStates.Find(QuestID);
+	if (!Def || !State) return 0;
+
+	if (Def->ObjectiveType == EClcQuestObjectiveType::EarnGold)
+	{
+		if (const ULocalPlayer* LP = GetLocalPlayer())
+		{
+			if (auto* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
+			{
+				return BP->GetTotalEarned();
+			}
+		}
+	}
+	else if (Def->ObjectiveType == EClcQuestObjectiveType::ReachGoldTotal)
+	{
+		if (const ULocalPlayer* LP = GetLocalPlayer())
+		{
+			if (auto* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
+			{
+				return BP->GetGoldValue();
+			}
+		}
+	}
+	return State->CurrentProgress;
+}
+
 // ---- 任务流转 ----
 
 void UClcQuestSubsystem::AcceptQuest(FName QuestID)

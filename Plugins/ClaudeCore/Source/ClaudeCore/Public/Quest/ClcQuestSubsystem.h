@@ -51,6 +51,13 @@ public:
     /** 获取某任务的进度文本（如 "5/10"），绝对型从对应子系统实时读取 */
     FString GetQuestProgressText(FName QuestID) const;
 
+    /**
+     * 获取某任务的进度数值（供 HUD 进度条用）。
+     * 增量型返回存档 CurrentProgress；绝对数值型（EarnGold/ReachGoldTotal）实时从 Backpack 读取；
+     * 布尔型返回 0（无数值语义）。
+     */
+    int32 GetQuestProgressValue(FName QuestID) const;
+
     // ---- 任务流转 ----
 
     /** 接取任务：Inactive→Active，初始化进度。已非 Inactive 则忽略。 */

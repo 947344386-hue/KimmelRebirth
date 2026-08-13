@@ -17,9 +17,9 @@ class UProgressBar;
  * ProgressText 是规范显示串（增量/绝对数值型为 "cur/param"，布尔型为 "✓"/"✗"），
  * 由 UClcQuestSubsystem::GetQuestProgressText 生成。
  *
- * 注意：绝对数值型（EarnGold/ReachGoldTotal）的 CurrentProgress 是陈旧值——
- * 实时值只在 GetQuestProgressText 内部从 Backpack 读取（只吐字符串），
- * 行内进度条对这两类应改用 ProgressText 文本显示。
+ * 注意：CurrentProgress 由 UClcQuestSubsystem::GetQuestProgressValue 填充——
+ * 增量型=存档进度，绝对数值型（EarnGold/ReachGoldTotal）=Backpack 实时值，
+ * 进度条百分比可直接用它计算。
  * 布尔型（UnlockUpgrade/ToolDamaged）的 CurrentProgress/ObjectiveParam 无意义。
  */
 USTRUCT(BlueprintType)
@@ -56,7 +56,7 @@ struct CLAUDECORE_API FClcQuestEntryView
  * 行内预设四种控件，按任务目标类型自动显隐：
  *  - 增量型/绝对数值型：DescText + ProgressText，CompleteCheck 隐藏
  *  - 绝对布尔型：DescText + CompleteCheck（达成=勾选），ProgressText 隐藏
- *  - 进度条 ProgressBar：仅主线 + 增量型目标显示（CurrentProgress/ObjectiveParam），其余隐藏
+ *  - 进度条 ProgressBar：仅主线 + 绝对数值型目标显示（CurrentProgress/ObjectiveParam，实时值），其余隐藏
  *
  * BP 行子类（WBP_QuestEntryRow）如需进度条等额外表现：
  * SetupEntry 先于 NativeConstruct 执行，故在 NativeConstruct（Event Construct）里

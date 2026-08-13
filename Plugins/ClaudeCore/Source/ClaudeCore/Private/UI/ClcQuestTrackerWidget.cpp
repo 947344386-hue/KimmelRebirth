@@ -163,8 +163,7 @@ void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory 
 		const FClcQuestData* Def = Subsystem->FindQuestDef(QuestID);
 		if (!Def) continue;
 
-		const FClcQuestRuntimeState* State = Subsystem->FindRuntimeState(QuestID);
-		if (!State) continue;
+		if (!Subsystem->FindRuntimeState(QuestID)) continue;
 
 		FClcQuestEntryView View;
 		View.QuestID = QuestID;
@@ -172,7 +171,8 @@ void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory 
 		View.DisplayName = Def->GetDisplayName();
 		// 进度文本（绝对型由 Subsystem 实时从 Backpack 读）
 		View.ProgressText = Subsystem->GetQuestProgressText(QuestID);
-		View.CurrentProgress = State->CurrentProgress;
+		// 进度数值：绝对数值型实时读（进度条用），增量型=存档进度
+		View.CurrentProgress = Subsystem->GetQuestProgressValue(QuestID);
 		View.ObjectiveParam = Def->ObjectiveParam;
 		View.ObjectiveType = Def->ObjectiveType;
 		View.Category = Category;

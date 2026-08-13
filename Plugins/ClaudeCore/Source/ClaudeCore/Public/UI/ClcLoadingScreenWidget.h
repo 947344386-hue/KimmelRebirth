@@ -7,7 +7,7 @@
 
 class SImage;
 class STextBlock;
-struct FSlateDynamicImageBrush;
+class FDeferredCleanupSlateBrush;
 struct FSoftObjectPath;
 
 /**
@@ -57,8 +57,12 @@ private:
 	float SwitchInterval = 3.0f;
 	float TimeSinceSwitch = 0.0f;
 
-	/** 当前背景 brush —— 持有以保证 SetImage 传入的指针长期有效 */
-	TSharedPtr<FSlateDynamicImageBrush> CurrentBrush;
+	/**
+	 * 当前背景 brush —— 用 FDeferredCleanupSlateBrush 而非 FSlateDynamicImageBrush。
+	 * 引擎在 SlateDynamicImageBrush.h 明确禁止加载屏使用后者（独立 exe 启动即 ensure 失败），
+	 * FDeferredCleanupSlateBrush 正确处理 GC 生命周期与 Slate 渲染管线的多帧延迟释放。
+	 */
+	TSharedPtr<FDeferredCleanupSlateBrush> CurrentBrush;
 
 	TSharedPtr<SImage> BackgroundImage;
 	TSharedPtr<STextBlock> LoadingText;

@@ -10,7 +10,7 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
-#include "Brushes/SlateDynamicImageBrush.h"
+#include "Slate/DeferredCleanupSlateBrush.h"
 #include "Styling/StyleDefaults.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Engine.h"
@@ -146,11 +146,12 @@ void SClcLoadingScreenWidget::LoadBackgroundAt(int32 Index)
 		return;
 	}
 
-	CurrentBrush = MakeShareable(new FSlateDynamicImageBrush(
-		Tex, FVector2D(1920.0f, 1080.0f), FName(*Tex->GetName())));
+	// 用 FDeferredCleanupSlateBrush 替代 FSlateDynamicImageBrush：
+	// 后者在加载屏场景被引擎 ensure(false) 拦截，独立 exe 启动必崩。
+	CurrentBrush = FDeferredCleanupSlateBrush::CreateBrush(Tex, FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
 	if (CurrentBrush.IsValid())
 	{
-		BackgroundImage->SetImage(CurrentBrush.Get());
+		BackgroundImage->SetImage(CurrentBrush->GetSlateBrush());
 		BackgroundImage->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
 	}
 }

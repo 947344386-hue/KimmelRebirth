@@ -7,6 +7,7 @@
 #include "Data/ClcStallConfig.h"
 #include "Data/ClcStoneMeshConfig.h"
 #include "Data/ClcSessionTypes.h"
+#include "ClcGameInstance.h"
 #include "ClcDeveloperSettings.h"
 #include "ClcLog.h"
 #include "Components/SceneComponent.h"
@@ -88,9 +89,31 @@ void AClcStoneStall::BeginPlay()
 	}
 
 	SpawnMerchant();
-	// 延迟石头的生成——等 GameInstance::HandlePostLoadMap 确定是读档还是新游戏
-	// 读档路径会在 next tick 调 RestoreFromSlots，新游戏则生成随机批次
-	SpawnStones();
+
+	// 读档恢复：若 GameInstance 缓存了摊位存档数据，跳过随机生成，
+	// 等 HandlePostLoadMap 的 next-tick 调 RestoreFromSlots 按 StallId 匹配恢复。
+	// 这样做的好处：
+	//  (1) 避免随机批次生成后又被打覆盖的视觉闪现；
+	//  (2) 即使 RestoreFromSlots 因 MarketSubsystem/StallCfg 未就绪而 early return，
+	//      也不会残留一批玩家不该拿到的随机石头。
+	UClcGameInstance* ClcGI = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			ClcGI = Cast<UClcGameInstance>(GI);
+		}
+	}
+	const bool bHasPendingRestore = ClcGI && ClcGI->bHasCachedSavedStalls;
+	if (bHasPendingRestore)
+	{
+		UE_LOG(LogClaudeCore, Log, TEXT("[ClcStoneStall] BeginPlay —— 检测到缓存的摊位存档，跳过 SpawnStones，等待 RestoreFromSlots"));
+	}
+	else
+	{
+		// 新游戏或无存档：正常生成随机批次
+		SpawnStones();
+	}
 }
 
 void AClcStoneStall::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -334,7 +357,20 @@ FVector AClcStoneStall::GetStoneSpawnCenterLocation() const
 
 FName AClcStoneStall::GetStallId() const
 {
-	return FName(*GetPathName());
+	// GetPathName() 含完整包路径，PIE 会给关卡加 UEDPIE_<N>_ 前缀，打包则没有。
+	// 直接用会导致 PIE 存的档在打包游戏里读不出（StallId 不匹配）。
+	// 剥掉 UEDPIE_<N>_ 前缀，使同一摊位在 PIE 和打包环境下 Id 一致。
+	FString PathName = GetPathName();
+	static const FString PiePrefix = TEXT("UEDPIE_");
+	if (PathName.StartsWith(PiePrefix))
+	{
+		// 跳过 "UEDPIE_"（7 字符），再跳过数字和随后的 '_'，剩 Map_...:PersistentLevel.xxx
+		int32 Idx = PiePrefix.Len();
+		while (Idx < PathName.Len() && FChar::IsDigit(PathName[Idx])) { ++Idx; }
+		if (Idx < PathName.Len() && PathName[Idx] == '_') { ++Idx; }
+		PathName = PathName.RightChop(Idx);
+	}
+	return FName(*PathName);
 }
 
 float AClcStoneStall::GetTotalTheoreticalValue() const

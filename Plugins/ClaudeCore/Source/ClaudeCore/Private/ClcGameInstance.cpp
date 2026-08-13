@@ -159,6 +159,13 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 						{
 							Stall->RestoreFromSlots(State->Slots);
 						}
+						else
+						{
+							// 缓存里没有匹配此摊位的存档数据（StallId 不匹配或该摊位未存档）。
+							// BeginPlay 已跳过随机生成，这里补上，避免摊位空置。
+							UE_LOG(LogClaudeCore, Warning, TEXT("[ClcGameInstance] 摊位 %s 无匹配存档，生成随机批次"), *Stall->GetName());
+							Stall->SpawnStones();
+						}
 					}
 					CachedSavedStalls.Empty();
 					bHasCachedSavedStalls = false;

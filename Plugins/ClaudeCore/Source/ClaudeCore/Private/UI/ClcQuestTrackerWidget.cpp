@@ -48,12 +48,14 @@ void UClcQuestTrackerWidget::BuildDefaultLayout()
 	};
 
 	UTextBlock* MainTitle = MakeSectionTitle(TEXT("主线"), FLinearColor(1.0f, 0.85f, 0.3f));
+	MainTitleText = MainTitle;
 	OuterBox->AddChildToVerticalBox(MainTitle);
 
 	MainQuestList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainQuestList"));
 	OuterBox->AddChildToVerticalBox(MainQuestList);
 
 	UTextBlock* SideTitle = MakeSectionTitle(TEXT("支线"), FLinearColor(0.7f, 0.85f, 1.0f));
+	SideTitleText = SideTitle;
 	if (UVerticalBoxSlot* SideTitleSlot = OuterBox->AddChildToVerticalBox(SideTitle))
 	{
 		SideTitleSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 0.0f));
@@ -76,6 +78,22 @@ void UClcQuestTrackerWidget::RefreshDisplay(UClcQuestSubsystem* Subsystem)
 
 	PopulateList(MainQuestList, EClcQuestCategory::MainQuest, Subsystem);
 	PopulateList(SideQuestList, EClcQuestCategory::SideQuest, Subsystem);
+
+	// 空列表时隐藏对应标题栏
+	if (MainTitleText)
+	{
+		MainTitleText->SetVisibility(
+			MainQuestList->GetChildrenCount() > 0
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
+	if (SideTitleText)
+	{
+		SideTitleText->SetVisibility(
+			SideQuestList->GetChildrenCount() > 0
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+	}
 }
 
 void UClcQuestTrackerWidget::PopulateList(UVerticalBox* List, EClcQuestCategory Category, UClcQuestSubsystem* Subsystem)

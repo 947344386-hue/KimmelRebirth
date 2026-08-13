@@ -9,6 +9,65 @@
 #include "ClcSessionTypes.generated.h"
 
 /**
+ * 摊位存档槽位——每块石头的完整数据。
+ * 不存世界坐标——生成时按摊位局部网格公式重建位置。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcSlotSaveState
+{
+	GENERATED_BODY()
+
+	/** 槽位索引（0~StonesPerStall-1） */
+	UPROPERTY(SaveGame)
+	int32 SlotIndex = 0;
+
+	/** 是否已售出 */
+	UPROPERTY(SaveGame)
+	bool bSold = false;
+
+	/** 完整内部数据（Seed/种水/产地/皮壳等，含 DistributionMap 重建所需参数） */
+	UPROPERTY(SaveGame)
+	FClcStoneInternalData InternalData;
+
+	/** 封顶后有效缩放（唯一真源：同时 = ActorScale 和 Internal.MeshScale） */
+	UPROPERTY(SaveGame)
+	float EffectiveScale = 1.0f;
+
+	/** 封顶后有效购买价（保存前已由 Stall 价格封顶缩价后的终值） */
+	UPROPERTY(SaveGame)
+	int32 EffectivePurchasePrice = 0;
+
+	/** 展示名 */
+	UPROPERTY(SaveGame)
+	FString DisplayName;
+
+	/** Mesh 稳定索引——从 StallConfig 表查找，避免 TSoftObjectPtr 跨版本失效 */
+	UPROPERTY(SaveGame)
+	int32 MeshIndex = 0;
+};
+
+/**
+ * 摊位存档状态——按 StallId 分组存储，读档时每个摊位只恢复自己的 Slots。
+ */
+USTRUCT(BlueprintType)
+struct CLAUDECORE_API FClcStallSaveState
+{
+	GENERATED_BODY()
+
+	/** 关卡中唯一标识（对应 GetPathName，与 AClcStoneStall::GetStallId() 一致） */
+	UPROPERTY(SaveGame)
+	FName StallId;
+
+	/** 当前批次种子（换批档口购买时更新） */
+	UPROPERTY(SaveGame)
+	int32 BatchSeed = 0;
+
+	/** 各槽位状态 */
+	UPROPERTY(SaveGame)
+	TArray<FClcSlotSaveState> Slots;
+};
+
+/**
  * 难度预设——影响起始金币、购买溢价系数、衰减权重等
  */
 UENUM(BlueprintType)
@@ -95,6 +154,10 @@ struct CLAUDECORE_API FClcSaveData
 	UPROPERTY(SaveGame)
 	int32 SavedTotalEarned = 0;
 
+	// 摊位——按 StallId 分组存储各摊位槽位数据（每个摊位只恢复自己那份）
+	UPROPERTY(SaveGame)
+	TMap<FName, FClcStallSaveState> SavedStalls;
+
 	// 工具——用 int32 存 key（EClcRepairableTool/EClcToolUpgrade 的值，用于 UPROPERTY 序列化兼容）
 	UPROPERTY(SaveGame)
 	TMap<int32, float> SavedDurability;
@@ -124,7 +187,7 @@ struct CLAUDECORE_API FClcSaveData
 	UPROPERTY(SaveGame)
 	FDateTime SaveTimestamp;
 	UPROPERTY(SaveGame)
-	FString SaveVersion = TEXT("1.0");
+	FString SaveVersion = TEXT("3.0");
 	UPROPERTY(SaveGame)
 	FString LevelName;
 	UPROPERTY(SaveGame)

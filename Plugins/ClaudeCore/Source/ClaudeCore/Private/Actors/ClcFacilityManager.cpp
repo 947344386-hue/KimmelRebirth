@@ -39,7 +39,9 @@ void AClcFacilityManager::BeginPlay()
 #if WITH_EDITOR
 	DestroyPreviewActors();
 #endif
-	ApplySoloLayout();
+	// 读档时 RestoreFromSaveData 已恢复 OwnedUpgrades，但无人通知此 Manager。
+	// BeginPlay 直接调用 RefreshLayout：有解石台→Paired，无→Solo。
+	RefreshLayout();
 }
 
 void AClcFacilityManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -104,9 +106,16 @@ void AClcFacilityManager::RefreshLayout()
 {
 	if (UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld()))
 	{
-		if (Durability->HasCuttingTable() && !bPairedLayout)
+		if (Durability->HasCuttingTable())
 		{
-			ApplyPairedLayout();
+			if (!bPairedLayout)
+			{
+				ApplyPairedLayout();
+			}
+		}
+		else
+		{
+			ApplySoloLayout();
 		}
 	}
 }

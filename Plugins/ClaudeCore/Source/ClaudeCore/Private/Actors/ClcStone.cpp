@@ -3,6 +3,7 @@
 #include "Actors/ClcStone.h"
 #include "ClcLog.h"
 #include "Actors/ClcStoneStall.h"
+#include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/ClcInteractionIndicator.h"
@@ -56,6 +57,7 @@ void AClcStone::BeginPlay()
 void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InMesh, float InScale, const FString& InDisplayName)
 {
 	RuntimeData.Internal = InData;
+	RuntimeData.Internal.MeshScale = InScale;  // 唯一缩放真源
 	RuntimeData.DisplayName = InDisplayName;
 	RuntimeData.AccumulatedOpenedArea = 0.0f;
 	RuntimeData.OpenedGreenArea = 0.0f;
@@ -72,16 +74,7 @@ void AClcStone::Initialize(const FClcStoneInternalData& InData, UStaticMesh* InM
 	RecalculateSurfaceArea();
 
 	// 表面积已基于真实 Mesh 重算——覆盖 GenerateStoneInternal 用占位 SA=1000 算的初值
-	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	if (UClcStoneMarketSubsystem* Market = GI ? GI->GetSubsystem<UClcStoneMarketSubsystem>() : nullptr)
-	{
-		RuntimeData.Internal.TheoreticalValue = Market->CalculateTheoreticalValue(RuntimeData.Internal);
-		RuntimeData.Internal.PurchasePrice = Market->CalculatePurchasePrice(RuntimeData.Internal);
-	}
-	else
-	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcStone] MarketSubsystem unavailable, prices based on placeholder SA=1000!"));
-	}
+	RecalculatePrices();
 
 	// 应用皮壳材质 + 从配置表注入贴图
 	if (UMaterialInterface* ShellMat = LoadObject<UMaterialInterface>(nullptr, *ShellMaterialPath))
@@ -128,6 +121,39 @@ void AClcStone::RecalculateSurfaceArea()
 	const FVector HalfExtents = Bounds.BoxExtent * Scale;
 	const float VolumeCm3 = (4.0f / 3.0f) * PI * HalfExtents.X * HalfExtents.Y * HalfExtents.Z;
 	RuntimeData.Internal.WeightKg = FMath::Max(1, FMath::RoundToInt(VolumeCm3 * JadeDensityKgPerCm3));
+}
+
+void AClcStone::RecalculatePrices()
+{
+	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	if (UClcStoneMarketSubsystem* Market = GI ? GI->GetSubsystem<UClcStoneMarketSubsystem>() : nullptr)
+	{
+		RuntimeData.Internal.TheoreticalValue = Market->CalculateTheoreticalValue(RuntimeData.Internal);
+		RuntimeData.Internal.PurchasePrice = Market->CalculatePurchasePrice(RuntimeData.Internal);
+	}
+	else
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcStone] MarketSubsystem unavailable, prices based on current SA=%.0f!"), RuntimeData.Internal.SurfaceArea);
+	}
+}
+
+void AClcStone::SnapToSurface(float TableTopZ)
+{
+	UStaticMeshComponent* MeshComp = StoneMesh;
+	if (!MeshComp) return;
+
+	UStaticMesh* Mesh = MeshComp->GetStaticMesh();
+	if (!Mesh) return;
+
+	const FBoxSphereBounds Bounds = Mesh->GetBounds();
+	const float Scale = GetActorScale3D().GetMax();
+	// 局部空间：石头 Mesh 顶点在 [Origin - BoxExtent, Origin + BoxExtent]
+	// 世界空间：石头底部 Z = ActorLocation.Z - (Origin.Z + BoxExtent.Z) * Scale
+	// 贴桌面：ActorLocation.Z = TableTopZ + (Origin.Z + BoxExtent.Z) * Scale
+	const float HalfHeight = Bounds.Origin.Z + Bounds.BoxExtent.Z;
+	FVector Loc = GetActorLocation();
+	Loc.Z = TableTopZ + HalfHeight * Scale;
+	SetActorLocation(Loc);
 }
 
 void AClcStone::Tick(float DeltaTime)
@@ -207,6 +233,18 @@ bool AClcStone::OnInteract(AActor* Interactor)
 
 	HideInfoCard();
 	RemoveFromStall();
+
+	// 购买事务完成后统一存档：背包 + 摊位状态一致
+	if (UWorld* W = GetWorld())
+	{
+		if (UGameInstance* GI = W->GetGameInstance())
+		{
+			if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
+			{
+				SM->SaveGame(UClcSaveManagerSubsystem::AutoSaveSlotName);
+			}
+		}
+	}
 
 	return true;
 }

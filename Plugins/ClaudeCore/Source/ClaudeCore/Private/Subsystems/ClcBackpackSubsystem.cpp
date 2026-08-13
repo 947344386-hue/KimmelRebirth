@@ -229,8 +229,7 @@ int32 UClcBackpackSubsystem::AddStone(const FClcStoneRuntimeData& StoneData)
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
-	NotifySaveManagerTransaction();
-
+	// 不再立即触发交易存档——改由购买事务完成后在 OnInteract 中统一存档
 	return NewIndex;
 }
 
@@ -263,6 +262,7 @@ void UClcBackpackSubsystem::AddGold(int32 Amount)
 		if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
 		{
 			QS->NotifyObjectiveProgress(EClcQuestObjectiveType::EarnGold, 0);
+			QS->RefreshTracker();
 		}
 	}
 }
@@ -284,6 +284,7 @@ bool UClcBackpackSubsystem::SpendGold(int32 Amount)
 		if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
 		{
 			QS->NotifyObjectiveProgress(EClcQuestObjectiveType::ReachGoldTotal, 0);
+			QS->RefreshTracker();
 		}
 	}
 	return true;

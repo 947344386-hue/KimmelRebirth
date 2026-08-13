@@ -5,8 +5,10 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "ClcGameInstance.h"
+#include "Actors/ClcStoneStall.h"
 #include "ClcLog.h"
 #include "Data/ClcSessionTypes.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "GameFramework/SaveGame.h"
@@ -71,9 +73,9 @@ bool UClcSaveManagerSubsystem::SaveGame(const FString& SlotName)
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] SaveGame '%s': Gold=%d, Stones=%d, PlayTime=%.2fh"),
 		*SlotName, Data.SavedGold, Data.SavedStones.Num(), Data.PlayTimeHours);
 
-	// 只在 Gold=0 && Stones=0 && TotalEarned=0（从未玩过的空状态）时拒绝写，
-	// 避免覆盖已有完整存档。合法的"花光+空背包"状态允许保存。
-	if (Data.SavedGold == 0 && Data.SavedStones.Num() == 0 && Data.SavedTotalEarned == 0)
+	// 只在 Gold=0 && Stones=0 && TotalEarned=0 && SavedStalls=空（从未玩过的空状态）时拒绝写，（从未玩过的空状态）时拒绝写
+	if (Data.SavedGold == 0 && Data.SavedStones.Num() == 0
+		&& Data.SavedTotalEarned == 0 && Data.SavedStalls.Num() == 0)
 	{
 		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] SaveGame '%s': 全空状态，拒绝写空存档"), *SlotName);
 		return false;
@@ -93,10 +95,10 @@ bool UClcSaveManagerSubsystem::LoadGame(const FString& SlotName)
 	FClcSaveData Data;
 	if (!ReadSaveFile(SlotName, Data)) return false;
 
-	// 版本兼容性检查：版本不匹配则拒绝加载，避免数据结构错乱
-	if (!Data.SaveVersion.IsEmpty() && Data.SaveVersion != TEXT("1.0"))
+	// 版本兼容性检查：只兼容当前版本（2.x 及更高），旧版拒绝
+	if (!Data.SaveVersion.IsEmpty() && Data.SaveVersion != TEXT("3.0"))
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] LoadGame '%s': 存档版本 %s 不兼容当前版本 1.0，拒绝加载"), *SlotName, *Data.SaveVersion);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] LoadGame '%s': 存档版本 %s 不兼容当前版本 3.0，拒绝加载"), *SlotName, *Data.SaveVersion);
 		return false;
 	}
 
@@ -157,7 +159,7 @@ void UClcSaveManagerSubsystem::NotifyTransactionCompleted()
 FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const
 {
 	FClcSaveData Data;
-	Data.SaveVersion = TEXT("1.0");
+	Data.SaveVersion = TEXT("3.0");
 
 	UGameInstance* GI = GetGameInstance();
 	if (!GI) return Data;
@@ -178,6 +180,25 @@ FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const
 		Data.SavedTotalEarned = BP->GetTotalEarned();
 		UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] CollectSaveData: Gold=%d, Stones=%d"), Data.SavedGold, Data.SavedStones.Num());
 	}
+
+	// 摊位槽位：按 GetPathName（Id）分组收集，读档时每个摊位只恢复自己那份
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AClcStoneStall> It(World); It; ++It)
+		{
+			AClcStoneStall* Stall = *It;
+			if (!IsValid(Stall)) continue;
+			const FName Id = Stall->GetStallId();
+			FClcStallSaveState& State = Data.SavedStalls.FindOrAdd(Id);
+			State.StallId = Id;
+			Stall->CollectSlots(State.Slots);
+		}
+		int32 TotalSlots = 0;
+		for (const auto& Pair : Data.SavedStalls) TotalSlots += Pair.Value.Slots.Num();
+		UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] CollectSaveData: %d stalls, %d slots"),
+			Data.SavedStalls.Num(), TotalSlots);
+	}
+
 	if (UClcToolDurabilitySubsystem* TD = LP->GetSubsystem<UClcToolDurabilitySubsystem>())
 	{
 		const UEnum* ToolEnum = StaticEnum<EClcRepairableTool>();
@@ -234,6 +255,15 @@ void UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
 		TD->RestoreFromSaveData(Data);
 	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
 		QS->RestoreFromSaveData(Data, /*bIsNewGame=*/false);
+
+	// 摊位槽位缓存到 GameInstance——等关卡加载完毕再将各摊位自己的 Slots 分发
+	if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
+	{
+		ClcGI->CachedSavedStalls = Data.SavedStalls;
+		ClcGI->bHasCachedSavedStalls = true;
+		UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] DistributeSaveData: Cached %d stall states for post-load restore"),
+			Data.SavedStalls.Num());
+	}
 
 	// 玩家坐标缓存到 GameInstance，等关卡加载后 Pawn 就绪再应用
 	// （此处可能还在旧关卡，Pawn 不可用）

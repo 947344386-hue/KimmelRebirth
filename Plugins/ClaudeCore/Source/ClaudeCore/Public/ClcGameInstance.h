@@ -104,6 +104,10 @@ public:
 	/** ApplyPendingPlayerTransform 的重试计数（Pawn 未就绪时） */
 	int32 PendingTransformAttempts = 0;
 
+	/** 读档时缓存的摊位存档状态——等关卡加载后再分发到各摊位 */
+	TMap<FName, struct FClcStallSaveState> CachedSavedStalls;
+	bool bHasCachedSavedStalls = false;
+
 	/** 自动保存间隔（秒，默认 300=5分钟） */
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Save")
 	float AutoSaveIntervalSeconds = 300.0f;

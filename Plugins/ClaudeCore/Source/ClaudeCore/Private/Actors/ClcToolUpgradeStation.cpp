@@ -8,10 +8,12 @@
 #include "Components/ClcInteractionComponent.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
+#include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "Actors/ClcFacilityManager.h"
+#include "Actors/ClcStoneStall.h"
 #include "UI/ClcToolUpgradeMenuWidget.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -60,6 +62,14 @@ AClcToolUpgradeStation::AClcToolUpgradeStation()
 	CuttingItem.Description = TEXT("解锁解石台入口，铡刀切石一刀穷一刀富");
 	CuttingItem.Cost = 3000;
 
+	// 第三项：换批档口（可重复购买）
+	FClcToolUpgradeItem& RefreshItem = Upgrades.AddDefaulted_GetRef();
+	RefreshItem.Type = EClcToolUpgrade::RefreshStalls;
+	RefreshItem.Name = TEXT("换批档口");
+	RefreshItem.Description = TEXT("塞给暗庄一笔茶水钱，让场子里现有的摊位收拾走人，换一批带着新场口原石的摊主进谷。");
+	RefreshItem.Cost = 2000;
+	RefreshItem.bRepeatable = true;
+
 	MenuWidgetClass = UClcToolUpgradeMenuWidget::StaticClass();
 }
 
@@ -69,6 +79,19 @@ void AClcToolUpgradeStation::BeginPlay()
 
 	TriggerSphere->SetSphereRadius(InteractionRadius);
 	InteractionIndicator->InteractionRadius = InteractionRadius;
+
+	// 蓝图实例的 CDO 序列化数组会覆盖构造函数默认项——运行时补增缺失项
+	const bool bHasRefreshStalls = Upgrades.ContainsByPredicate(
+		[](const FClcToolUpgradeItem& Item) { return Item.Type == EClcToolUpgrade::RefreshStalls; });
+	if (!bHasRefreshStalls)
+	{
+		FClcToolUpgradeItem& RefreshItem = Upgrades.AddDefaulted_GetRef();
+		RefreshItem.Type = EClcToolUpgrade::RefreshStalls;
+		RefreshItem.Name = TEXT("换批档口");
+		RefreshItem.Description = TEXT("塞给暗庄一笔茶水钱，让场子里现有的摊位收拾走人，换一批带着新场口原石的摊主进谷。");
+		RefreshItem.Cost = 2000;
+		RefreshItem.bRepeatable = true;
+	}
 
 	TriggerSphere->OnComponentBeginOverlap.AddDynamic(this, &AClcToolUpgradeStation::OnTriggerBeginOverlap);
 	TriggerSphere->OnComponentEndOverlap.AddDynamic(this, &AClcToolUpgradeStation::OnTriggerEndOverlap);
@@ -196,9 +219,9 @@ void AClcToolUpgradeStation::RefreshMenuItems()
 	{
 		const FClcToolUpgradeItem& Item = Upgrades[i];
 
-		// 已拥有的升级不在列表里显示
+		// 已拥有的升级不在列表里显示（可重复购买项除外）
 		const bool bOwned = DuraSys ? DuraSys->OwnsUpgrade(Item.Type) : false;
-		if (bOwned) continue;
+		if (bOwned && !Item.bRepeatable) continue;
 
 		FClcToolUpgradeItemView& View = Views.AddDefaulted_GetRef();
 		View.Item = Item;
@@ -223,8 +246,8 @@ void AClcToolUpgradeStation::ExecutePurchase(int32 ItemIndex)
 	UClcToolDurabilitySubsystem* DuraSys = LP->GetSubsystem<UClcToolDurabilitySubsystem>();
 	if (!Backpack || !DuraSys) return;
 
-	// 已拥有
-	if (DuraSys->OwnsUpgrade(Item.Type))
+	// 已拥有（可重复购买项跳过此检查）
+	if (!Item.bRepeatable && DuraSys->OwnsUpgrade(Item.Type))
 	{
 		OnUpgradeFailed_AlreadyOwned(Item);
 		if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
@@ -254,22 +277,34 @@ void AClcToolUpgradeStation::ExecutePurchase(int32 ItemIndex)
 	}
 	DuraSys->GrantUpgrade(Item.Type);
 
-	// 通知任务系统：刷新解锁升级绝对型目标
-	if (CachedPC.IsValid())
+	// 通知任务系统：刷新解锁升级绝对型目标（可重复购买项跳过）
+	if (!Item.bRepeatable)
 	{
-		if (const ULocalPlayer* QuestLP = CachedPC->GetLocalPlayer())
+		if (CachedPC.IsValid())
 		{
-			if (UClcQuestSubsystem* QS = QuestLP->GetSubsystem<UClcQuestSubsystem>())
+			if (const ULocalPlayer* QuestLP = CachedPC->GetLocalPlayer())
 			{
-				QS->NotifyObjectiveProgress(EClcQuestObjectiveType::UnlockUpgrade, 0);
+				if (UClcQuestSubsystem* QS = QuestLP->GetSubsystem<UClcQuestSubsystem>())
+				{
+					QS->NotifyObjectiveProgress(EClcQuestObjectiveType::UnlockUpgrade, 0);
+				}
 			}
 		}
 	}
 
 	if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
 	{
-		Toast->AddLog(FString::Printf(TEXT("获得升级：%s（花费 %d 金币）"), *Item.Name, Item.Cost),
-			2.5f, FLinearColor(0.2f, 1.0f, 0.4f));
+		// 可重复购买项不用"获得升级"措辞
+		if (Item.bRepeatable)
+		{
+			Toast->AddLog(FString::Printf(TEXT("%s（花费 %d 金币）"), *Item.Name, Item.Cost),
+				2.5f, FLinearColor(0.2f, 1.0f, 0.4f));
+		}
+		else
+		{
+			Toast->AddLog(FString::Printf(TEXT("获得升级：%s（花费 %d 金币）"), *Item.Name, Item.Cost),
+				2.5f, FLinearColor(0.2f, 1.0f, 0.4f));
+		}
 	}
 
 	OnUpgradePurchased(Item);
@@ -279,6 +314,26 @@ void AClcToolUpgradeStation::ExecutePurchase(int32 ItemIndex)
 	for (TActorIterator<AClcFacilityManager> It(GetWorld()); It; ++It)
 	{
 		It->RefreshLayout();
+	}
+
+	// 换批档口：先生成 → 封顶 → 存档
+	if (Item.Type == EClcToolUpgrade::RefreshStalls)
+	{
+		for (TActorIterator<AClcStoneStall> It(GetWorld()); It; ++It)
+		{
+			It->RefreshAllStalls();
+		}
+		// 换批完成后立即存档（新批次状态）
+		if (UWorld* World = GetWorld())
+		{
+			if (UGameInstance* GI = World->GetGameInstance())
+			{
+				if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
+				{
+					SM->SaveGame(UClcSaveManagerSubsystem::AutoSaveSlotName);
+				}
+			}
+		}
 	}
 
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcToolUpgradeStation] Upgrade purchased: %s, cost=%d"),
@@ -303,7 +358,7 @@ FText AClcToolUpgradeStation::BuildInteractionPrompt() const
 	{
 		return InteractionPrompt;
 	}
-	return FText::FromString(FString::Printf(TEXT("按 %s 升级工具"), *EnterKey.ToString()));
+	return FText::FromString(FString::Printf(TEXT("按 %s 拓局专线"), *EnterKey.ToString()));
 }
 
 // IsLookedAtByPlayer / CachedInteractionComp 已删除——F 键路由由 UClcInteractionComponent 统一接管

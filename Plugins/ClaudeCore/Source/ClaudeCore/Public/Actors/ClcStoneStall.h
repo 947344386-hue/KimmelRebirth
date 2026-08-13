@@ -34,8 +34,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcStall")
 	void SpawnStones();
 
+	/** 从存档槽位数据还原石头（不重新掷，保留价格封顶结果） */
+	UFUNCTION(BlueprintCallable, Category = "ClcStall")
+	void RestoreFromSlots(const TArray<struct FClcSlotSaveState>& Slots);
+
+	/** 收集当前摊位上所有石头为存档槽位数据 */
+	void CollectSlots(TArray<struct FClcSlotSaveState>& OutSlots) const;
+
 	UFUNCTION(BlueprintCallable, Category = "ClcStall")
 	const TArray<AClcStone*>& GetDisplayedStones() const { return SpawnedStones; }
+
+	// ---- 价格封顶 & 换批 ----
+
+	/** 重新生成石头 + 价格封顶（替换 StallZoneManager::RefreshAllStalls） */
+	UFUNCTION(BlueprintCallable, Category = "ClcStall")
+	void RefreshAllStalls();
+
+	/** 该摊位允许的最高购买价 = TargetPurchasePrice × PriceOverflowFactor */
+	UFUNCTION(BlueprintCallable, Category = "ClcStall")
+	int32 GetMaxAllowedPrice() const;
 
 	UFUNCTION(BlueprintCallable, Category = "ClcStall")
 	float GetTotalTheoreticalValue() const;
@@ -54,6 +71,10 @@ public:
 
 	/** 购买流程调用——石头即将被销毁前通知摊位，摊位算好购买结果并广播 */
 	void NotifyStoneRemoved(AClcStone* Stone);
+
+	/** 获取摊位在关卡中的唯一 Id（供存档分组用——等于 GetPathName，无需手动配置） */
+	UFUNCTION(BlueprintCallable, Category = "ClcStall")
+	FName GetStallId() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -103,4 +124,24 @@ private:
 
 	/** 生成商人 NPC 并绑定自身 */
 	void SpawnMerchant();
+
+	/** 单块石头 —— 若 PurchasePrice 超 MaxAllowedPrice，等比缩小石头尺寸压到区间内 */
+	void ClampStonePriceIfNeeded(AClcStone* Stone);
+
+	/** 对所有石头执行一次封顶（SpawnStones 末尾 + RefreshAllStalls 复用） */
+	void ClampAllStones();
+
+	// ---- 价格封顶配置（原 StallZoneManager 下放到每个摊位独立配置） ----
+
+	/** 该摊位目标购买价（软上限，低于此值的石头不做处理） */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "ClcStall|Price", meta = (AllowPrivateAccess = "true", ClampMin = "1"))
+	int32 TargetPurchasePrice = 10000;
+
+	/** 价格溢出系数 —— 硬上限 = Target × Factor。超出硬上限的石头会被等比缩小压价 */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "ClcStall|Price", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", ClampMax = "5.0"))
+	float PriceOverflowFactor = 1.3f;
+
+	/** 缩小比例下限 —— 再贵也不能缩到看不见（0.6 = 缩小到 60% 为止） */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "ClcStall|Price", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", ClampMax = "1.0"))
+	float MinStoneScaleRatio = 0.6f;
 };

@@ -239,7 +239,7 @@ void UClcToolUpgradeMenuWidget::BuildDefaultLayout()
 
 	// ── 顶部标题 ──
 	TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
-	TitleText->SetText(NSLOCTEXT("ClcUpgrade", "Title", "工具升级"));
+	TitleText->SetText(NSLOCTEXT("ClcUpgrade", "Title", "拓局专线"));
 	TitleText->SetColorAndOpacity(FLinearColor(0.2f, 1.0f, 1.0f));
 	TitleText->SetJustification(ETextJustify::Center);
 	{

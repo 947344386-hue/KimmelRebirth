@@ -8,6 +8,9 @@
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcPauseMenuSubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
+#include "Actors/ClcStoneStall.h"
+#include "Data/ClcSessionTypes.h"
+#include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "UObject/UObjectGlobals.h"
@@ -131,6 +134,30 @@ void UClcGameInstance::HandlePostLoadMap(UWorld* World)
 			if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
 			{
 				QS->RebuildTracker();
+			}
+		}
+
+		// 读档恢复：摊位槽位数据——每个摊位只恢复自己那份
+		if (bHasCachedSavedStalls)
+		{
+			if (UWorld* W = GetWorld())
+			{
+				W->GetTimerManager().SetTimerForNextTick([this]()
+				{
+					for (TActorIterator<AClcStoneStall> It(GetWorld()); It; ++It)
+					{
+						AClcStoneStall* Stall = *It;
+						if (!IsValid(Stall)) continue;
+						const FClcStallSaveState* State = CachedSavedStalls.Find(Stall->GetStallId());
+						if (State)
+						{
+							Stall->RestoreFromSlots(State->Slots);
+						}
+					}
+					CachedSavedStalls.Empty();
+					bHasCachedSavedStalls = false;
+					UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Stall stones restored from save cache"));
+				});
 			}
 		}
 

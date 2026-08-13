@@ -30,6 +30,7 @@ enum class EClcToolUpgrade : uint8
 {
 	CombinedTool UMETA(DisplayName = "手电擦石器"),
 	CuttingTable  UMETA(DisplayName = "解石台"),
+	RefreshStalls UMETA(DisplayName = "换批档口"),
 };
 
 /** 升级台的一项商品（BP 可在 Upgrades 数组里增补） */
@@ -49,6 +50,10 @@ struct FClcToolUpgradeItem
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade", meta = (ClampMin = "0"))
 	int32 Cost = 2000;
+
+	/** 是否可重复购买（true=永远不因"已拥有"隐藏，始终可购买；如"换批档口"） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ClcUpgrade")
+	bool bRepeatable = false;
 };
 
 /** Workbench 每帧做完鼠标 LineTrace 后传给工具的上下文 */

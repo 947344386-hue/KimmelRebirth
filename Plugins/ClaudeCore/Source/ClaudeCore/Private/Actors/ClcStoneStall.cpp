@@ -6,7 +6,9 @@
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Data/ClcStallConfig.h"
 #include "Data/ClcStoneMeshConfig.h"
+#include "Data/ClcSessionTypes.h"
 #include "ClcDeveloperSettings.h"
+#include "ClcLog.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -86,6 +88,8 @@ void AClcStoneStall::BeginPlay()
 	}
 
 	SpawnMerchant();
+	// 延迟石头的生成——等 GameInstance::HandlePostLoadMap 确定是读档还是新游戏
+	// 读档路径会在 next tick 调 RestoreFromSlots，新游戏则生成随机批次
 	SpawnStones();
 }
 
@@ -290,14 +294,12 @@ void AClcStoneStall::SpawnStones()
 		Data.StoneMesh = Mesh;
 		Data.MeshScale = Scale;
 
-		// Z 轴贴地：石头底部对齐桌面顶面
-		// 局部空间石头占据 [Origin.Z - BoxExtent.Z, Origin.Z + BoxExtent.Z]
-		// SpawnActor 把局部原点放在 SpawnLoc，要底部贴桌面：
-		// SpawnLoc.Z = Center.Z - (Origin.Z - BoxExtent.Z) * Scale
+		// Z 轴贴地：石头底部对齐桌面顶面（与 AClcStone::SnapToSurface 一致）
+		// 局部空间石头顶点在 [Origin - BoxExtent, Origin + BoxExtent]
 		const FBoxSphereBounds Bounds = Mesh->GetBounds();
-		const float BottomOffset = (Bounds.BoxExtent.Z - Bounds.Origin.Z) * Scale;
+		const float HalfHeight = Bounds.Origin.Z + Bounds.BoxExtent.Z;
 		// 本地网格偏移（含抖动 + Z 贴地）经摊位旋转变换到世界空间——摊位旋转后石头跟着转
-		const FVector SpawnLoc = Center + SpawnQuat.RotateVector(FVector(OffsetX + JX, OffsetY + JY, BottomOffset));
+		const FVector SpawnLoc = Center + SpawnQuat.RotateVector(FVector(OffsetX + JX, OffsetY + JY, HalfHeight * Scale));
 
 		const float Yaw = FMath::FRandRange(0.0f, 360.0f);
 
@@ -320,11 +322,19 @@ void AClcStoneStall::SpawnStones()
 	{
 		SpawnedMerchant->RecomputeTier();
 	}
+
+	// 生成完成后立即封顶价格（不再依赖 StallZoneManager Tick 轮询）
+	ClampAllStones();
 }
 
 FVector AClcStoneStall::GetStoneSpawnCenterLocation() const
 {
 	return StoneSpawnCenter ? StoneSpawnCenter->GetComponentLocation() : GetActorLocation();
+}
+
+FName AClcStoneStall::GetStallId() const
+{
+	return FName(*GetPathName());
 }
 
 float AClcStoneStall::GetTotalTheoreticalValue() const
@@ -409,4 +419,149 @@ void AClcStoneStall::NotifyStoneRemoved(AClcStone* Stone)
 
 	// 广播给商人（及其他监听者）
 	OnStoneRemoved.Broadcast(Outcome);
+}
+
+void AClcStoneStall::CollectSlots(TArray<FClcSlotSaveState>& OutSlots) const
+{
+	for (int32 i = 0; i < SpawnedStones.Num(); ++i)
+	{
+		AClcStone* Stone = SpawnedStones[i];
+		if (!IsValid(Stone)) continue;
+		const FClcStoneRuntimeData& RT = Stone->GetStoneData();
+		FClcSlotSaveState& Slot = OutSlots.AddDefaulted_GetRef();
+		Slot.SlotIndex = i;
+		Slot.bSold = false;
+		Slot.InternalData = RT.Internal;
+		Slot.EffectiveScale = Stone->GetActorScale3D().GetMax();
+		Slot.EffectivePurchasePrice = RT.Internal.PurchasePrice;
+		Slot.DisplayName = RT.DisplayName;
+		Slot.MeshIndex = -1;
+	}
+}
+
+void AClcStoneStall::RestoreFromSlots(const TArray<FClcSlotSaveState>& Slots)
+{
+	// 先清空 BeginPlay 生成的随机批次石头，再用存档数据还原
+	for (AClcStone* Stone : SpawnedStones)
+	{
+		if (Stone) Stone->Destroy();
+	}
+	SpawnedStones.Empty();
+	SumBoughtStoneValues = 0.0f;
+	BoughtStoneCount = 0;
+
+	int32 Cols, Rows;
+	if (!CalcGridLayout(Slots.Num(), Cols, Rows)) return;
+
+	UClcStallConfig* StallCfg = MarketSubsystem ? MarketSubsystem->GetStallConfig() : nullptr;
+	UClcStoneMeshConfig* MeshCfg = MarketSubsystem ? MarketSubsystem->GetMeshConfig() : nullptr;
+	if (!StallCfg || !MeshCfg) return;
+
+	for (const FClcSlotSaveState& Slot : Slots)
+	{
+		const int32 i = Slot.SlotIndex;
+		const int32 Col = i % Cols;
+		const int32 Row = i / Cols;
+
+		const float CellSize = StallCfg->UnitCellSize;
+		const float OffsetX = (Col - (Cols - 1) * 0.5f) * CellSize;
+		const float OffsetY = (Row - (Rows - 1) * 0.5f) * CellSize;
+
+		const FVector Center = StoneSpawnCenter->GetComponentLocation();
+		const FQuat SpawnQuat = StoneSpawnCenter->GetComponentQuat();
+
+		bool bSuccess = false;
+		FClcStoneInternalData InternalData = Slot.InternalData;
+		InternalData.PurchasePrice = Slot.EffectivePurchasePrice;
+		InternalData.MeshScale = Slot.EffectiveScale;
+		InternalData.DistributionMap.Data.Empty(); // 运行时按需重建
+
+		UStaticMesh* Mesh = MeshCfg->GetRandomMesh();
+		const float MeshRadius = Mesh ? Mesh->GetBounds().SphereRadius : 50.0f;
+		const float Scale = FMath::Min(Slot.EffectiveScale, CellSize / (MeshRadius * 2.0f));
+
+		if (Mesh)
+		{
+			const FBoxSphereBounds Bounds = Mesh->GetBounds();
+			const float HalfHeight = Bounds.Origin.Z + Bounds.BoxExtent.Z;
+			const FVector SpawnLoc = Center + SpawnQuat.RotateVector(FVector(OffsetX, OffsetY, HalfHeight * Scale));
+			const float Yaw = FMath::FRandRange(0.0f, 360.0f);
+
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+			AClcStone* Stone = GetWorld()->SpawnActor<AClcStone>(AClcStone::StaticClass(), SpawnLoc, FRotator(0, Yaw, 0), Params);
+			if (Stone)
+			{
+				InternalData.MeshScale = Scale;
+				Stone->Initialize(InternalData, Mesh, Scale, Slot.DisplayName);
+				Stone->SetOwningStall(this);
+				Stone->ApplyInteractionConfig(StallCfg->StoneInteractionRadius, StallCfg->StoneAimSweepRadius);
+				SpawnedStones.Add(Stone);
+			}
+		}
+	}
+	if (SpawnedMerchant) SpawnedMerchant->RecomputeTier();
+}
+
+// ---- 价格封顶 & 换批 ----
+
+void AClcStoneStall::RefreshAllStalls()
+{
+	// 重新生成石头（SpawnStones 内部先销毁旧石头 → 生成 → ClampAllStones）
+	SpawnStones();
+
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcStoneStall] RefreshAllStalls done —— %s, target=%d, max=%d"),
+		*GetName(), TargetPurchasePrice, GetMaxAllowedPrice());
+}
+
+int32 AClcStoneStall::GetMaxAllowedPrice() const
+{
+	return FMath::RoundToInt(static_cast<float>(TargetPurchasePrice) * PriceOverflowFactor);
+}
+
+void AClcStoneStall::ClampStonePriceIfNeeded(AClcStone* Stone)
+{
+	const int32 MaxPrice = GetMaxAllowedPrice();
+	const int32 CurrentPrice = Stone->GetStoneData().Internal.PurchasePrice;
+
+	if (CurrentPrice <= MaxPrice) return;
+
+	// 等比缩小：PurchasePrice ∝ SurfaceArea ∝ Scale²
+	// → ScaleFactor = sqrt(MaxPrice / CurrentPrice)，不低于 MinStoneScaleRatio
+	const float ScaleFactor = FMath::Sqrt(
+		static_cast<float>(MaxPrice) / static_cast<float>(CurrentPrice));
+	const float ClampedFactor = FMath::Max(ScaleFactor, MinStoneScaleRatio);
+
+	const float CurScale = Stone->GetActorScale3D().GetMax();
+	const float NewScale = CurScale * ClampedFactor;
+	Stone->SetActorScale3D(FVector(NewScale));
+	Stone->GetStoneData().Internal.MeshScale = NewScale;
+
+	// 缩放变动后重新贴地——底部对齐桌面顶面
+	const float TableTopZ = StoneSpawnCenter->GetComponentLocation().Z;
+	Stone->SnapToSurface(TableTopZ);
+
+	Stone->RecalculateSurfaceArea();
+	Stone->RecalculatePrices();
+
+#if !UE_BUILD_SHIPPING
+	UE_LOG(LogClaudeCore, Verbose,
+		TEXT("[ClcStoneStall] Clamped stone %s: %d → %d (scale %.2f → %.2f, factor=%.3f)"),
+		*Stone->GetName(), CurrentPrice, Stone->GetStoneData().Internal.PurchasePrice,
+		CurScale, NewScale, ClampedFactor);
+#endif
+}
+
+void AClcStoneStall::ClampAllStones()
+{
+	for (AClcStone* Stone : SpawnedStones)
+	{
+		if (IsValid(Stone))
+		{
+			ClampStonePriceIfNeeded(Stone);
+		}
+	}
+
+	UE_LOG(LogClaudeCore, Verbose, TEXT("[ClcStoneStall] Clamp done —— %s, %d stones, target=%d, max=%d"),
+		*GetName(), SpawnedStones.Num(), TargetPurchasePrice, GetMaxAllowedPrice());
 }

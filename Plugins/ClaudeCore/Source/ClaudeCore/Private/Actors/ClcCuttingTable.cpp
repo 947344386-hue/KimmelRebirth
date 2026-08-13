@@ -182,6 +182,11 @@ void AClcCuttingTable::Tick(float DeltaTime)
 	if (bExitDown && !bExitKeyPrev)
 	{
 		bExitKeyPrev = true;
+		// 切石动画中禁止 Esc 退出——中途退出会导致石头残留在台面且不归还背包
+		if (CurrentState == EClcCuttingTableState::CuttingCinematic)
+		{
+			return;
+		}
 		if (UClcBackpackSubsystem* Backpack = GetBackpack(); Backpack && Backpack->IsBackpackOpen())
 		{
 			Backpack->ToggleBackpack();

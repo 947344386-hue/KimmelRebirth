@@ -35,9 +35,17 @@ public:
 	void RefreshDisplay(class UClcQuestSubsystem* Subsystem);
 
 protected:
+	/** 主线标题文本（空列表时隐藏） */
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcQuest")
+	TObjectPtr<UTextBlock> MainTitleText;
+
 	/** 主线任务列表容器 */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcQuest")
 	TObjectPtr<UVerticalBox> MainQuestList;
+
+	/** 支线标题文本（空列表时隐藏） */
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcQuest")
+	TObjectPtr<UTextBlock> SideTitleText;
 
 	/** 支线任务列表容器 */
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "ClcQuest")

@@ -149,8 +149,8 @@ FString UClcQuestSubsystem::GetQuestProgressText(FName QuestID) const
 	else if (Def->ObjectiveType == EClcQuestObjectiveType::UnlockUpgrade ||
 		Def->ObjectiveType == EClcQuestObjectiveType::ToolDamaged)
 	{
-		// 布尔型：达成显示"是"，未达成显示"否"
-		return CheckQuestComplete(QuestID) ? TEXT("是") : TEXT("否");
+		// 布尔型：达成显示 ✓，未达成显示 ✗
+		return CheckQuestComplete(QuestID) ? TEXT("✓") : TEXT("✗");
 	}
 	return FString::Printf(TEXT("%d/%d"), Cur, Def->ObjectiveParam);
 }

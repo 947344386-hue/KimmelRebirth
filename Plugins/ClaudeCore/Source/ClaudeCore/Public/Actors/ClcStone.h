@@ -37,13 +37,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	void SetDisplayName(const FString& NewName) { RuntimeData.DisplayName = NewName; }
 
-	/** 获取石头数据 */
+	/** 获取石头数据（可写引用——供 RestoreFromSlots 直接写回 RuntimeData） */
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	const FClcStoneRuntimeData& GetStoneData() const { return RuntimeData; }
+	FClcStoneRuntimeData& GetStoneData() { return RuntimeData; }
 
 	/** 设置石头表面积（创建Mesh后由摊位调用） */
 	UFUNCTION(BlueprintCallable, Category = "ClcStone")
 	void RecalculateSurfaceArea();
+
+	/** 用当前 Internal 数据重算 TheoreticalValue + PurchasePrice（供 ClcStoneStall 价格封顶等外部调用） */
+	UFUNCTION(BlueprintCallable, Category = "ClcStone")
+	void RecalculatePrices();
+
+	/** 缩放变动后重新贴地：底部对齐桌面顶面（传入桌面顶面世界 Z 坐标） */
+	void SnapToSurface(float TableTopZ);
 
 	// ---- IClcInteractable ----
 	virtual FText GetInteractionPrompt() const override;

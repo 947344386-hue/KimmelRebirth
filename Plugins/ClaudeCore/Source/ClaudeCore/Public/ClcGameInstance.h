@@ -139,4 +139,7 @@ protected:
 	/** FCoreUObjectDelegates 句柄（Shutdown 时移除） */
 	FDelegateHandle PreLoadMapHandle;
 	FDelegateHandle PostLoadMapHandle;
+
+	/** 注入 MoviePlayer loading screen（Init 时调一次；只打包游戏生效，PIE 无副作用） */
+	void SetupLoadingScreen();
 };

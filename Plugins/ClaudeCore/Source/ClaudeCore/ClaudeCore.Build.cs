@@ -20,6 +20,7 @@ public class ClaudeCore : ModuleRules
 			"RHI",
 			"ProceduralMeshComponent",
 			"DeveloperSettings",
+			"MoviePlayer",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

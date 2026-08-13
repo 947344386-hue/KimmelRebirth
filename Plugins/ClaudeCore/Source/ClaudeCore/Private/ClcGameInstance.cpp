@@ -3,6 +3,8 @@
 #include "ClcGameInstance.h"
 #include "ClcLog.h"
 #include "ClcDeveloperSettings.h"
+#include "UI/ClcLoadingScreenWidget.h"
+#include "MoviePlayer.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
@@ -34,6 +36,10 @@ void UClcGameInstance::Init()
 		this, &UClcGameInstance::HandlePreLoadMap);
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
 		this, &UClcGameInstance::HandlePostLoadMap);
+
+	// 注入 MoviePlayer loading screen —— 引擎级加载画面（背景图轮播）。
+	// 只在打包游戏生效（!GIsEditor），PIE 里 MoviePlayer 不跑，此调用无副作用。
+	SetupLoadingScreen();
 }
 
 void UClcGameInstance::Shutdown()
@@ -273,6 +279,27 @@ void UClcGameInstance::RequestQuit()
 
 	// 兜底：直接请求引擎退出
 	FPlatformMisc::RequestExit(false);
+}
+
+void UClcGameInstance::SetupLoadingScreen()
+{
+	IGameMoviePlayer* MP = GetMoviePlayer();
+	if (!MP)
+	{
+		UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] SetupLoadingScreen —— MoviePlayer 不可用（PIE/编辑器正常）"));
+		return;
+	}
+
+	FLoadingScreenAttributes Attrs;
+	Attrs.WidgetLoadingScreen = SNew(SClcLoadingScreenWidget);
+	Attrs.bAutoCompleteWhenLoadingCompletes = true;  // 加载完成自动收尾
+	Attrs.bAllowEngineTick = true;                    // 让 WaitForMovieToFinish 跑 SlateApp.Tick 驱动轮播
+	Attrs.bMoviesAreSkippable = false;
+	Attrs.bWaitForManualStop = false;
+	Attrs.MinimumLoadingScreenDisplayTime = -1.0f;   // 不强制最短显示时长
+
+	MP->SetupLoadingScreen(Attrs);
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Loading screen 注入完成"));
 }
 
 void UClcGameInstance::EnsureSubsystemsReady()

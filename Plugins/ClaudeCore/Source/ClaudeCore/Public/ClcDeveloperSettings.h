@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "UObject/SoftObjectPath.h"
 #include "ClcDeveloperSettings.generated.h"
 
 /**
@@ -64,4 +65,18 @@ public:
 	/** 讨价还价 QTE 配置（上浮档位/每键窗口/文案模板） */
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets|Haggle", meta=(ToolTip="讨价还价 QTE 配置 DataAsset 路径"))
 	FString HaggleConfigPath = TEXT("/Game/JadeBetting/Data/DA_HaggleConfig");
+
+	// ---- 加载画面 ----
+
+	/** 加载画面背景图库（随机起始位 + 轮播）；软引用，不预加载全部 */
+	UPROPERTY(Config, EditAnywhere, Category="Loading", meta=(ToolTip="加载画面背景图库，轮播展示；为空时显示纯暗底"))
+	TArray<FSoftObjectPath> LoadingBackgrounds;
+
+	/** 背景图轮播间隔（秒，默认 3.0） */
+	UPROPERTY(Config, EditAnywhere, Category="Loading", meta=(ClampMin="0.5", ToolTip="背景图轮播间隔秒数"))
+	float LoadingBackgroundSwitchInterval = 3.0f;
+
+	/** 加载画面随机提示文案；为空时使用 C++ 内置默认提示池 */
+	UPROPERTY(Config, EditAnywhere, Category="Loading", meta=(ToolTip="加载画面随机提示文案；为空时使用内置默认提示"))
+	TArray<FString> LoadingTips;
 };

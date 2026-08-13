@@ -8,7 +8,6 @@
 #include "ClcGameInstance.generated.h"
 
 class UClcSaveManagerSubsystem;
-class UClcGameFlowManager;
 
 /**
  * 自定义 GameInstance —— 打包游戏的总控。
@@ -117,9 +116,6 @@ public:
 	int32 AutoSaveGoldDeltaThreshold = 5000;
 
 protected:
-	/** 确保所有 GameInstanceSubsystem 已创建（懒初始化） */
-	void EnsureSubsystemsReady();
-
 	/** 遍历所有持有玩家数据的 Subsystem 并序列化到 SaveManager→SaveGame */
 	void TriggerAutoSave();
 

@@ -42,9 +42,17 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets")
 	FString JadeTextureConfigPath = TEXT("/Game/JadeBetting/Data/DA_JadeTextureConfig");
 
+	/** 解石切面材质路径（PBR 玉杂 lerp，贴图由 JadeTextureConfig 注入） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets", meta=(ToolTip="解石切面材质路径；贴图由 DA_JadeTextureConfig 注入"))
+	FString CutFaceMaterialPath = TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace");
+
 	/** 鹰眼技能配置（持续时间/冷却/扫描间隔等） */
 	UPROPERTY(Config, EditAnywhere, Category="DataAssets")
 	FString EagleEyeConfigPath = TEXT("/Game/JadeBetting/Data/DA_EagleEyeConfig");
+
+	/** 任务主配置 DataAsset 路径（任务定义/目标/奖励） */
+	UPROPERTY(Config, EditAnywhere, Category="DataAssets", meta=(ToolTip="任务主配置 DataAsset 路径"))
+	FString QuestConfigPath = TEXT("/Game/JadeBetting/Data/DA_QuestConfig.DA_QuestConfig");
 
 	// ---- 商人系统 ----
 

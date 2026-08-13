@@ -135,7 +135,7 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 
 	// ---- 4b. 切面材质 MID（PBR 玉杂 lerp；贴图由 DA_JadeTextureConfig 注入，与 M_StoneOpening 同链路） ----
 	if (UMaterialInterface* CutFaceMat = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+		nullptr, *GetDefault<UClcDeveloperSettings>()->CutFaceMaterialPath))
 	{
 		CutFaceMID = UMaterialInstanceDynamic::Create(CutFaceMat, this, TEXT("CutFaceMID"));
 		if (CutFaceMID)
@@ -211,7 +211,7 @@ void AClcCuttingStone::ReplayAllCuts()
 	if (!CapMat)
 	{
 		if (UMaterialInterface* Loaded = LoadObject<UMaterialInterface>(
-			nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+			nullptr, *GetDefault<UClcDeveloperSettings>()->CutFaceMaterialPath))
 		{
 			CapMat = Loaded;
 		}
@@ -388,7 +388,7 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	if (!CapMat)
 	{
 		if (UMaterialInterface* Loaded = LoadObject<UMaterialInterface>(
-			nullptr, TEXT("/Game/JadeBetting/Materials/M_StoneCutFace.M_StoneCutFace")))
+			nullptr, *GetDefault<UClcDeveloperSettings>()->CutFaceMaterialPath))
 		{
 			CapMat = Loaded;
 		}

@@ -6,6 +6,7 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Tools/ClcStoneTool.h"
 #include "ClcGameInstance.h"
+#include "ClcDeveloperSettings.h"
 #include "ClcLog.h"
 #include "UI/ClcQuestTrackerWidget.h"
 #include "Engine/StreamableManager.h"
@@ -24,8 +25,6 @@ namespace
 			Type == EClcQuestObjectiveType::ToolDamaged;
 	}
 }
-
-const FString UClcQuestSubsystem::QuestConfigAssetPath = TEXT("/Game/JadeBetting/Data/DA_QuestConfig.DA_QuestConfig");
 
 void UClcQuestSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -54,10 +53,11 @@ void UClcQuestSubsystem::Deinitialize()
 
 void UClcQuestSubsystem::LoadQuestConfig()
 {
-	UClcQuestConfig* Config = LoadObject<UClcQuestConfig>(nullptr, *QuestConfigAssetPath);
+	const FString ConfigPath = GetDefault<UClcDeveloperSettings>()->QuestConfigPath;
+	UClcQuestConfig* Config = LoadObject<UClcQuestConfig>(nullptr, *ConfigPath);
 	if (!Config)
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcQuest] DA_QuestConfig 未找到（路径=%s），任务系统空跑"), *QuestConfigAssetPath);
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcQuest] DA_QuestConfig 未找到（路径=%s），任务系统空跑"), *ConfigPath);
 		return;
 	}
 

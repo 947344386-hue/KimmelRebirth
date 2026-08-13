@@ -108,9 +108,6 @@ private:
 
     // ---- 配置 ----
 
-    /** DA_QuestConfig 的固定资产路径 */
-    static const FString QuestConfigAssetPath;
-
     // ---- 运行时 ----
 
     /** 任务定义表（QuestID → 定义） */

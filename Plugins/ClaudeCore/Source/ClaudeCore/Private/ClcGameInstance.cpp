@@ -302,13 +302,6 @@ void UClcGameInstance::SetupLoadingScreen()
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Loading screen 注入完成"));
 }
 
-void UClcGameInstance::EnsureSubsystemsReady()
-{
-	// GameInstanceSubsystem 在 Init 后自动就绪，
-	// 这里做一次显式获取确保空引用已填充。
-	// 实际序列化/反序列化逻辑在后续 Phase 实现。
-}
-
 void UClcGameInstance::TriggerAutoSave()
 {
 	if (UClcSaveManagerSubsystem* SM = GetSubsystem<UClcSaveManagerSubsystem>())

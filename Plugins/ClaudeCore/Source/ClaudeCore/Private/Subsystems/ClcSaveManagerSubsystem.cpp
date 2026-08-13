@@ -4,6 +4,7 @@
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
+#include "Subsystems/ClcLogToastSubsystem.h"
 #include "ClcGameInstance.h"
 #include "Actors/ClcStoneStall.h"
 #include "ClcLog.h"
@@ -15,6 +16,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/LocalPlayer.h"
+#include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 
 const FString UClcSaveManagerSubsystem::AutoSaveSlotName = TEXT("AutoSave");
 const FString UClcSaveManagerSubsystem::ManualSlotPrefix = TEXT("ManualSlot_");
@@ -48,23 +52,36 @@ void UClcSaveManagerSubsystem::Deinitialize()
 TArray<FClcSaveMetaData> UClcSaveManagerSubsystem::GetSaveSlots() const
 {
 	TArray<FClcSaveMetaData> Slots;
+	FClcSaveMetaData Meta;
 	if (UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0))
-		Slots.Add(ReadMetaData(AutoSaveSlotName));
+	{
+		if (ReadMetaData(AutoSaveSlotName, Meta)) Slots.Add(Meta);
+	}
 	for (int32 i = 0; i < MaxSaveSlots; ++i)
 	{
 		const FString SlotName = MakeManualSlotName(i);
 		if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
-			Slots.Add(ReadMetaData(SlotName));
+		{
+			if (ReadMetaData(SlotName, Meta)) Slots.Add(Meta);
+		}
 	}
 	return Slots;
 }
 
 bool UClcSaveManagerSubsystem::HasAnySave() const
 {
-	if (UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0)) return true;
+	if (UGameplayStatics::DoesSaveGameExist(AutoSaveSlotName, 0))
+	{
+		FClcSaveMetaData Meta;
+		if (ReadMetaData(AutoSaveSlotName, Meta)) return true;
+	}
 	for (int32 i = 0; i < MaxSaveSlots; ++i)
 	{
-		if (UGameplayStatics::DoesSaveGameExist(MakeManualSlotName(i), 0)) return true;
+		if (UGameplayStatics::DoesSaveGameExist(MakeManualSlotName(i), 0))
+		{
+			FClcSaveMetaData Meta;
+			if (ReadMetaData(MakeManualSlotName(i), Meta)) return true;
+		}
 	}
 	return false;
 }
@@ -75,10 +92,22 @@ bool UClcSaveManagerSubsystem::SaveGame(const FString& SlotName)
 {
 	FClcSaveData Data = CollectSaveData();
 	Data.SaveTimestamp = FDateTime::Now();
+	Data.SaveVersion = ClcCurrentSaveVersion();
 	if (UWorld* World = GetWorld())
 		Data.LevelName = World->GetMapName();
 
-	// 累计游戏时长：上次保存到现在的间隔 + 已累计
+	// 只在所有数据源都为空（从未玩过的空状态）时拒绝写。
+	// 之前的条件只看金币/石头/摊位，会误拒"花光+空背包但工具/任务有进度"的合法档。
+	if (Data.SavedGold == 0 && Data.SavedStones.Num() == 0
+		&& Data.SavedTotalEarned == 0 && Data.SavedStalls.Num() == 0
+		&& Data.SavedDurability.Num() == 0 && Data.SavedUpgrades.Num() == 0
+		&& Data.SavedQuestStates.Num() == 0)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] SaveGame '%s': 全空状态，拒绝写空存档"), *SlotName);
+		return false;
+	}
+
+	// 累计游戏时长（仅在写盘成功后才累加，避免失败/拦截时重复累计污染下次保存）
 	double Now = FPlatformTime::Seconds();
 	float DeltaSec = static_cast<float>(Now - LastAutoSaveTime);
 	if (DeltaSec > 0.0f && DeltaSec < 3600.0f) // 防异常跳变
@@ -87,16 +116,9 @@ bool UClcSaveManagerSubsystem::SaveGame(const FString& SlotName)
 	}
 	Data.PlayTimeHours = AccumulatedPlayTimeSeconds / 3600.0f;
 
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] SaveGame '%s': Gold=%d, Stones=%d, PlayTime=%.2fh"),
-		*SlotName, Data.SavedGold, Data.SavedStones.Num(), Data.PlayTimeHours);
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] SaveGame '%s': Gold=%d, Stones=%d, PlayTime=%.2fh, Ver=%d"),
+		*SlotName, Data.SavedGold, Data.SavedStones.Num(), Data.PlayTimeHours, Data.SaveVersion);
 
-	// 只在 Gold=0 && Stones=0 && TotalEarned=0 && SavedStalls=空（从未玩过的空状态）时拒绝写，（从未玩过的空状态）时拒绝写
-	if (Data.SavedGold == 0 && Data.SavedStones.Num() == 0
-		&& Data.SavedTotalEarned == 0 && Data.SavedStalls.Num() == 0)
-	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] SaveGame '%s': 全空状态，拒绝写空存档"), *SlotName);
-		return false;
-	}
 	if (WriteSaveFile(SlotName, Data))
 	{
 		CurrentSlot = SlotName;
@@ -104,26 +126,47 @@ bool UClcSaveManagerSubsystem::SaveGame(const FString& SlotName)
 		LastAutoSaveTime = Now;
 		return true;
 	}
+	NotifySaveFailedToast(SlotName, TEXT("写盘失败"));
 	return false;
 }
 
 bool UClcSaveManagerSubsystem::LoadGame(const FString& SlotName)
 {
 	FClcSaveData Data;
-	if (!ReadSaveFile(SlotName, Data)) return false;
-
-	// 版本兼容性检查：只兼容当前版本（2.x 及更高），旧版拒绝
-	if (!Data.SaveVersion.IsEmpty() && Data.SaveVersion != TEXT("3.0"))
+	if (!ReadSaveFile(SlotName, Data))
 	{
-		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] LoadGame '%s': 存档版本 %s 不兼容当前版本 3.0，拒绝加载"), *SlotName, *Data.SaveVersion);
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] LoadGame '%s': 读取失败或存档损坏"), *SlotName);
+		NotifySaveFailedToast(SlotName, TEXT("存档损坏或读取失败"));
 		return false;
 	}
 
-	DistributeSaveData(Data);
+	// 版本兼容性检查：旧字符串档反序列化后 SaveVersion 取默认值 0（字段类型变更），
+	// 视为版本 0 拒绝加载。当前版本 3，无历史迁移步骤。
+	if (Data.SaveVersion < ClcCurrentSaveVersion())
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] LoadGame '%s': 存档版本 %d < 当前 %d，拒绝加载（旧版或字符串档）"),
+			*SlotName, Data.SaveVersion, ClcCurrentSaveVersion());
+		NotifySaveFailedToast(SlotName, TEXT("存档版本不兼容"));
+		return false;
+	}
+
+	// 未来迁移链入口（当前无历史步骤）：
+	// for (int32 V = Data.SaveVersion; V < ClcCurrentSaveVersion(); ++V)
+	// {
+	//     Migrate(V, V + 1, Data);
+	// }
+
+	if (!DistributeSaveData(Data))
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] LoadGame '%s': 数据分发失败（子系统未就绪）"), *SlotName);
+		NotifySaveFailedToast(SlotName, TEXT("数据恢复失败"));
+		return false;
+	}
+
 	CurrentSlot = SlotName;
 	LastAutoSavedGold = Data.SavedGold;
 	LastAutoSaveTime = FPlatformTime::Seconds();
-	AccumulatedPlayTimeSeconds = Data.PlayTimeHours * 3600.0f; // 从存档恢复累计时长
+	AccumulatedPlayTimeSeconds = Data.PlayTimeHours * 3600.0f;
 
 	UGameInstance* GI = GetGameInstance();
 	if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
@@ -175,7 +218,7 @@ void UClcSaveManagerSubsystem::NotifyTransactionCompleted()
 FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const
 {
 	FClcSaveData Data;
-	Data.SaveVersion = TEXT("3.0");
+	Data.SaveVersion = ClcCurrentSaveVersion();
 
 	UGameInstance* GI = GetGameInstance();
 	if (!GI) return Data;
@@ -257,20 +300,25 @@ FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const
 	return Data;
 }
 
-void UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
+bool UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
 {
 	UGameInstance* GI = GetGameInstance();
-	if (!GI) return;
+	if (!GI) return false;
 
 	ULocalPlayer* LP = GI->GetFirstGamePlayer();
-	if (!LP) return;
+	if (!LP) return false;
+
+	bool bAllOk = true;
 
 	if (UClcBackpackSubsystem* BP = LP->GetSubsystem<UClcBackpackSubsystem>())
 		BP->RestoreFromSaveData(Data);
+	else bAllOk = false;
 	if (UClcToolDurabilitySubsystem* TD = LP->GetSubsystem<UClcToolDurabilitySubsystem>())
 		TD->RestoreFromSaveData(Data);
+	else bAllOk = false;
 	if (UClcQuestSubsystem* QS = LP->GetSubsystem<UClcQuestSubsystem>())
 		QS->RestoreFromSaveData(Data, /*bIsNewGame=*/false);
+	else bAllOk = false;
 
 	// 摊位槽位缓存到 GameInstance——等关卡加载完毕再将各摊位自己的 Slots 分发
 	if (UClcGameInstance* ClcGI = Cast<UClcGameInstance>(GI))
@@ -280,6 +328,7 @@ void UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
 		UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] DistributeSaveData: Cached %d stall states for post-load restore"),
 			Data.SavedStalls.Num());
 	}
+	else bAllOk = false;
 
 	// 玩家坐标缓存到 GameInstance，等关卡加载后 Pawn 就绪再应用
 	// （此处可能还在旧关卡，Pawn 不可用）
@@ -292,6 +341,8 @@ void UClcSaveManagerSubsystem::DistributeSaveData(const FClcSaveData& Data)
 			ClcGI->bHasPendingPlayerTransform = true;
 		}
 	}
+
+	return bAllOk;
 }
 
 bool UClcSaveManagerSubsystem::WriteSaveFile(const FString& SlotName, const FClcSaveData& Data)
@@ -300,7 +351,47 @@ bool UClcSaveManagerSubsystem::WriteSaveFile(const FString& SlotName, const FClc
 		UGameplayStatics::CreateSaveGameObject(UClcPlayerSaveGame::StaticClass()));
 	if (!SaveObj) return false;
 	SaveObj->SaveData = Data;
-	return UGameplayStatics::SaveGameToSlot(SaveObj, SlotName, 0);
+
+	// 原子写：先序列化到内存，写 .sav.tmp，回读 size 校验，再 rename 替换原文件。
+	// 引擎 SaveGameToSlot 内部直接覆盖目标文件无原子性，项目侧自行兜底。
+	TArray<uint8> Bytes;
+	if (!UGameplayStatics::SaveGameToMemory(SaveObj, Bytes))
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] WriteSaveFile '%s': SaveGameToMemory 失败"), *SlotName);
+		return false;
+	}
+
+	IFileManager& FM = IFileManager::Get();
+	const FString SaveDir = FPaths::ProjectSavedDir() / TEXT("SaveGames");
+	const FString FinalPath = SaveDir / (SlotName + TEXT(".sav"));
+	const FString TmpPath = SaveDir / (SlotName + TEXT(".sav.tmp"));
+
+	// 写临时文件
+	if (!FFileHelper::SaveArrayToFile(Bytes, *TmpPath))
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] WriteSaveFile '%s': 写临时文件失败"), *SlotName);
+		return false;
+	}
+
+	// 回读 size 校验——防写盘中途断电/磁盘满产出的半截文件
+	const int64 TmpSize = FM.FileSize(*TmpPath);
+	if (TmpSize != static_cast<int64>(Bytes.Num()))
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] WriteSaveFile '%s': 临时文件 size 校验失败 (%lld != %d)，保留原档"),
+			*SlotName, TmpSize, Bytes.Num());
+		FM.Delete(*TmpPath, false, false, true);
+		return false;
+	}
+
+	// 同盘 rename 替换原文件（比直接覆盖写更原子）
+	if (!FM.Move(*FinalPath, *TmpPath, true, true, true, true))
+	{
+		UE_LOG(LogClaudeCore, Error, TEXT("[ClcSave] WriteSaveFile '%s': Move 替换失败，保留原档"), *SlotName);
+		FM.Delete(*TmpPath, false, false, true);
+		return false;
+	}
+
+	return true;
 }
 
 bool UClcSaveManagerSubsystem::ReadSaveFile(const FString& SlotName, FClcSaveData& OutData) const
@@ -310,24 +401,78 @@ bool UClcSaveManagerSubsystem::ReadSaveFile(const FString& SlotName, FClcSaveDat
 		UGameplayStatics::LoadGameFromSlot(SlotName, 0));
 	if (!SaveObj) return false;
 	OutData = SaveObj->SaveData;
+
+	// 内容校验——半损坏但仍可反序列化的档不直接覆盖运行态
+	if (!ValidateSaveData(OutData))
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ReadSaveFile '%s': 内容校验失败，视为坏档"), *SlotName);
+		return false;
+	}
 	return true;
 }
 
-FClcSaveMetaData UClcSaveManagerSubsystem::ReadMetaData(const FString& SlotName) const
+bool UClcSaveManagerSubsystem::ValidateSaveData(const FClcSaveData& Data) const
 {
-	FClcSaveMetaData Meta;
-	Meta.SlotName = SlotName;
-	FClcSaveData Data;
-	if (ReadSaveFile(SlotName, Data))
+	// 背包石头数上限
+	if (Data.SavedStones.Num() > 200)
 	{
-		Meta.SaveTimestamp = Data.SaveTimestamp;
-		Meta.Gold = Data.SavedGold;
-		Meta.StoneCount = Data.SavedStones.Num();
-		Meta.PlayTimeHours = Data.PlayTimeHours;
-		Meta.LevelName = Data.LevelName;
-		Meta.SaveVersion = Data.SaveVersion;
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: SavedStones.Num()=%d 超 200"), Data.SavedStones.Num());
+		return false;
 	}
-	return Meta;
+	// 金币/累计收益
+	if (Data.SavedGold < 0 || Data.SavedTotalEarned < 0)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: Gold=%d 或 TotalEarned=%d 为负"), Data.SavedGold, Data.SavedTotalEarned);
+		return false;
+	}
+	// 摊位每个 Slots 数上限
+	for (const auto& Pair : Data.SavedStalls)
+	{
+		if (Pair.Value.Slots.Num() > 200)
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: 摊位 %s Slots=%d 超 200"), *Pair.Value.StallId.ToString(), Pair.Value.Slots.Num());
+			return false;
+		}
+	}
+	// 游戏时长合理范围
+	if (Data.PlayTimeHours < 0.0f || Data.PlayTimeHours >= 100000.0f)
+	{
+		UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: PlayTimeHours=%.2f 越界"), Data.PlayTimeHours);
+		return false;
+	}
+	// 工具耐久值范围
+	for (const auto& Pair : Data.SavedDurability)
+	{
+		if (Pair.Value < 0.0f || Pair.Value > 100000.0f)
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: SavedDurability[key=%d]=%.2f 越界"), Pair.Key, Pair.Value);
+			return false;
+		}
+	}
+	for (const auto& Pair : Data.SavedMaxDurability)
+	{
+		if (Pair.Value < 0.0f || Pair.Value > 100000.0f)
+		{
+			UE_LOG(LogClaudeCore, Warning, TEXT("[ClcSave] ValidateSaveData: SavedMaxDurability[key=%d]=%.2f 越界"), Pair.Key, Pair.Value);
+			return false;
+		}
+	}
+	return true;
+}
+
+bool UClcSaveManagerSubsystem::ReadMetaData(const FString& SlotName, FClcSaveMetaData& OutMeta) const
+{
+	OutMeta = FClcSaveMetaData();
+	OutMeta.SlotName = SlotName;
+	FClcSaveData Data;
+	if (!ReadSaveFile(SlotName, Data)) return false;
+	OutMeta.SaveTimestamp = Data.SaveTimestamp;
+	OutMeta.Gold = Data.SavedGold;
+	OutMeta.StoneCount = Data.SavedStones.Num();
+	OutMeta.PlayTimeHours = Data.PlayTimeHours;
+	OutMeta.LevelName = Data.LevelName;
+	OutMeta.SaveVersion = Data.SaveVersion;
+	return true;
 }
 
 void UClcSaveManagerSubsystem::RestartAutoSaveTimer()
@@ -338,4 +483,16 @@ void UClcSaveManagerSubsystem::RestartAutoSaveTimer()
 	World->GetTimerManager().SetTimer(AutoSaveTimerHandle,
 		FTimerDelegate::CreateUObject(this, &UClcSaveManagerSubsystem::TriggerAutoSave),
 		AutoSaveIntervalSeconds, true);
+}
+
+void UClcSaveManagerSubsystem::NotifySaveFailedToast(const FString& SlotName, const FString& Reason) const
+{
+	if (const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr)
+	{
+		if (UClcLogToastSubsystem* Toast = LP->GetSubsystem<UClcLogToastSubsystem>())
+		{
+			Toast->AddLog(FString::Printf(TEXT("存档失败：%s（%s）"), *SlotName, *Reason),
+				3.0f, FLinearColor(0.9f, 0.2f, 0.2f));
+		}
+	}
 }

@@ -79,11 +79,16 @@ public:
 
 private:
 	FClcSaveData CollectSaveData() const;
-	void DistributeSaveData(const FClcSaveData& Data);
+	bool DistributeSaveData(const FClcSaveData& Data);
 	bool WriteSaveFile(const FString& SlotName, const FClcSaveData& Data);
 	bool ReadSaveFile(const FString& SlotName, FClcSaveData& OutData) const;
-	FClcSaveMetaData ReadMetaData(const FString& SlotName) const;
+	bool ValidateSaveData(const FClcSaveData& Data) const;
+	/** 读元数据；坏档返回 false，OutMeta 保持默认 */
+	bool ReadMetaData(const FString& SlotName, FClcSaveMetaData& OutMeta) const;
 	void RestartAutoSaveTimer();
+
+	/** 保存/加载失败时弹 Toast 提示玩家；LocalPlayer 为空（Shutdown）时静默跳过 */
+	void NotifySaveFailedToast(const FString& SlotName, const FString& Reason) const;
 
 	// ---- 配置 ----
 

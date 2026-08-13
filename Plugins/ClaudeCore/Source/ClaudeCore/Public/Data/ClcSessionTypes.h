@@ -179,7 +179,7 @@ struct CLAUDECORE_API FClcSaveData
 	UPROPERTY(SaveGame)
 	FDateTime SaveTimestamp;
 	UPROPERTY(SaveGame)
-	FString SaveVersion = TEXT("3.0");
+	int32 SaveVersion = 0;  // 0=未设；新存档写 CURRENT_SAVE_VERSION(=3)
 	UPROPERTY(SaveGame)
 	FString LevelName;
 	UPROPERTY(SaveGame)
@@ -195,6 +195,9 @@ public:
 	UPROPERTY(SaveGame)
 	FClcSaveData SaveData;
 };
+
+/** 当前存档版本号（整数，便于迁移链判断；旧字符串档反序列化后此字段取默认值 0，视为版本 0 拒绝加载） */
+inline constexpr int32 ClcCurrentSaveVersion() { return 3; }
 
 /**
  * 存档元数据——菜单存档列表展示用，不含全量数据。
@@ -231,5 +234,5 @@ struct CLAUDECORE_API FClcSaveMetaData
 
 	/** 存档版本号 */
 	UPROPERTY(BlueprintReadOnly, Category = "Save")
-	FString SaveVersion;
+	int32 SaveVersion = 0;
 };

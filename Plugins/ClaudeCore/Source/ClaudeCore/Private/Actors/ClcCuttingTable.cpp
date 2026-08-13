@@ -993,6 +993,9 @@ void AClcCuttingTable::RemoveStoneFromBench()
 		UE_LOG(LogClaudeCore, Error, TEXT("[ClcCuttingTable] Failed to return active stone to backpack."));
 	}
 
+	// 石头已回背包——固化终态，闭合搬运窗口（上台不存档，下台存档）
+	SaveAfterStoneReturned();
+
 	DestroyCuttingStone();
 	ActiveStoneData = FClcStoneRuntimeData();
 	StoneOffset = 0.0f;

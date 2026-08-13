@@ -208,11 +208,6 @@ void UClcSaveManagerSubsystem::NotifyGoldChanged(int32 NewGold)
 		SaveGame(AutoSaveSlotName);
 }
 
-void UClcSaveManagerSubsystem::NotifyTransactionCompleted()
-{
-	SaveGame(AutoSaveSlotName);
-}
-
 // ---- 内部 ----
 
 FClcSaveData UClcSaveManagerSubsystem::CollectSaveData() const

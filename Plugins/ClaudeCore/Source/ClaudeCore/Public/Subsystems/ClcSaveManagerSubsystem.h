@@ -75,7 +75,6 @@ public:
 	// ---- 通知（由 BackpackSubsystem 调用） ----
 
 	void NotifyGoldChanged(int32 NewGold);
-	void NotifyTransactionCompleted();
 
 private:
 	FClcSaveData CollectSaveData() const;

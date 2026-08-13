@@ -2,6 +2,7 @@
 
 #include "Actors/ClcInteractableStation.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
+#include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "UI/ClcBackpackWidget.h"
 #include "Components/SphereComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -9,6 +10,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 
 AClcInteractableStation::AClcInteractableStation()
@@ -30,6 +32,20 @@ void AClcInteractableStation::CachePlayerRefs()
 	if (ULocalPlayer* LP = CachedPC->GetLocalPlayer())
 	{
 		CachedBackpack = LP->GetSubsystem<UClcBackpackSubsystem>();
+	}
+}
+
+// ---- 下台存档 ----
+
+void AClcInteractableStation::SaveAfterStoneReturned()
+{
+	// 下台 AddStone 已把石头放回背包数组，此处固化终态，
+	// 避免玩家退出工作台后、下次自动存档前崩溃导致丢石。
+	UGameInstance* GI = GetGameInstance();
+	if (!GI) return;
+	if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
+	{
+		SM->SaveGame(UClcSaveManagerSubsystem::AutoSaveSlotName);
 	}
 }
 

@@ -71,9 +71,6 @@ public:
 private:
 	/** 金币变动后通知 SaveManager */
 	void NotifySaveManagerGoldChanged();
-
-	/** 交易完成后通知 SaveManager（买石/卖石） */
-	void NotifySaveManagerTransaction();
 	void ShowNotification(const FString& Message);
 	void DeferredRegisterBPrompt();
 

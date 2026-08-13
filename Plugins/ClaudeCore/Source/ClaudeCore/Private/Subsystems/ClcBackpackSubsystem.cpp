@@ -243,7 +243,10 @@ bool UClcBackpackSubsystem::RemoveStone(int32 StoneIndex)
 		BackpackWidget->RefreshDisplay(Stones, Gold);
 	}
 	RefreshHud();
-	NotifySaveManagerTransaction();
+	// 不在此触发存档：上台搬运只是石头临时离包（台上 Actor 为 Transient 不入档），
+	// 若此处落盘会固化"背包无此石"的中间态——下台 AddStone 又不存档，
+	// 中间崩溃即永久丢石。真正消费石头的交易（购买 OnInteract 末尾、售出 AddGold、
+	// 解石切块）各自在事务完成处统一存档，与背包变更解耦。
 	return true;
 }
 
@@ -355,18 +358,6 @@ void UClcBackpackSubsystem::NotifySaveManagerGoldChanged()
 	if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
 	{
 		SM->NotifyGoldChanged(Gold);
-	}
-}
-
-void UClcBackpackSubsystem::NotifySaveManagerTransaction()
-{
-	UWorld* World = GetWorld();
-	if (!World) return;
-	UGameInstance* GI = World->GetGameInstance();
-	if (!GI) return;
-	if (UClcSaveManagerSubsystem* SM = GI->GetSubsystem<UClcSaveManagerSubsystem>())
-	{
-		SM->NotifyTransactionCompleted();
 	}
 }
 

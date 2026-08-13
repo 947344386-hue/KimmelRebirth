@@ -78,6 +78,12 @@ protected:
 	void CachePlayerRefs();
 
 	/**
+	 * 石头下台放回背包后触发自动存档——上台 RemoveStone 不再即时存档，
+	 * 下台 AddStone 负责固化"石头已回背包"的终态，闭合擦石/解石/回收台搬运窗口。
+	 */
+	void SaveAfterStoneReturned();
+
+	/**
 	 * 绑定背包选石委托到本类的 OnBackpackStoneSelected。
 	 * 子类 override OnBackpackStoneSelected 实现自己的上台/换石逻辑——
 	 * UE 动态多播委托按 UFunction 反射派发，尊重虚 UFUNCTION override。

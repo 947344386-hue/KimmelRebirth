@@ -950,6 +950,9 @@ void AClcJadeWorkbench::RemoveStoneFromBench()
 		CachedBackpack->AddStone(ActiveStoneData);
 	}
 
+	// 石头已回背包——固化终态，闭合搬运窗口（上台不存档，下台存档）
+	SaveAfterStoneReturned();
+
 	// 销毁 Actor
 	DestroyOpeningStone();
 

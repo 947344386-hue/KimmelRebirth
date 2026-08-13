@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Components/ClcInteractionComponent.h"
+#include "UI/ClcUILayers.h"
 #include "ClcLog.h"
 #include "Interfaces/ClcInteractable.h"
 #include "Components/ClcInteractionIndicator.h"
@@ -41,7 +42,7 @@ void UClcInteractionComponent::BeginPlay()
 			ReticleWidget = CreateWidget<UClcInteractionWidget>(PC, ReticleWidgetClass);
 			if (ReticleWidget)
 			{
-				ReticleWidget->AddToViewport(10);
+				ReticleWidget->AddToViewport(FClcUIZOrder::Reticle);
 				ReticleWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
 				ReticleWidget->SetStateHidden();
 			}
@@ -84,7 +85,7 @@ void UClcInteractionComponent::UpdateInteraction()
 		ReticleWidget = CreateWidget<UClcInteractionWidget>(PC, ReticleWidgetClass);
 		if (ReticleWidget)
 		{
-			ReticleWidget->AddToViewport(10);
+			ReticleWidget->AddToViewport(FClcUIZOrder::Reticle);
 			ReticleWidget->SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
 			ReticleWidget->SetStateHidden();
 		}

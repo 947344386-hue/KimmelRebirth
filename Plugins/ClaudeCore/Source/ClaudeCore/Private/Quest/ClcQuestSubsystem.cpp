@@ -8,6 +8,7 @@
 #include "ClcGameInstance.h"
 #include "ClcDeveloperSettings.h"
 #include "ClcLog.h"
+#include "UI/ClcUILayers.h"
 #include "UI/ClcQuestTrackerWidget.h"
 #include "Engine/StreamableManager.h"
 #include "Engine/AssetManager.h"
@@ -496,7 +497,7 @@ void UClcQuestSubsystem::DeferredCreateTracker()
 		TrackerWidget = CreateWidget<UClcQuestTrackerWidget>(PC, WidgetClass);
 		if (TrackerWidget)
 		{
-			TrackerWidget->AddToViewport(40);
+			TrackerWidget->AddToViewport(FClcUIZOrder::QuestTracker);
 			RefreshTracker();
 			UE_LOG(LogClaudeCore, Log, TEXT("[ClcQuest] 追踪面板已创建 (class=%s)"), *WidgetClass->GetName());
 		}

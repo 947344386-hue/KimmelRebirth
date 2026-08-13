@@ -27,6 +27,7 @@
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcStoneConfig.h"
+#include "UI/ClcUILayers.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcCuttingTableHUD.h"
 #include "UI/ClcGoldFlyWidget.h"
@@ -835,7 +836,7 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 				UClcGoldFlyWidget* FlyWidget = CreateWidget<UClcGoldFlyWidget>(CachedPC.Get(), UClcGoldFlyWidget::StaticClass());
 				if (FlyWidget)
 				{
-					FlyWidget->AddToViewport(120);
+					FlyWidget->AddToViewport(FClcUIZOrder::OverlayPanel);
 					FlyWidget->StartFlight(ScreenPos, PieceGold);
 				}
 			}
@@ -1173,7 +1174,7 @@ bool AClcCuttingTable::SellRemainingStone()
 			UClcGoldFlyWidget* FlyWidget = CreateWidget<UClcGoldFlyWidget>(CachedPC.Get(), UClcGoldFlyWidget::StaticClass());
 			if (FlyWidget)
 			{
-				FlyWidget->AddToViewport(120);
+				FlyWidget->AddToViewport(FClcUIZOrder::OverlayPanel);
 				FlyWidget->StartFlight(ScreenPos, SellPrice);
 			}
 		}
@@ -1229,7 +1230,7 @@ void AClcCuttingTable::CreateHUD()
 	HUDWidget = CreateWidget<UClcCuttingTableHUD>(CachedPC.Get(), HUDWidgetClass);
 	if (HUDWidget)
 	{
-		HUDWidget->AddToViewport(10);
+		HUDWidget->AddToViewport(FClcUIZOrder::Reticle);
 		HUDPushTimer = 0.0f;
 	}
 }

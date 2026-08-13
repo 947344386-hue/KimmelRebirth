@@ -3,6 +3,7 @@
 #include "UI/ClcSaveSlotListWidget.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Data/ClcSessionTypes.h"
+#include "UI/ClcWidgetPalette.h"
 #include "ClcLog.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -156,7 +157,7 @@ void UClcSaveSlotListWidget::BuildShell()
 
 	RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("RootBorder"));
 	RootBorder->SetPadding(FMargin(32.0f));
-	RootBorder->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.05f, 0.95f));
+	RootBorder->SetBrushColor(FClcWidgetPalette::PanelDark());
 	WidgetTree->RootWidget = RootBorder;
 
 	UVerticalBox* MenuBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MenuBox"));
@@ -175,7 +176,7 @@ void UClcSaveSlotListWidget::BuildShell()
 
 	// 删除确认区（Delete 模式用）
 	ConfirmBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ConfirmBorder"));
-	ConfirmBorder->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.08f, 0.9f));
+	ConfirmBorder->SetBrushColor(FClcWidgetPalette::ConfirmDark());
 	ConfirmBorder->SetPadding(FMargin(12.0f));
 	UVerticalBox* ConfirmBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ConfirmBox"));
 	ConfirmBorder->SetContent(ConfirmBox);

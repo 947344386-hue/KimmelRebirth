@@ -2,6 +2,7 @@
 
 #include "Subsystems/ClcMainMenuSubsystem.h"
 #include "Subsystems/ClcSaveManagerSubsystem.h"
+#include "UI/ClcUILayers.h"
 #include "UI/ClcMainMenuWidget.h"
 #include "UI/ClcSaveSlotListWidget.h"
 #include "ClcGameInstance.h"
@@ -72,7 +73,7 @@ void UClcMainMenuSubsystem::ShowMainMenu()
 	}
 
 	MenuWidget->InitializeMenu(this);
-	MenuWidget->AddToViewport(0);  // ZOrder 0——全屏最底层
+	MenuWidget->AddToViewport(FClcUIZOrder::MainMenu);  // ZOrder 0——全屏最底层
 
 	// 编辑器/PIE 环境用 GameAndUI（保留 F11、编辑器快捷键）；打包后用 UIOnly（完全屏蔽游戏输入）
 	if (GIsEditor)
@@ -198,7 +199,7 @@ void UClcMainMenuSubsystem::OpenSlotList(EClcSaveSlotListMode Mode)
 
 	SlotListWidget->InitSlotList(SM, Mode);
 	SlotListWidget->OnSlotPicked.AddDynamic(this, &UClcMainMenuSubsystem::HandleSlotPicked);
-	SlotListWidget->AddToViewport(160);
+	SlotListWidget->AddToViewport(FClcUIZOrder::SaveSlotList);
 	SlotListWidget->SetKeyboardFocus();
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenu] Slot list opened (mode=%d)"), (int32)Mode);
 }

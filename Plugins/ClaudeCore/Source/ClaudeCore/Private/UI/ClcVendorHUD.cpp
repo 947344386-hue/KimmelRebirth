@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcVendorHUD.h"
+#include "UI/ClcWidgetPalette.h"
 #include "Actors/ClcStoneVendor.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -137,7 +138,7 @@ void UClcVendorHUD::BuildDefaultLayout()
 
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("LeftCard"));
 		Card->SetPadding(FMargin(12.0f));
-		Card->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.06f, 0.65f));
+		Card->SetBrushColor(FClcWidgetPalette::CardDark(0.65f));
 		Box->SetContent(Card);
 
 		LeftCardSlot = RootCanvas->AddChildToCanvas(Box);
@@ -193,7 +194,7 @@ void UClcVendorHUD::BuildDefaultLayout()
 
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("RightCard"));
 		Card->SetPadding(FMargin(12.0f));
-		Card->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.06f, 0.65f));
+		Card->SetBrushColor(FClcWidgetPalette::CardDark(0.65f));
 		Box->SetContent(Card);
 
 		RightCardSlot = RootCanvas->AddChildToCanvas(Box);
@@ -289,7 +290,7 @@ void UClcVendorHUD::BuildDefaultLayout()
 
 		NpcDialogBox = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NpcDialogBox"));
 		NpcDialogBox->SetPadding(FMargin(20.0f, 14.0f));
-		NpcDialogBox->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.06f, 0.92f));
+		NpcDialogBox->SetBrushColor(FClcWidgetPalette::CardDark(0.92f));
 
 		NpcLineText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("NpcLineText"));
 		{

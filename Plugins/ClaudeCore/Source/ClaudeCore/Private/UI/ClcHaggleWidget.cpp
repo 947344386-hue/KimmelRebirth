@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcHaggleWidget.h"
+#include "UI/ClcWidgetPalette.h"
 #include "Components/ClcHaggleComponent.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -224,7 +225,7 @@ void UClcHaggleWidget::BuildDefaultLayout()
 
 	UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("HaggleCard"));
 	Card->SetPadding(FMargin(20.0f));
-	Card->SetBrushColor(FLinearColor(0.03f, 0.025f, 0.05f, 0.8f));
+	Card->SetBrushColor(FClcWidgetPalette::PanelDark(0.8f));
 	Box->SetContent(Card);
 
 	UCanvasPanelSlot* CardSlot = RootCanvas->AddChildToCanvas(Box);

@@ -2,6 +2,7 @@
 
 #include "UI/ClcToolUpgradeMenuWidget.h"
 #include "UI/ClcToolUpgradeEntryWidget.h"
+#include "UI/ClcWidgetPalette.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -230,7 +231,7 @@ void UClcToolUpgradeMenuWidget::BuildDefaultLayout()
 
 	// 全屏暗色背景
 	UBorder* Bg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Background"));
-	Bg->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
+	Bg->SetBrushColor(FClcWidgetPalette::PanelDark(0.92f));
 	{
 		UCanvasPanelSlot* CanvasSlot = RootCanvas->AddChildToCanvas(Bg);
 		CanvasSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));

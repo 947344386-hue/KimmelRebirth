@@ -2,6 +2,7 @@
 
 #include "UI/ClcLoadingScreenWidget.h"
 #include "ClcDeveloperSettings.h"
+#include "UI/ClcWidgetPalette.h"
 #include "ClcLog.h"
 #include "MoviePlayer.h"
 #include "Widgets/SOverlay.h"
@@ -60,7 +61,7 @@ void SClcLoadingScreenWidget::Construct(const FArguments& InArgs)
 		.VAlign(VAlign_Fill)
 		[
 			SAssignNew(BackgroundImage, SImage)
-			.ColorAndOpacity(FLinearColor(0.02f, 0.03f, 0.05f, 1.0f))
+			.ColorAndOpacity(FClcWidgetPalette::PanelDark(1.0f))
 		]
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Fill)

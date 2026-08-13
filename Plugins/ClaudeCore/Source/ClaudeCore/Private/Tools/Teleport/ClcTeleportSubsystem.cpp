@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Tools/Teleport/ClcTeleportSubsystem.h"
+#include "UI/ClcUILayers.h"
 #include "Tools/Teleport/ClcTeleportPoint.h"
 #include "Tools/Teleport/ClcTeleportVolume.h"
 #include "Tools/Teleport/UI/ClcTeleportMenuWidget.h"
@@ -114,7 +115,7 @@ bool UClcTeleportSubsystem::OpenMenu()
 
 	OpenedFromVolume = Volume;
 	MenuWidget->InitializeMenu(this, Volume->GetMenuTitle(), Volume->GetValidDestinations());
-	MenuWidget->AddToViewport(120);
+	MenuWidget->AddToViewport(FClcUIZOrder::OverlayPanel);
 
 	PlayerController->SetIgnoreMoveInput(true);
 	PlayerController->SetIgnoreLookInput(true);

@@ -2,6 +2,7 @@
 
 #include "UI/ClcPauseMenuWidget.h"
 #include "Subsystems/ClcPauseMenuSubsystem.h"
+#include "UI/ClcWidgetPalette.h"
 #include "ClcLog.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -114,7 +115,7 @@ void UClcPauseMenuWidget::BuildDefaultLayout()
 	// 根：UBorder 全屏半透明暗色背景（参照 TeleportMenuWidget）
 	UBorder* RootBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("RootBorder"));
 	RootBorder->SetPadding(FMargin(32.0f));
-	RootBorder->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.05f, 0.92f));
+	RootBorder->SetBrushColor(FClcWidgetPalette::PanelDark(0.92f));
 	WidgetTree->RootWidget = RootBorder;
 
 	// 内容：居中 VerticalBox

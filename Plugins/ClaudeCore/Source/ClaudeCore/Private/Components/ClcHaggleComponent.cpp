@@ -3,6 +3,7 @@
 #include "Components/ClcHaggleComponent.h"
 #include "ClcDeveloperSettings.h"
 #include "ClcLog.h"
+#include "UI/ClcUILayers.h"
 #include "UI/ClcHaggleWidget.h"
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Blueprint/UserWidget.h"
@@ -180,7 +181,7 @@ void UClcHaggleComponent::OpenWidget(APlayerController* PC)
 	if (Widget)
 	{
 		Widget->SetOwningComponent(this);
-		Widget->AddToViewport(20); // 盖过 VendorHUD(10)
+		Widget->AddToViewport(FClcUIZOrder::Haggle); // 盖过 VendorHUD(10)
 	}
 }
 

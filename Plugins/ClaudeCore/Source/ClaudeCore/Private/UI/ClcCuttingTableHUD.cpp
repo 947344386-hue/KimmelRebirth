@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcCuttingTableHUD.h"
+#include "UI/ClcWidgetPalette.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
@@ -133,7 +134,7 @@ void UClcCuttingTableHUD::BuildDefaultLayout()
 
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
 		Card->SetPadding(FMargin(14.0f));
-		Card->SetBrushColor(FLinearColor(0.02f, 0.03f, 0.06f, 0.78f));
+		Card->SetBrushColor(FClcWidgetPalette::CardDark());
 		SizeBox->SetContent(Card);
 
 		UCanvasPanelSlot* CanvasSlot = RootCanvas->AddChildToCanvas(SizeBox);

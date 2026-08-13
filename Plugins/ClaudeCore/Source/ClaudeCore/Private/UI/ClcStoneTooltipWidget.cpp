@@ -1,6 +1,7 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcStoneTooltipWidget.h"
+#include "UI/ClcUILayers.h"
 #include "Components/TextBlock.h"
 #include "Styling/SlateColor.h"
 #include "Framework/Application/SlateApplication.h"
@@ -149,7 +150,7 @@ UClcStoneTooltipWidget* UClcStoneTooltipWidget::ShowTooltipNextTo(
 	}
 
 	Tooltip->SetAnchor(AnchorWidget);
-	Tooltip->AddToViewport(1000); // tooltip 层级最高，避免被其他 UI 遮挡
+	Tooltip->AddToViewport(FClcUIZOrder::Tooltip); // tooltip 层级最高，避免被其他 UI 遮挡
 
 	// 初始定位：鼠标位置 + Offset（NativeTick 每帧接管）
 	if (APlayerController* PC = World->GetFirstPlayerController())

@@ -25,6 +25,7 @@
 #include "Subsystems/ClcStoneMarketSubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
+#include "UI/ClcUILayers.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcVendorHUD.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -1050,7 +1051,7 @@ void AClcStoneVendor::CreateVendorHUD()
 	if (HUDWidget)
 	{
 		HUDWidget->OwningVendor = this;
-		HUDWidget->AddToViewport(10);
+		HUDWidget->AddToViewport(FClcUIZOrder::Reticle);
 		HUDPushTimer = 0.0f; // 立即推送
 	}
 }

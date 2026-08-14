@@ -24,7 +24,6 @@
 #include "Subsystems/ClcToolDurabilitySubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "Data/ClcShellTextureConfig.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcWorkbenchHUD.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -1058,7 +1057,7 @@ void AClcJadeWorkbench::CreateHUD()
 	HUDWidget = CreateWidget<UClcWorkbenchHUD>(CachedPC.Get(), HUDWidgetClass);
 	if (HUDWidget)
 	{
-		HUDWidget->AddToViewport(FClcUIZOrder::Reticle);
+		HUDWidget->AddToViewport(10);
 		HUDPushTimer = 0.0f; // 立即推送
 	}
 }

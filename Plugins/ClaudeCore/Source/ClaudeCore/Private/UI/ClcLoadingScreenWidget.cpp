@@ -41,16 +41,10 @@ SClcLoadingScreenWidget::~SClcLoadingScreenWidget()
 
 void SClcLoadingScreenWidget::Construct(const FArguments& InArgs)
 {
-	// 读配置
 	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
 	if (DS)
 	{
 		Backgrounds = DS->LoadingBackgrounds;
-		SwitchInterval = DS->LoadingBackgroundSwitchInterval;
-	}
-	if (SwitchInterval < 0.5f)
-	{
-		SwitchInterval = 0.5f;
 	}
 
 	ChildSlot
@@ -104,31 +98,14 @@ void SClcLoadingScreenWidget::Construct(const FArguments& InArgs)
 	InitFirstBackground();
 }
 
-void SClcLoadingScreenWidget::Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float DeltaTime)
-{
-	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, DeltaTime);
-
-	if (Backgrounds.Num() <= 1)
-	{
-		return;
-	}
-
-	TimeSinceSwitch += DeltaTime;
-	if (TimeSinceSwitch >= SwitchInterval)
-	{
-		TimeSinceSwitch = 0.0f;
-		AdvanceBackground();
-	}
-}
-
 void SClcLoadingScreenWidget::InitFirstBackground()
 {
 	if (Backgrounds.Num() == 0)
 	{
 		return;
 	}
-	CurrentBgIndex = FMath::RandRange(0, Backgrounds.Num() - 1);
-	LoadBackgroundAt(CurrentBgIndex);
+
+	LoadBackgroundAt(FMath::RandRange(0, Backgrounds.Num() - 1));
 }
 
 void SClcLoadingScreenWidget::LoadBackgroundAt(int32 Index)
@@ -154,16 +131,6 @@ void SClcLoadingScreenWidget::LoadBackgroundAt(int32 Index)
 		BackgroundImage->SetImage(CurrentBrush->GetSlateBrush());
 		BackgroundImage->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
 	}
-}
-
-void SClcLoadingScreenWidget::AdvanceBackground()
-{
-	if (Backgrounds.Num() == 0)
-	{
-		return;
-	}
-	CurrentBgIndex = (CurrentBgIndex + 1) % Backgrounds.Num();
-	LoadBackgroundAt(CurrentBgIndex);
 }
 
 FString SClcLoadingScreenWidget::PickRandomTip() const

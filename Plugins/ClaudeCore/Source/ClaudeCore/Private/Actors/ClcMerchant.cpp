@@ -15,7 +15,6 @@
 #include "Data/ClcStallConfig.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcMerchantBubbleWidget.h"
 #include "UI/ClcMerchantEagleEyeWidget.h"
 #include "ClcDeveloperSettings.h"
@@ -743,7 +742,7 @@ void AClcMerchant::EnsureTalkBubbleWidget()
 		TalkBubbleWidget->SetAnchor(Mesh, Config->TalkBubbleAnchorOffset);
 		TalkBubbleWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
 		TalkBubbleWidget->SetOffScreenSettings(Config->bEnableOffScreenIndicator, Config->OffScreenEdgeMargin, Config->OffScreenScale);
-		TalkBubbleWidget->AddToViewport(FClcUIZOrder::OverlayPanel); // 高于背包(100)，背包打开时不被面板盖住
+		TalkBubbleWidget->AddToViewport(120); // 高于背包(100)，背包打开时不被面板盖住
 		TalkBubbleWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();
 	}
@@ -762,7 +761,7 @@ void AClcMerchant::EnsureEagleEyeWidget()
 		EagleEyeWidget->SetAnchor(Mesh, Config->EagleEyeAnchorOffset);
 		EagleEyeWidget->SetSimulatedPerspective(Config->UISimulatedPerspective);
 		// 鹰眼洞察不做离屏钳制——保持离屏即隐藏的旧行为（仅口头气泡有屏幕外指示器）
-		EagleEyeWidget->AddToViewport(FClcUIZOrder::MerchantEagleEye); // 同口头气泡，高于背包
+		EagleEyeWidget->AddToViewport(121); // 同口头气泡，高于背包
 		EagleEyeWidget->UpdateScreenPosition();
 		UpdateWidgetTickInterval();
 	}

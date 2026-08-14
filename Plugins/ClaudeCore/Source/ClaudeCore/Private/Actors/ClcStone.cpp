@@ -7,7 +7,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/ClcInteractionIndicator.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcStoneInfoWidget.h"
 #include "Subsystems/ClcBackpackSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
@@ -275,7 +274,7 @@ void AClcStone::ShowInfoCard()
 	if (InfoCardWidget)
 	{
 		InfoCardWidget->SetAnchor(this, InteractionIndicator->WidgetOffset);
-		InfoCardWidget->AddToViewport(FClcUIZOrder::StoneInfo);
+		InfoCardWidget->AddToViewport(60);
 		InfoCardWidget->UpdateScreenPosition();
 		InfoCardWidget->ShowInfo(RuntimeData);
 		bInfoCardVisible = true;

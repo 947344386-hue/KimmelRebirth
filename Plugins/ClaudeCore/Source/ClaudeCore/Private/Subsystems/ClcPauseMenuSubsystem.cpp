@@ -4,7 +4,6 @@
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "Subsystems/ClcKeyPromptSubsystem.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcPauseMenuWidget.h"
 #include "UI/ClcSaveSlotListWidget.h"
 #include "ClcGameInstance.h"
@@ -132,7 +131,7 @@ bool UClcPauseMenuSubsystem::OpenMenu()
 	if (!MenuWidget) return false;
 
 	MenuWidget->SetOwningSubsystem(this);
-	MenuWidget->AddToViewport(FClcUIZOrder::PauseMenu);
+	MenuWidget->AddToViewport(150);
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcPauseMenu] Widget added to viewport, bIsFocusable=%d, Visibility=%d, IsInViewport=%d"),
 		(int32)MenuWidget->IsFocusable(), (int32)MenuWidget->GetVisibility(), (int32)MenuWidget->IsInViewport());
 
@@ -227,7 +226,7 @@ void UClcPauseMenuSubsystem::OpenSlotList(bool bLoadMode)
 	bSlotListLoadMode = bLoadMode;
 	SlotListWidget->InitSlotList(SM, bLoadMode ? EClcSaveSlotListMode::Load : EClcSaveSlotListMode::Save);
 	SlotListWidget->OnSlotPicked.AddDynamic(this, &UClcPauseMenuSubsystem::HandleSlotPicked);
-	SlotListWidget->AddToViewport(FClcUIZOrder::SaveSlotList);
+	SlotListWidget->AddToViewport(160);
 	SlotListWidget->SetKeyboardFocus();
 }
 

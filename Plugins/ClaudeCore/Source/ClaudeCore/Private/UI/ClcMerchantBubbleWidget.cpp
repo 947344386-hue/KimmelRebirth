@@ -1,7 +1,6 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "UI/ClcMerchantBubbleWidget.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcMerchantOffScreenArrowWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/SceneComponent.h"
@@ -38,7 +37,7 @@ void UClcMerchantBubbleWidget::SetOffScreenSettings(bool bEnabled, float EdgeMar
 			ArrowWidget = CreateWidget<UClcMerchantOffScreenArrowWidget>(PC, UClcMerchantOffScreenArrowWidget::StaticClass());
 			if (ArrowWidget)
 			{
-				ArrowWidget->AddToViewport(FClcUIZOrder::MerchantArrow);
+				ArrowWidget->AddToViewport(122);
 				ArrowWidget->Hide();
 			}
 		}

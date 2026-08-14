@@ -37,8 +37,12 @@ void UClcGameInstance::Init()
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
 		this, &UClcGameInstance::HandlePostLoadMap);
 
-	// 注入 MoviePlayer loading screen —— 引擎级加载画面（背景图轮播）。
-	// 只在打包游戏生效（!GIsEditor），PIE 里 MoviePlayer 不跑，此调用无副作用。
+	// MoviePlayer 播放结束会清空配置，后续关卡加载需按需重新注入。
+	if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
+	{
+		PrepareLoadingScreenHandle = MoviePlayer->OnPrepareLoadingScreen().AddUObject(
+			this, &UClcGameInstance::SetupLoadingScreen);
+	}
 	SetupLoadingScreen();
 }
 
@@ -64,6 +68,14 @@ void UClcGameInstance::Shutdown()
 	{
 		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
 		PostLoadMapHandle.Reset();
+	}
+	if (PrepareLoadingScreenHandle.IsValid())
+	{
+		if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
+		{
+			MoviePlayer->OnPrepareLoadingScreen().Remove(PrepareLoadingScreenHandle);
+		}
+		PrepareLoadingScreenHandle.Reset();
 	}
 
 	Super::Shutdown();
@@ -290,23 +302,28 @@ void UClcGameInstance::RequestQuit()
 
 void UClcGameInstance::SetupLoadingScreen()
 {
-	IGameMoviePlayer* MP = GetMoviePlayer();
-	if (!MP)
+	if (GIsEditor)
 	{
-		UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] SetupLoadingScreen —— MoviePlayer 不可用（PIE/编辑器正常）"));
+		return;
+	}
+
+	IGameMoviePlayer* MoviePlayer = GetMoviePlayer();
+	if (!MoviePlayer)
+	{
+		UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] SetupLoadingScreen —— MoviePlayer 不可用"));
 		return;
 	}
 
 	FLoadingScreenAttributes Attrs;
 	Attrs.WidgetLoadingScreen = SNew(SClcLoadingScreenWidget);
-	Attrs.bAutoCompleteWhenLoadingCompletes = true;  // 加载完成自动收尾
-	Attrs.bAllowEngineTick = true;                    // 让 WaitForMovieToFinish 跑 SlateApp.Tick 驱动轮播
+	Attrs.bAutoCompleteWhenLoadingCompletes = true;
+	Attrs.bAllowEngineTick = false;
 	Attrs.bMoviesAreSkippable = false;
 	Attrs.bWaitForManualStop = false;
-	Attrs.MinimumLoadingScreenDisplayTime = -1.0f;   // 不强制最短显示时长
+	Attrs.MinimumLoadingScreenDisplayTime = 2.0f;
 
-	MP->SetupLoadingScreen(Attrs);
-	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Loading screen 注入完成"));
+	MoviePlayer->SetupLoadingScreen(Attrs);
+	UE_LOG(LogClaudeCore, Log, TEXT("[ClcGameInstance] Loading screen 注入完成，最短显示 2 秒"));
 }
 
 void UClcGameInstance::TriggerAutoSave()

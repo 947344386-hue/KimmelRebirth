@@ -1,7 +1,6 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Subsystems/ClcKeyPromptSubsystem.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcKeyPromptWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/LocalPlayer.h"
@@ -233,6 +232,6 @@ void UClcKeyPromptSubsystem::CreatePromptWidget()
 	PromptWidget = CreateWidget<UClcKeyPromptWidget>(PC, PromptWidgetClass);
 	if (PromptWidget)
 	{
-		PromptWidget->AddToViewport(FClcUIZOrder::KeyPrompt); // 低于传送菜单(120)，高于背包(100)
+		PromptWidget->AddToViewport(110); // 低于传送菜单(120)，高于背包(100)
 	}
 }

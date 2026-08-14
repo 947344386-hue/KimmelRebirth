@@ -191,10 +191,11 @@ private:
 	/** 回放全部已记录的切平面到 PMC（用引擎 SliceProceduralMesh） */
 	void ReplayAllCuts();
 
-	/** 对指定 cap section 写顶点色 + planar UV（按切平面法线投影）。
-	 *  TargetMesh 默认 CutMesh（保留块）；切下块 OtherHalf 需显式传入，使共享切面两块材质一致。 */
-	void ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormal,
-		UProceduralMeshComponent* TargetMesh = nullptr);
+	/** 对指定 cap section 写顶点色 + planar UV（按切面显示法线投影）。
+	 *  InteriorSampleDirectionWorld 指向该块内部，避免保留块与切下块采到切面的另一侧。
+	 *  TargetMesh 默认 CutMesh（保留块）；切下块 OtherHalf 需显式传入。 */
+	void ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& SurfaceNormalWorld,
+		const FVector& InteriorSampleDirectionWorld, UProceduralMeshComponent* TargetMesh = nullptr);
 
 	/** 世界刀口平面 → 源 mesh 局部平面。 */
 	bool BuildLocalCutPlane(const FVector& PlanePointWorld, const FVector& PlaneNormalWorld,

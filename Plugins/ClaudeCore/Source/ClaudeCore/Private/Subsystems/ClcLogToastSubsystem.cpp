@@ -2,7 +2,6 @@
 
 #include "Subsystems/ClcLogToastSubsystem.h"
 #include "ClcLog.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcLogToastListWidget.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -143,6 +142,6 @@ void UClcLogToastSubsystem::CreateListWidget()
 	ListWidget = CreateWidget<UClcLogToastListWidget>(PC, ListWidgetClass);
 	if (ListWidget)
 	{
-		ListWidget->AddToViewport(FClcUIZOrder::Toast);
+		ListWidget->AddToViewport(100);
 	}
 }

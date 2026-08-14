@@ -5,7 +5,6 @@
 #include "Subsystems/ClcSaveManagerSubsystem.h"
 #include "Quest/ClcQuestSubsystem.h"
 #include "ClcLog.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcBackpackWidget.h"
 #include "UI/ClcBackpackHudWidget.h"
 #include "Data/ClcStoneConfig.h"
@@ -108,7 +107,7 @@ void UClcBackpackSubsystem::DeferredCreateHud()
 		HudWidget = CreateWidget<UClcBackpackHudWidget>(PC, HudWidgetClass);
 		if (HudWidget)
 		{
-			HudWidget->AddToViewport(FClcUIZOrder::GoldHud);
+			HudWidget->AddToViewport(50);
 			RefreshHud();
 			UE_LOG(LogClaudeCore, Log, TEXT("[ClcBackpack] Backpack HUD gold bar created (class=%s)."), *HudWidgetClass->GetName());
 		}
@@ -181,7 +180,7 @@ void UClcBackpackSubsystem::ToggleBackpack()
 			// 仅在未入Viewport时添加（关闭下滑途中再按B反向打开时不重复Add）
 			if (!BackpackWidget->IsInViewport())
 			{
-				BackpackWidget->AddToViewport(FClcUIZOrder::Backpack);
+				BackpackWidget->AddToViewport(100);
 			}
 			BackpackWidget->RefreshDisplay(Stones, Gold);
 			// 上滑淡入到就位（若正在下滑则反向，进度不重置避免跳变）

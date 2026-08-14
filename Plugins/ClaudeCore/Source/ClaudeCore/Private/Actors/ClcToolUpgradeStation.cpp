@@ -14,7 +14,6 @@
 #include "Quest/ClcQuestSubsystem.h"
 #include "Actors/ClcFacilityManager.h"
 #include "Actors/ClcStoneStall.h"
-#include "UI/ClcUILayers.h"
 #include "UI/ClcToolUpgradeMenuWidget.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -161,7 +160,7 @@ void AClcToolUpgradeStation::OpenMenu()
 	MenuWidget->OnClosed.RemoveDynamic(this, &AClcToolUpgradeStation::HandleMenuClosed);
 	MenuWidget->OnClosed.AddDynamic(this, &AClcToolUpgradeStation::HandleMenuClosed);
 
-	MenuWidget->AddToViewport(FClcUIZOrder::ToolUpgrade);
+	MenuWidget->AddToViewport(80);
 	RefreshMenuItems();
 
 	// UI 输入模式 + 光标 + 暂停移动/视角

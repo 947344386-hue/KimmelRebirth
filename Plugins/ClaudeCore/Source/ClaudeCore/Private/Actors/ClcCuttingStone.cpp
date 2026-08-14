@@ -241,10 +241,9 @@ void AClcCuttingStone::ReplayAllCuts()
 			false, OtherHalf,
 			EProcMeshSliceCapOption::CreateNewSectionForCap, CapMat);
 
-		// cap 顶点色 + planar UV（按切平面法线投影生成，避免退化 UV）
-		// 传入 WorldNormal（世界空间），ApplyVoxelColorsToSection 内部按目标 Mesh 的 local 转换
+		// cap 显示法线保持原有方向；采样方向使用实际保留侧 SliceNormal。
 		const int32 CapIdx = CutMesh->GetNumSections() - 1;
-		ApplyVoxelColorsToSection(CapIdx, WorldNormal);
+		ApplyVoxelColorsToSection(CapIdx, WorldNormal, SliceNormal);
 	}
 }
 
@@ -317,25 +316,14 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 	// ---- 3. 自动切走较小侧 ----
 	const bool bNegSmaller = Counts.NegTotal <= Counts.PosTotal;
 	const bool bActuallyRemoveNeg = bForceRemoveNegativeSide ? true : bNegSmaller;
-	VoxelField.ApplyCut(PlaneNormal, PlaneDistance, bActuallyRemoveNeg);
-
-	FClcCutPlaneRecord Rec;
-	Rec.Normal = PlaneNormal;
-	Rec.Distance = PlaneDistance;
-	Rec.bRemovedNegative = bActuallyRemoveNeg;
-	CutPlanes.Add(Rec);
 
 	// ---- 4. 体素统计 + 切走侧玉肉包围盒 ----
 	const int32 AwayTotal = bActuallyRemoveNeg ? Counts.NegTotal : Counts.PosTotal;
 	const int32 AwayJade  = bActuallyRemoveNeg ? Counts.NegJade : Counts.PosJade;
 	const int32 AwayCrack = bActuallyRemoveNeg ? Counts.NegCrack : Counts.PosCrack;
 	const int32 AwayImpurity = bActuallyRemoveNeg ? Counts.NegImpurity : Counts.PosImpurity;
-	OutCutAwayTotal    = AwayTotal;
-	OutCutAwayJade     = AwayJade;
-	OutCutAwayCrack    = AwayCrack;
-	OutCutAwayImpurity = AwayImpurity;
 
-	// 切走侧玉肉体素包围盒（供紧凑度计算）
+	// 必须在 ApplyCut 前计算；ApplyCut 会把本刀切走侧全部写入 RemoveMask。
 	if (AwayJade > 0)
 	{
 		const int32 Reso = VoxelField.Resolution;
@@ -348,12 +336,10 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 				for (int32 Z = 0; Z < Reso; ++Z)
 				{
 					const int32 Idx = VoxelField.IndexOf(X, Y, Z);
-					if (Idx < 0) continue;
-					// 占用、未被切走、且被本刀移除侧包含
-					if (VoxelField.OccupancyMask[Idx] == 0) continue;
-					if (VoxelField.RemoveMask[Idx] != 0) continue;
-					// 本刀刚 ApplyCut 标记了 bActuallyRemoveNeg 侧的体素
-					// 重新采样该体素是否已被本刀移除
+					if (Idx < 0 || VoxelField.OccupancyMask[Idx] == 0 || VoxelField.RemoveMask[Idx] != 0)
+					{
+						continue;
+					}
 					const FVector VoxelCenter = VoxelField.VoxelToLocal(X, Y, Z);
 					const float D = FVector::DotProduct(PlaneNormal, VoxelCenter) + PlaneDistance;
 					const bool bInRemovedSide = (D < 0.0f) ? bActuallyRemoveNeg : !bActuallyRemoveNeg;
@@ -366,8 +352,21 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 		}
 	}
 
-		// 以体素场为权威重算全部累计/剩余统计（替代逐刀累加）
-		RefreshCutStatistics();
+	VoxelField.ApplyCut(PlaneNormal, PlaneDistance, bActuallyRemoveNeg);
+
+	FClcCutPlaneRecord Rec;
+	Rec.Normal = PlaneNormal;
+	Rec.Distance = PlaneDistance;
+	Rec.bRemovedNegative = bActuallyRemoveNeg;
+	CutPlanes.Add(Rec);
+
+	OutCutAwayTotal    = AwayTotal;
+	OutCutAwayJade     = AwayJade;
+	OutCutAwayCrack    = AwayCrack;
+	OutCutAwayImpurity = AwayImpurity;
+
+	// 以体素场为权威重算全部累计/剩余统计（替代逐刀累加）
+	RefreshCutStatistics();
 	if (CachedStoneData.Phase == EClcStonePhase::Unworked)
 	{
 		CachedStoneData.Phase = EClcStonePhase::Cut;
@@ -408,18 +407,15 @@ bool AClcCuttingStone::ExecuteCut(const FVector& PlanePointWorld, const FVector&
 
 	LastOtherHalf = OtherHalf;
 
-	// ---- 6. cap 顶点色 + planar UV（保留块 + 切下块共享切面必须一致） ----
-	// 传入世界空间法线；ApplyVoxelColorsToSection 内部按目标 PMC 的 ComponentTransform 转 local
+	// ---- 6. cap 顶点色 + planar UV（保留块 + 切下块各自向内部采样） ----
 	const int32 CapIdx = CutMesh->GetNumSections() - 1;
-	ApplyVoxelColorsToSection(CapIdx, PlaneNormalWorld);
+	ApplyVoxelColorsToSection(CapIdx, PlaneNormalWorld, SliceNormal);
 
-	// 切下块 OtherHalf 的 cap 是它自己的最后一个 section；两块共享同一切平面但法线方向相反
-	// ——OtherHalf 切面法线必须取反，否则法线指向 mesh 内部会触发 PBR/次表面散射爆光。
-	// 顶点色/UV 用同一组世界法线（符号反转在 ApplyVoxelColorsToSection 内部完成）。
+	// 切下块沿 -SliceNormal 采样，显示法线仍保持与保留块相反。
 	if (OtherHalf && OtherHalf->GetNumSections() > 0)
 	{
 		const int32 OtherCapIdx = OtherHalf->GetNumSections() - 1;
-		ApplyVoxelColorsToSection(OtherCapIdx, -PlaneNormalWorld, OtherHalf);
+		ApplyVoxelColorsToSection(OtherCapIdx, -PlaneNormalWorld, -SliceNormal, OtherHalf);
 	}
 
 	// ---- 7. 切走块位置缓存（飞金币动效用） ----
@@ -479,19 +475,22 @@ bool AClcCuttingStone::PredictCutRatio(const FVector& PlanePointWorld,
 	return true;
 }
 
-void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& PlaneNormalWorld,
-	UProceduralMeshComponent* TargetMesh)
+void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVector& SurfaceNormalWorld,
+	const FVector& InteriorSampleDirectionWorld, UProceduralMeshComponent* TargetMesh)
 {
-	// PlaneNormalWorld 是世界空间法线；默认操作保留块 CutMesh，切下块 OtherHalf 显式传入。
 	UProceduralMeshComponent* Mesh = TargetMesh ? TargetMesh : CutMesh;
 	if (!Mesh) return;
 	FProcMeshSection* Sec = Mesh->GetProcMeshSection(SectionIndex);
 	if (!Sec) return;
 
-	// 【空间修复】PlaneNormalWorld 是同一个世界空间切面法线，但写入不同 PMC 的顶点法线
-	// 时必须是该 PMC 的局部空间方向。用 InverseTransformVectorNoScale 转成目标 mesh 的 local。
 	const FTransform& CompTransform = Mesh->GetComponentTransform();
-	const FVector LocalN = CompTransform.InverseTransformVectorNoScale(PlaneNormalWorld).GetSafeNormal();
+	const FVector LocalN = CompTransform.InverseTransformVectorNoScale(SurfaceNormalWorld).GetSafeNormal();
+	FVector LocalSampleDirection = CompTransform.InverseTransformVectorNoScale(
+		InteriorSampleDirectionWorld).GetSafeNormal();
+	if (LocalSampleDirection.IsNearlyZero())
+	{
+		LocalSampleDirection = LocalN;
+	}
 
 	// 统一切线/副法线（与局部法线正交，供材质 planar UV 投影）
 	FVector LocalAxisU, LocalAxisV;
@@ -501,16 +500,21 @@ void AClcCuttingStone::ApplyVoxelColorsToSection(int32 SectionIndex, const FVect
 	// planar 投影缩放：1 单位（cm）= 0.02 UV，约 50cm 周期
 	constexpr float UVScale = 0.02f;
 
+	const FVector AbsSampleDirection(
+		FMath::Abs(LocalSampleDirection.X),
+		FMath::Abs(LocalSampleDirection.Y),
+		FMath::Abs(LocalSampleDirection.Z));
+	const float HalfVoxelAlongSampleDirection = 0.5f * FVector::DotProduct(
+		AbsSampleDirection, VoxelField.VoxelSize);
+
 	for (FProcMeshVertex& V : Sec->ProcVertexBuffer)
 	{
 		// 统一法线+切线覆盖，消灭三角扇放射状折光
 		V.Normal = LocalN;
 		V.Tangent = UnifiedTangent;
 
-		// 顶点色：最近邻采样 + G 通道硬门限二值化，禁止 GPU 三角扇线性插值产生放射渐变
-		const float HalfVoxel = 0.5f * FMath::Max3(
-			VoxelField.VoxelSize.X, VoxelField.VoxelSize.Y, VoxelField.VoxelSize.Z);
-		const FColor Sample = SampleVoxelColor((FVector)V.Position + LocalN * HalfVoxel);
+		const FColor Sample = SampleVoxelColor(
+			(FVector)V.Position + LocalSampleDirection * HalfVoxelAlongSampleDirection);
 		const uint8 HardG = (Sample.G > 128) ? 255 : 0;
 		V.Color = FColor(Sample.R, HardG, Sample.B, 255);
 
@@ -540,7 +544,7 @@ FColor AClcCuttingStone::SampleVoxelColor(const FVector& LocalPos) const
 
 void AClcCuttingStone::RefreshCutStatistics()
 {
-	if (!bInitialized) return;
+	if (TotalVoxels <= 0 || VoxelField.Data.Num() == 0) return;
 
 	const float VoxelVolume = VoxelField.VoxelVolume;
 	int32 RemainingTotal = 0, RemainingJade = 0, RemainingCrack = 0, RemainingImpurity = 0;

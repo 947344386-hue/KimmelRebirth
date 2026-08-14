@@ -6,6 +6,7 @@
 #include "GameFramework/SaveGame.h"
 #include "Data/ClcJadeTypes.h"
 #include "Quest/ClcQuestTypes.h"
+#include "ClcDeveloperSettings.h"
 #include "ClcSessionTypes.generated.h"
 
 /**
@@ -65,32 +66,72 @@ struct CLAUDECORE_API FClcStallSaveState
 UENUM(BlueprintType)
 enum class EClcDifficultyPreset : uint8
 {
-	Easy    UMETA(DisplayName = "简单模式"),   // 起始金 100k，溢价系数×0.6，衰减权重×0.5
-	Normal  UMETA(DisplayName = "标准模式"),   // 起始金 50k， 溢价系数×1.0，衰减权重×0.8
-	Hard    UMETA(DisplayName = "困难模式"),   // 起始金 20k， 溢价系数×1.5，衰减权重×1.0
-	Custom  UMETA(DisplayName = "自定义"),     // 手动调参
+	Easy    UMETA(DisplayName = "简单模式"),
+	Normal  UMETA(DisplayName = "标准模式"),
+	Hard    UMETA(DisplayName = "困难模式"),
+	Custom  UMETA(DisplayName = "自定义"),
 };
 
-/** 预设对应的黄金乘数 */
+/** 主菜单起始金币滑条的有效规则（由 DeveloperSettings 归一化）。 */
+struct FClcStartingGoldRules
+{
+	int32 Min = 20000;
+	int32 Max = 100000;
+	int32 Step = 5000;
+	int32 Default = 50000;
+
+	int32 Snap(int32 Value) const
+	{
+		const int32 ClampedValue = FMath::Clamp(Value, Min, Max);
+		const double StepOffset =
+			(static_cast<double>(ClampedValue) - static_cast<double>(Min)) / static_cast<double>(Step);
+		const int64 SnappedValue = static_cast<int64>(Min)
+			+ FMath::RoundToInt64(StepOffset) * static_cast<int64>(Step);
+		return static_cast<int32>(FMath::Clamp<int64>(SnappedValue, Min, Max));
+	}
+};
+
+inline FClcStartingGoldRules ClcGetStartingGoldRules()
+{
+	FClcStartingGoldRules Rules;
+	if (const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>())
+	{
+		Rules.Min = FMath::Max(0, DS->StartingGoldMin);
+		Rules.Step = FMath::Max(1, DS->StartingGoldStep);
+
+		const int64 RequestedMax = FMath::Max<int64>(Rules.Min, DS->StartingGoldMax);
+		const int64 ReachableMax = static_cast<int64>(Rules.Min)
+			+ ((RequestedMax - Rules.Min) / Rules.Step) * Rules.Step;
+		Rules.Max = static_cast<int32>(FMath::Min<int64>(ReachableMax, MAX_int32));
+		Rules.Default = Rules.Snap(DS->StartingGoldDefault);
+	}
+	return Rules;
+}
+
+/** 预设对应的黄金乘数（读 UClcDeveloperSettings） */
 inline float ClcDifficultyGoldMultiplier(EClcDifficultyPreset Preset)
 {
+	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	if (!DS) return 1.0f;
 	switch (Preset)
 	{
-	case EClcDifficultyPreset::Easy:   return 2.0f;
-	case EClcDifficultyPreset::Normal: return 1.0f;
-	case EClcDifficultyPreset::Hard:   return 0.4f;
+	case EClcDifficultyPreset::Easy:   return DS->DifficultyEasyGoldMultiplier;
+	case EClcDifficultyPreset::Normal: return DS->DifficultyNormalGoldMultiplier;
+	case EClcDifficultyPreset::Hard:   return DS->DifficultyHardGoldMultiplier;
 	default: return 1.0f;
 	}
 }
 
-/** 预设对应的溢价/衰减惩罚乘数（越高越难） */
+/** 预设对应的溢价/衰减惩罚乘数（越高越难，读 UClcDeveloperSettings） */
 inline float ClcDifficultyPenaltyMultiplier(EClcDifficultyPreset Preset)
 {
+	const UClcDeveloperSettings* DS = GetDefault<UClcDeveloperSettings>();
+	if (!DS) return 1.0f;
 	switch (Preset)
 	{
-	case EClcDifficultyPreset::Easy:   return 0.6f;
-	case EClcDifficultyPreset::Normal: return 1.0f;
-	case EClcDifficultyPreset::Hard:   return 1.5f;
+	case EClcDifficultyPreset::Easy:   return DS->DifficultyEasyPenaltyMultiplier;
+	case EClcDifficultyPreset::Normal: return DS->DifficultyNormalPenaltyMultiplier;
+	case EClcDifficultyPreset::Hard:   return DS->DifficultyHardPenaltyMultiplier;
 	default: return 1.0f;
 	}
 }
@@ -104,7 +145,7 @@ struct CLAUDECORE_API FClcSessionConfig
 {
 	GENERATED_BODY()
 
-	/** 起始金币（默认 50000，UI 滑条范围 1000~500000） */
+	/** 起始金币（实际默认值与滑条范围由 DeveloperSettings 提供） */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Session")
 	int32 StartingGold = 50000;
 

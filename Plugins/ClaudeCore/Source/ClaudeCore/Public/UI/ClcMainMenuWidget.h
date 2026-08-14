@@ -127,9 +127,4 @@ private:
 	void UpdateGoldText(int32 Gold);
 
 	TWeakObjectPtr<UClcMainMenuSubsystem> MenuSubsystem;
-
-	/** 金滑条范围 */
-	static constexpr int32 MinGold = 1000;
-	static constexpr int32 MaxGold = 500000;
-	static constexpr int32 DefaultGold = 50000;
 };

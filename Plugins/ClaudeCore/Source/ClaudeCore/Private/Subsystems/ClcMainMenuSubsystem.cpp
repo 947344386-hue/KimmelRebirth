@@ -17,10 +17,10 @@ void UClcMainMenuSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenu] Initialize"));
 
-	// 设定默认会话配置
-	DefaultSessionConfig.StartingGold = 50000;
+	const FClcStartingGoldRules GoldRules = ClcGetStartingGoldRules();
+	DefaultSessionConfig.StartingGold = GoldRules.Default;
 	DefaultSessionConfig.Difficulty = EClcDifficultyPreset::Normal;
-	DefaultSessionConfig.DifficultyMultiplier = 1.0f;
+	DefaultSessionConfig.DifficultyMultiplier = ClcDifficultyPenaltyMultiplier(DefaultSessionConfig.Difficulty);
 
 	// 在下一帧自动显示主菜单——此时 PlayerController 已就位
 	// 注意：仅当加载的关卡是主菜单关卡时才显示（玩法关卡不显示菜单）

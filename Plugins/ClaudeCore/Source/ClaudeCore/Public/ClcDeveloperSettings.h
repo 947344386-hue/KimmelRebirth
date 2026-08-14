@@ -83,4 +83,46 @@ public:
 	/** 加载画面随机提示文案；为空时使用 C++ 内置默认提示池 */
 	UPROPERTY(Config, EditAnywhere, Category="Loading", meta=(ToolTip="加载画面随机提示文案；为空时使用内置默认提示"))
 	TArray<FString> LoadingTips;
+
+	// ---- 会话/难度（新游戏开局参数） ----
+
+	/** 起始金币滑条下限 */
+	UPROPERTY(Config, EditAnywhere, Category="Session", meta=(ClampMin="0", ToolTip="主菜单起始金币滑条下限"))
+	int32 StartingGoldMin = 20000;
+
+	/** 起始金币滑条上限 */
+	UPROPERTY(Config, EditAnywhere, Category="Session", meta=(ClampMin="0", ToolTip="主菜单起始金币滑条上限"))
+	int32 StartingGoldMax = 100000;
+
+	/** 起始金币滑条步长（拖动一次的增量） */
+	UPROPERTY(Config, EditAnywhere, Category="Session", meta=(ClampMin="1", ToolTip="主菜单起始金币滑条拖动步长"))
+	int32 StartingGoldStep = 5000;
+
+	/** 起始金币默认值（新游戏未拖动时） */
+	UPROPERTY(Config, EditAnywhere, Category="Session", meta=(ToolTip="新游戏起始金币默认值"))
+	int32 StartingGoldDefault = 50000;
+
+	/** 简单模式——起始金币乘数（乘到滑条值上） */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="简单模式起始金币乘数"))
+	float DifficultyEasyGoldMultiplier = 2.0f;
+
+	/** 简单模式——溢价/衰减惩罚乘数（越低越宽松） */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="简单模式溢价/衰减惩罚乘数"))
+	float DifficultyEasyPenaltyMultiplier = 0.6f;
+
+	/** 标准模式——起始金币乘数 */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="标准模式起始金币乘数"))
+	float DifficultyNormalGoldMultiplier = 1.0f;
+
+	/** 标准模式——溢价/衰减惩罚乘数 */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="标准模式溢价/衰减惩罚乘数"))
+	float DifficultyNormalPenaltyMultiplier = 1.0f;
+
+	/** 困难模式——起始金币乘数 */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="困难模式起始金币乘数"))
+	float DifficultyHardGoldMultiplier = 0.4f;
+
+	/** 困难模式——溢价/衰减惩罚乘数 */
+	UPROPERTY(Config, EditAnywhere, Category="Session|Difficulty", meta=(ClampMin="0.0", ToolTip="困难模式溢价/衰减惩罚乘数"))
+	float DifficultyHardPenaltyMultiplier = 1.5f;
 };

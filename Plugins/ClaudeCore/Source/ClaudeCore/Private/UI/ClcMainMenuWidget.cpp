@@ -21,22 +21,26 @@ void UClcMainMenuWidget::InitializeMenu(UClcMainMenuSubsystem* InSubsystem)
 {
 	MenuSubsystem = InSubsystem;
 
-	// 从 Subsystem 读取默认配置填充 UI
+	const FClcStartingGoldRules GoldRules = ClcGetStartingGoldRules();
 	FClcSessionConfig Defaults;
+	Defaults.StartingGold = GoldRules.Default;
+	Defaults.DifficultyMultiplier = ClcDifficultyPenaltyMultiplier(Defaults.Difficulty);
 	if (InSubsystem)
 	{
 		Defaults = InSubsystem->GetDefaultSessionConfig();
 	}
+	const int32 InitialGold = GoldRules.Snap(Defaults.StartingGold);
 
-	// 金滑条
 	if (GoldSlider)
 	{
-		GoldSlider->SetMinValue(MinGold);
-		GoldSlider->SetMaxValue(MaxGold);
-		GoldSlider->SetValue(static_cast<float>(Defaults.StartingGold));
+		GoldSlider->MouseUsesStep = true;
+		GoldSlider->SetMinValue(static_cast<float>(GoldRules.Min));
+		GoldSlider->SetMaxValue(static_cast<float>(GoldRules.Max));
+		GoldSlider->SetStepSize(static_cast<float>(GoldRules.Step));
+		GoldSlider->SetValue(static_cast<float>(InitialGold));
+		GoldSlider->SynchronizeProperties();
 	}
 
-	// 难度下拉框
 	if (DifficultyComboBox)
 	{
 		const UEnum* E = StaticEnum<EClcDifficultyPreset>();
@@ -53,7 +57,7 @@ void UClcMainMenuWidget::InitializeMenu(UClcMainMenuSubsystem* InSubsystem)
 		DifficultyComboBox->SetSelectedIndex(static_cast<int32>(Defaults.Difficulty));
 	}
 
-	UpdateGoldText(Defaults.StartingGold);
+	UpdateGoldText(InitialGold);
 	RefreshSaveSlots();
 }
 
@@ -166,7 +170,13 @@ void UClcMainMenuWidget::HandleDeleteSaveClicked()
 
 void UClcMainMenuWidget::HandleGoldSliderChanged(float Value)
 {
-	UpdateGoldText(FMath::Clamp(FMath::RoundToInt(Value), MinGold, MaxGold));
+	const FClcStartingGoldRules GoldRules = ClcGetStartingGoldRules();
+	const int32 SnappedGold = GoldRules.Snap(FMath::RoundToInt(Value));
+	if (GoldSlider && !FMath::IsNearlyEqual(GoldSlider->GetValue(), static_cast<float>(SnappedGold)))
+	{
+		GoldSlider->SetValue(static_cast<float>(SnappedGold));
+	}
+	UpdateGoldText(SnappedGold);
 }
 
 void UClcMainMenuWidget::HandleDifficultyChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
@@ -178,8 +188,10 @@ void UClcMainMenuWidget::HandleDifficultyChanged(FString SelectedItem, ESelectIn
 
 FClcSessionConfig UClcMainMenuWidget::BuildSessionConfig() const
 {
+	const FClcStartingGoldRules GoldRules = ClcGetStartingGoldRules();
 	FClcSessionConfig Config;
-	Config.StartingGold = GoldSlider ? FMath::Clamp(FMath::RoundToInt(GoldSlider->GetValue()), MinGold, MaxGold) : DefaultGold;
+	Config.StartingGold = GoldRules.Snap(
+		GoldSlider ? FMath::RoundToInt(GoldSlider->GetValue()) : GoldRules.Default);
 
 	if (DifficultyComboBox)
 	{
@@ -194,7 +206,7 @@ FClcSessionConfig UClcMainMenuWidget::BuildSessionConfig() const
 	else
 	{
 		Config.Difficulty = EClcDifficultyPreset::Normal;
-		Config.DifficultyMultiplier = 1.0f;
+		Config.DifficultyMultiplier = ClcDifficultyPenaltyMultiplier(Config.Difficulty);
 	}
 	Config.bIsNewGame = true;
 	return Config;
@@ -212,6 +224,7 @@ void UClcMainMenuWidget::BuildDefaultLayout()
 {
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcMainMenuWidget] BuildDefaultLayout — 创建 C++ 默认布局"));
 	if (!WidgetTree) return;
+	const FClcStartingGoldRules GoldRules = ClcGetStartingGoldRules();
 
 	UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("RootBox"));
 	if (!Root) return;
@@ -221,10 +234,22 @@ void UClcMainMenuWidget::BuildDefaultLayout()
 	if (TitleText) { TitleText->SetText(FText::FromString(TEXT("赌石传说"))); Root->AddChildToVerticalBox(TitleText); }
 
 	GoldValueText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("GoldValueText"));
-	if (GoldValueText) { GoldValueText->SetText(FText::FromString(TEXT("起始金币：50000"))); Root->AddChildToVerticalBox(GoldValueText); }
+	if (GoldValueText)
+	{
+		GoldValueText->SetText(FText::FromString(FString::Printf(TEXT("起始金币：%d"), GoldRules.Default)));
+		Root->AddChildToVerticalBox(GoldValueText);
+	}
 
 	GoldSlider = WidgetTree->ConstructWidget<USlider>(USlider::StaticClass(), TEXT("GoldSlider"));
-	if (GoldSlider) { GoldSlider->SetMinValue(MinGold); GoldSlider->SetMaxValue(MaxGold); GoldSlider->SetValue(DefaultGold); Root->AddChildToVerticalBox(GoldSlider); }
+	if (GoldSlider)
+	{
+		GoldSlider->MouseUsesStep = true;
+		GoldSlider->SetMinValue(static_cast<float>(GoldRules.Min));
+		GoldSlider->SetMaxValue(static_cast<float>(GoldRules.Max));
+		GoldSlider->SetStepSize(static_cast<float>(GoldRules.Step));
+		GoldSlider->SetValue(static_cast<float>(GoldRules.Default));
+		Root->AddChildToVerticalBox(GoldSlider);
+	}
 
 	DifficultyComboBox = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("DifficultyComboBox"));
 	if (DifficultyComboBox) Root->AddChildToVerticalBox(DifficultyComboBox);

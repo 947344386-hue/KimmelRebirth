@@ -8,6 +8,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Engine.h"
 #include "ClcLog.h"
+#include "ClcMeshBufferAccess.h"
 #include "Data/ClcJadeTypes.h"
 #include "Data/ClcShellTextureConfig.h"
 #include "Data/ClcJadeTextureConfig.h"
@@ -155,38 +156,47 @@ bool AClcCuttingStone::Initialize(const FClcStoneRuntimeData& StoneData, int32 D
 		if (RenderData && RenderData->LODResources.Num() > 0)
 		{
 			const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
-			const FPositionVertexBuffer& PosVB = LOD.VertexBuffers.PositionVertexBuffer;
-			const FStaticMeshVertexBuffer& UVB = LOD.VertexBuffers.StaticMeshVertexBuffer;
-			const uint32 NumVerts = PosVB.GetNumVertices();
-			const uint32 NumIdx = LOD.IndexBuffer.GetNumIndices();
-
-			TArray<FVector> ShellVerts;
-			TArray<int32> ShellTris;
-			TArray<FVector2D> ShellUVs;
-			TArray<FVector> ShellNormals;
-			TArray<FProcMeshTangent> ShellTangents;
-
-			ShellVerts.Reserve(NumVerts);
-			ShellUVs.Reserve(NumVerts);
-			ShellNormals.Reserve(NumVerts);
-			ShellTangents.Reserve(NumVerts);
-			for (uint32 I = 0; I < NumVerts; ++I)
+			// 打包版若网格未勾选 Allow CPU Access，索引/顶点数据不驻留 CPU——跳过拷贝，外壳缺失但不崩溃
+			const int32 AvailableIndices = ClcGetAvailableIndexCount(LOD.IndexBuffer);
+			if (AvailableIndices == 0)
 			{
-				ShellVerts.Add(FVector(PosVB.VertexPosition(I)));
-				ShellUVs.Add(FVector2D(UVB.GetVertexUV(I, 0)));
-				ShellNormals.Add(FVector(UVB.VertexTangentZ(I)));
-				FProcMeshTangent T;
-				T.TangentX = FVector(UVB.VertexTangentX(I));
-				T.bFlipTangentY = false;
-				ShellTangents.Add(T);
+				UE_LOG(LogClaudeCore, Error, TEXT("[ClcCuttingStone] %s 未勾选 Allow CPU Access，打包版无法拷贝网格数据，解石外壳会缺失。"), *GetNameSafe(SourceMesh));
 			}
-			ShellTris.Reserve(NumIdx);
-			for (uint32 I = 0; I < NumIdx; ++I)
+			else
 			{
-				ShellTris.Add(LOD.IndexBuffer.GetIndex(I));
+				const FPositionVertexBuffer& PosVB = LOD.VertexBuffers.PositionVertexBuffer;
+				const FStaticMeshVertexBuffer& UVB = LOD.VertexBuffers.StaticMeshVertexBuffer;
+				const uint32 NumVerts = PosVB.GetNumVertices();
+				const uint32 NumIdx = AvailableIndices;
+
+				TArray<FVector> ShellVerts;
+				TArray<int32> ShellTris;
+				TArray<FVector2D> ShellUVs;
+				TArray<FVector> ShellNormals;
+				TArray<FProcMeshTangent> ShellTangents;
+
+				ShellVerts.Reserve(NumVerts);
+				ShellUVs.Reserve(NumVerts);
+				ShellNormals.Reserve(NumVerts);
+				ShellTangents.Reserve(NumVerts);
+				for (uint32 I = 0; I < NumVerts; ++I)
+				{
+					ShellVerts.Add(FVector(PosVB.VertexPosition(I)));
+					ShellUVs.Add(FVector2D(UVB.GetVertexUV(I, 0)));
+					ShellNormals.Add(FVector(UVB.VertexTangentZ(I)));
+					FProcMeshTangent T;
+					T.TangentX = FVector(UVB.VertexTangentX(I));
+					T.bFlipTangentY = false;
+					ShellTangents.Add(T);
+				}
+				ShellTris.Reserve(NumIdx);
+				for (uint32 I = 0; I < NumIdx; ++I)
+				{
+					ShellTris.Add(LOD.IndexBuffer.GetIndex(I));
+				}
+				CutMesh->CreateMeshSection(0, ShellVerts, ShellTris, ShellNormals, ShellUVs,
+					TArray<FColor>(), ShellTangents, false);
 			}
-			CutMesh->CreateMeshSection(0, ShellVerts, ShellTris, ShellNormals, ShellUVs,
-				TArray<FColor>(), ShellTangents, false);
 		}
 	}
 	if (ShellMID)
@@ -639,10 +649,8 @@ void AClcCuttingStone::MarkHaggleResolved(int32 LockedPrice)
 
 	static const FString LockedSuffix = TEXT("【已锁价】");
 	static const FString CutSuffix = TEXT("【已解石】");
-	if (CachedStoneData.DisplayName.EndsWith(*CutSuffix))
-	{
-		CachedStoneData.DisplayName.LeftChopInline(CutSuffix.Len());
-	}
+	// 按实际后缀匹配移除，避免 DisplayName 在【已解石】后还有其他字符时按长度切错位置
+	CachedStoneData.DisplayName.RemoveFromEnd(*CutSuffix, ESearchCase::CaseSensitive);
 	if (!CachedStoneData.DisplayName.EndsWith(*LockedSuffix))
 	{
 		CachedStoneData.DisplayName += LockedSuffix;

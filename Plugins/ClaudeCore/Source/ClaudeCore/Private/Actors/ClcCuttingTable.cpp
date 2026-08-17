@@ -226,6 +226,23 @@ void AClcCuttingTable::Tick(float DeltaTime)
 			ProcessCuttingInput(DeltaTime);
 		}
 
+		// 刀片无耐久：石头上台期间每 5s 飘字 2s，避免玩家误以为无法下刀是 bug
+		if (UClcToolDurabilitySubsystem* Durability = UClcToolDurabilitySubsystem::Get(GetWorld()))
+		{
+			if (Durability->GetDurability(EClcRepairableTool::Blade) < BladeDurabilityPerCut)
+			{
+				const double Now = FPlatformTime::Seconds();
+				if (Now - LastBladeNoDurabilityToastTime >= 5.0)
+				{
+					LastBladeNoDurabilityToastTime = Now;
+					if (UClcLogToastSubsystem* Toast = ClcGetLogToast(CachedPC))
+					{
+						Toast->AddLog(TEXT("刀片无耐久"), 2.0f);
+					}
+				}
+			}
+		}
+
 		HUDPushTimer -= DeltaTime;
 		if (HUDPushTimer <= 0.0f)
 		{
@@ -787,6 +804,9 @@ void AClcCuttingTable::ExecuteCutDuringCinematic()
 		}
 
 		LastCutAwayPiece = OtherHalf;
+		// 取走后清石头侧弱引用，避免石头与解石台双份持有同一 PMC（DestroyComponent 时弱引用自然失效，
+		// 但清掉可避免石头后续误用已被解石台接管的切下块）。
+		CuttingStone->ClearLastOtherHalf();
 		if (CutPieceCleanupDelay > 0.0f && GetWorld())
 		{
 			GetWorld()->GetTimerManager().SetTimer(
@@ -891,6 +911,14 @@ void AClcCuttingTable::FinishCutCinematic()
 	bCutExecutedThisCycle = false;
 	ActiveCutCamera.Reset();
 	bCutKeyPrev = true; // 防止玩家一直按住 SpaceBar 立即再触发
+
+	// Cinematic 中途玩家走开时延后到这里：动画已正常收尾、体素场已结算，
+	// 此时退出走的是完整流程，不会把半刀状态回写存档。
+	if (bPendingExitOnCinematicDone)
+	{
+		bPendingExitOnCinematicDone = false;
+		ExitCuttingMode();
+	}
 }
 
 void AClcCuttingTable::CleanupLastCutPiece()
@@ -1353,6 +1381,7 @@ void AClcCuttingTable::PushHUDData()
 		Data.BladeCurrent = Durability->GetDurability(EClcRepairableTool::Blade);
 		Data.BladeMax = Durability->GetMaxDurability(EClcRepairableTool::Blade);
 		Data.BladeDurability = Durability->GetDurabilityRatio(EClcRepairableTool::Blade);
+		Data.bBladeExhausted = Data.BladeCurrent < BladeDurabilityPerCut;
 	}
 
 	HUDWidget->RefreshData(Data);
@@ -1392,6 +1421,15 @@ void AClcCuttingTable::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, 
 {
 	if (PlayerInRange.Get() != Other) return;
 
+	// Cinematic 进行中（BladePhase 已过 Cut、体素场已改未结算）走开时不能立即 Exit，
+	// 否则 RemoveStoneFromBench 会把半刀状态的 ActiveStoneData 回写背包，金币/预算不一致。
+	// 置标记，让 FinishCutCinematic 末尾按正常流程收尾后再退出。
+	if (CurrentState == EClcCuttingTableState::CuttingCinematic)
+	{
+		bPendingExitOnCinematicDone = true;
+		return;
+	}
+
 	if (CurrentState != EClcCuttingTableState::Inactive)
 	{
 		ExitCuttingMode();
@@ -1401,7 +1439,6 @@ void AClcCuttingTable::OnTriggerEndOverlap(UPrimitiveComponent* OverlappedComp, 
 
 	PlayerInRange.Reset();
 	CachedPC.Reset();
-	CachedBackpack = nullptr;
 	CachedBackpack = nullptr;
 }
 

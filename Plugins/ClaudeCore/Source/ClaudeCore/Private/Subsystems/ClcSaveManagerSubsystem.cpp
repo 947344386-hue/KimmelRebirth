@@ -107,20 +107,25 @@ bool UClcSaveManagerSubsystem::SaveGame(const FString& SlotName)
 		return false;
 	}
 
-	// 累计游戏时长（仅在写盘成功后才累加，避免失败/拦截时重复累计污染下次保存）
+	// 累计游戏时长：只在写盘成功后才提交进 AccumulatedPlayTimeSeconds，
+	// 否则失败时 LastAutoSaveTime 不更新，下次 DeltaSec 会把失败区间再算一遍 → 重复累计。
+	// 写盘前用"当前累计 + 本次 Delta"预填 Data.PlayTimeHours，保证写入档的时长正确。
 	double Now = FPlatformTime::Seconds();
 	float DeltaSec = static_cast<float>(Now - LastAutoSaveTime);
-	if (DeltaSec > 0.0f && DeltaSec < 3600.0f) // 防异常跳变
-	{
-		AccumulatedPlayTimeSeconds += DeltaSec;
-	}
-	Data.PlayTimeHours = AccumulatedPlayTimeSeconds / 3600.0f;
+	bool bDeltaValid = (DeltaSec > 0.0f && DeltaSec < 3600.0f); // 防异常跳变
+	double ProjectedPlayTime = AccumulatedPlayTimeSeconds + (bDeltaValid ? DeltaSec : 0.0);
+	Data.PlayTimeHours = ProjectedPlayTime / 3600.0f;
 
 	UE_LOG(LogClaudeCore, Log, TEXT("[ClcSave] SaveGame '%s': Gold=%d, Stones=%d, PlayTime=%.2fh, Ver=%d"),
 		*SlotName, Data.SavedGold, Data.SavedStones.Num(), Data.PlayTimeHours, Data.SaveVersion);
 
 	if (WriteSaveFile(SlotName, Data))
 	{
+		// 提交必须在成功分支内，与 Data.PlayTimeHours 的预填值保持一致。
+		if (bDeltaValid)
+		{
+			AccumulatedPlayTimeSeconds += DeltaSec;
+		}
 		CurrentSlot = SlotName;
 		LastAutoSavedGold = Data.SavedGold;
 		LastAutoSaveTime = Now;

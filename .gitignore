@@ -19,5 +19,8 @@ LocalDerivedDataCache/
 .vsconfig
 Plugins/VibeUE/
 
+# 构建产物日志（可重生）
+Build/
+
 # Per-user 编辑器设置（内容浏览器状态等，不应共享）
 Config/DefaultEditorPerProjectUserSettings.ini

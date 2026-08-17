@@ -106,6 +106,9 @@ public:
 	 */
 	UProceduralMeshComponent* GetLastOtherHalf() const { return LastOtherHalf.Get(); }
 
+	/** 调用方取走切下块并接管其生命周期后，清掉石头侧的弱引用，避免双份持有。 */
+	void ClearLastOtherHalf() { LastOtherHalf.Reset(); }
+
 	/** 讨价还价锁价（出售台调用） */
 	void MarkHaggleResolved(int32 LockedPrice);
 

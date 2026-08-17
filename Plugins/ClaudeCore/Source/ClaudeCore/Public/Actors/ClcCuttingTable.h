@@ -303,6 +303,8 @@ private:
 	bool bBackpackKeyPrev = false;
 	bool bCutKeyPrev = false;
 	double LastEnterToastTime = 0.0;
+	/** 刀片无耐久飘字节流（石头上台期间每 5s 一次） */
+	double LastBladeNoDurabilityToastTime = 0.0;
 
 	// ---- 切割动画循环状态 ----
 	EBladePhase BladePhase = EBladePhase::Idle;
@@ -310,6 +312,8 @@ private:
 	FVector BladePointInitialRelativeLocation = FVector::ZeroVector;
 	bool bCutExecutedThisCycle = false;
 	bool bCutRemovedNegativeSide = false;
+	/** Cinematic 进行中玩家走开时置位，FinishCutCinematic 末尾据此延后退出，避免半刀状态回写存档不一致 */
+	bool bPendingExitOnCinematicDone = false;
 	/** 循环开始时缓存的刀口平面（预判/相机/实际切割共用，防升刀偏移） */
 	FVector PendingCutPlanePoint = FVector::ZeroVector;
 	FVector PendingCutPlaneNormal = FVector::ZeroVector;

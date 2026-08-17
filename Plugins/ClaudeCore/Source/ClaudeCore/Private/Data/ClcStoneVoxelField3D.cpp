@@ -3,6 +3,7 @@
 #include "Data/ClcStoneVoxelField3D.h"
 #include "Data/ClcJadeTypes.h"          // EClcDistVoxel: HostWaste/JadeBody/Impurity/Crack
 #include "ClcLog.h"
+#include "ClcMeshBufferAccess.h"
 #include "Math/RandomStream.h"
 #include "Engine/StaticMesh.h"          // UStaticMesh + FStaticMeshRenderData/FStaticMeshLODResources + FBoxSphereBounds
 #include "Rendering/PositionVertexBuffer.h"
@@ -421,8 +422,15 @@ namespace
 		Field.VoxelVolume = Field.VoxelSize.X * Field.VoxelSize.Y * Field.VoxelSize.Z;
 
 		FStaticMeshRenderData* RD = Mesh ? Mesh->GetRenderData() : nullptr;
-		if (!RD || RD->LODResources.Num() == 0)
+		const FStaticMeshLODResources* LOD = (RD && RD->LODResources.Num() > 0) ? &RD->LODResources[0] : nullptr;
+		const int32 AvailableIndices = LOD ? ClcGetAvailableIndexCount(LOD->IndexBuffer) : 0;
+		if (AvailableIndices == 0)
 		{
+			if (LOD)
+			{
+				// 打包版若网格未勾选 Allow CPU Access，索引数据不驻留 CPU——退化为椭球并提示
+				UE_LOG(LogClaudeCore, Error, TEXT("[ClcStoneVoxelField3D] %s 未勾选 Allow CPU Access，打包版退化为椭球占位。"), *GetNameSafe(Mesh));
+			}
 			// 无三角形数据 → 退化为包络椭球占用（flood-fill 退路也用同模型）
 			const FVector InvExtent(1.0f / (Field.GridExtent.X * 0.5f), 1.0f / (Field.GridExtent.Y * 0.5f), 1.0f / (Field.GridExtent.Z * 0.5f));
 			for (int32 Z = 0; Z < Res; ++Z)
@@ -436,9 +444,8 @@ namespace
 			return;
 		}
 
-		const FStaticMeshLODResources& LOD = RD->LODResources[0];
-		const FPositionVertexBuffer& PosVB = LOD.VertexBuffers.PositionVertexBuffer;
-		const uint32 NumTriangles = LOD.IndexBuffer.GetNumIndices() / 3;
+		const FPositionVertexBuffer& PosVB = LOD->VertexBuffers.PositionVertexBuffer;
+		const uint32 NumTriangles = AvailableIndices / 3;
 
 		// Step 1: 标记表面体素（体素中心到三角形距离 < ~半体素对角 → 表面）
 		const float SurfDist = (Field.VoxelSize.X + Field.VoxelSize.Y + Field.VoxelSize.Z) * 0.5f;
@@ -454,9 +461,9 @@ namespace
 
 		for (uint32 Tri = 0; Tri < NumTriangles; ++Tri)
 		{
-			const uint32 I0 = LOD.IndexBuffer.GetIndex(Tri * 3);
-			const uint32 I1 = LOD.IndexBuffer.GetIndex(Tri * 3 + 1);
-			const uint32 I2 = LOD.IndexBuffer.GetIndex(Tri * 3 + 2);
+			const uint32 I0 = LOD->IndexBuffer.GetIndex(Tri * 3);
+			const uint32 I1 = LOD->IndexBuffer.GetIndex(Tri * 3 + 1);
+			const uint32 I2 = LOD->IndexBuffer.GetIndex(Tri * 3 + 2);
 			const FVector V0 = (FVector)PosVB.VertexPosition(I0);
 			const FVector V1 = (FVector)PosVB.VertexPosition(I1);
 			const FVector V2 = (FVector)PosVB.VertexPosition(I2);

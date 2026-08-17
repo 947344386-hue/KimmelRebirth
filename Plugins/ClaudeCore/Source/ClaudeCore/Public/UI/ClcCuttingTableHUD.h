@@ -69,6 +69,10 @@ struct CLAUDECORE_API FClcCuttingTableHUDData
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Tool")
 	bool bCanCut = false;
 
+	/** 刀片耐久不足一次下刀——右上角常驻“刀片无耐久”红字 */
+	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|Tool")
+	bool bBladeExhausted = false;
+
 	/** 切块尺寸预判四态（供 CutStateText 文案+配色；CannotCut 时无比例） */
 	UPROPERTY(BlueprintReadOnly, Category = "CuttingHUD|CutSize")
 	EClcCutSizeState CutSizeState = EClcCutSizeState::CannotCut;
@@ -126,6 +130,10 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> CutStateText;
+
+	/** 刀片无耐久红色提示（右上角 ToolCard 内；无耐久时 Visible，否则 Collapsed） */
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
+	TObjectPtr<UTextBlock> BladeNoDurabilityText;
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidgetOptional), Category = "CuttingHUD")
 	TObjectPtr<UTextBlock> ValuationText;

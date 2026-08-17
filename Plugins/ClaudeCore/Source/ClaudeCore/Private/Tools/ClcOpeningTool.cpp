@@ -1,6 +1,8 @@
 // Copyright ClaudeCore. All Rights Reserved.
 
 #include "Tools/ClcOpeningTool.h"
+#include "ClcLog.h"
+#include "ClcMeshBufferAccess.h"
 #include "Actors/ClcOpeningStone.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/ClcOpeningMaskComponent.h"
@@ -154,11 +156,24 @@ bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayD
 	if (!RD || RD->LODResources.Num() == 0) return false;
 	const FStaticMeshLODResources& LOD = RD->LODResources[0];
 
+	// 打包版若网格未勾选 Allow CPU Access，索引数据不驻留 CPU——直接返回并提示，避免 GetIndex 断言崩溃
+	const int32 AvailableIndices = ClcGetAvailableIndexCount(LOD.IndexBuffer);
+	if (AvailableIndices == 0)
+	{
+		static bool bLoggedOnce = false;
+		if (!bLoggedOnce)
+		{
+			bLoggedOnce = true;
+			UE_LOG(LogClaudeCore, Error, TEXT("[ClcOpeningTool] %s 未勾选 Allow CPU Access，打包版无法读取网格数据，擦石无效。"), *GetNameSafe(Mesh));
+		}
+		return false;
+	}
+
 	int32 BestTri = -1;
 	float BestU = 0.f, BestV = 0.f;
 
 	// O(1) 路径：FaceIndex 有效时直接查对应三角形
-	if (LastFaceIndex >= 0 && LastFaceIndex * 3 + 2 < (int32)LOD.IndexBuffer.GetNumIndices())
+	if (LastFaceIndex >= 0 && LastFaceIndex * 3 + 2 < AvailableIndices)
 	{
 		const FTransform& MeshTM = StoneMeshComp->GetComponentToWorld();
 		const FVector LocalRayOrigin = MeshTM.InverseTransformPosition(RayOrigin);
@@ -214,7 +229,7 @@ bool AClcOpeningTool::ExecuteGrind(const FVector& RayOrigin, const FVector& RayD
 		const FVector LocalRayDir    = MeshTM.InverseTransformVectorNoScale(RayDirection);
 
 		const FPositionVertexBuffer& PosVB = LOD.VertexBuffers.PositionVertexBuffer;
-		const uint32 NumTriangles = LOD.IndexBuffer.GetNumIndices() / 3;
+		const uint32 NumTriangles = AvailableIndices / 3;
 
 		constexpr float EPS = 1e-6f;
 		float BestT = 1e30f;

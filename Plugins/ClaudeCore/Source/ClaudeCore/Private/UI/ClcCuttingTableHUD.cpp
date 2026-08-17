@@ -82,6 +82,13 @@ void UClcCuttingTableHUD::RefreshData(const FClcCuttingTableHUDData& Data)
 		BladeProgressBar->SetFillColorAndOpacity(BarColor);
 	}
 
+	// 刀片无耐久——右上角常驻红字提示（Collapsed 时不占布局）
+	if (BladeNoDurabilityText)
+	{
+		BladeNoDurabilityText->SetVisibility(Data.bBladeExhausted
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
 	// 切块尺寸预判四态（右上角实时反馈，帮助玩家判断下刀是否合理）
 	FString CutStateString;
 	FLinearColor CutStateColor;
@@ -189,6 +196,10 @@ void UClcCuttingTableHUD::BuildDefaultLayout()
 	}
 
 	CutStateText = AddText(Right, TEXT("CutStateText"), 18, FLinearColor(0.3f, 1.0f, 0.5f));
+
+	BladeNoDurabilityText = AddText(Right, TEXT("BladeNoDurabilityText"), 20, FLinearColor::Red);
+	BladeNoDurabilityText->SetText(FText::FromString(TEXT("刀片无耐久")));
+	BladeNoDurabilityText->SetVisibility(ESlateVisibility::Collapsed);
 
 	HintsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("HintsText"));
 	FSlateFontInfo HintFont = HintsText->GetFont();
